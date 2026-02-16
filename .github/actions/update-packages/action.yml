@@ -1,0 +1,116 @@
+name: 'Update Packages'
+description: 'Common package update logic'
+
+inputs:
+  platform:
+    description: 'Platform name (for logging)'
+    required: true
+    default: 'linux'
+
+outputs:
+  has_changes:
+    description: 'Whether any packages were updated'
+    value: ${{ steps.package_updater.outputs.has_changes }}
+  updated_packages:
+    description: 'List of updated packages'
+    value: ${{ steps.package_updater.outputs.updated_packages }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Update Packages
+      id: package_updater
+      shell: bash
+      run: |
+        set -euo pipefail
+        chmod +x ./pkgs/update.sh
+        updated_packages=""
+
+        while read -r nixfile; do
+          abs_path=$(realpath "$nixfile")
+          if [[ "$nixfile" == ./pkgs/by-name/* ]]; then
+            name=$(basename "$(dirname "$abs_path")")
+            pkg_dir=$(dirname "$abs_path")
+          else
+            name=$(basename "$abs_path" .nix)
+            pkg_dir=$(dirname "$abs_path")
+          fi
+          printf "::group::%s\n" "Updating $name"
+
+            if (nix eval --impure --raw --expr "with import <nixpkgs> {}; (callPackage \"$abs_path\" {}).type" 2>/dev/null | grep -qx "derivation") && \
+              nix eval --impure --raw --expr "with import <nixpkgs> {}; (callPackage \"$abs_path\" {}).src" &> /dev/null; then
+              if ./pkgs/update.sh "$nixfile"; then
+                if nix build --impure --expr "with import <nixpkgs> {}; (callPackage \"$abs_path\" {})"; then
+                  printf "::notice::%s\n" "Updated $name successfully and build verified"
+                  updated_packages+="$name|$pkg_dir"$'\n'
+                else
+                  printf "::error file=%s::%s\n" "$nixfile" "Build failed for $name after update"
+                  git checkout -- "$pkg_dir"
+                fi
+              else
+                printf "::error file=%s::%s\n" "$nixfile" "Update failed for $name"
+                git checkout -- "$pkg_dir"
+              fi
+          else
+            printf "::notice file=%s::%s\n" "$nixfile" "Skipping $name (not a fetchable derivation)"
+          fi
+          printf "::endgroup::\n"
+        done < <(find ./pkgs/by-name -type f -name 'package.nix')
+
+        printf "::group::Git Status Check\n"
+        git status
+        git diff --stat || true
+        printf "::endgroup::\n"
+        
+        if git diff --quiet; then
+          printf "has_changes=false\n" >> $GITHUB_OUTPUT
+          printf "### No changes detected\n" >> $GITHUB_STEP_SUMMARY
+          printf "All packages are up to date.\n" >> $GITHUB_STEP_SUMMARY
+        else
+          printf "has_changes=true\n" >> $GITHUB_OUTPUT
+          printf "updated_packages<<EOF\n%s\nEOF\n" "${updated_packages}" >> $GITHUB_OUTPUT
+          printf "### Updated packages\n" >> $GITHUB_STEP_SUMMARY
+          printf '```\n' >> $GITHUB_STEP_SUMMARY
+          printf "%s\n" "${updated_packages}" >> $GITHUB_STEP_SUMMARY
+          printf '```\n' >> $GITHUB_STEP_SUMMARY
+        fi
+
+    - name: Commit and Push Changes
+      shell: bash
+      run: |
+        set -euxo pipefail
+        
+        if [[ "${{ steps.package_updater.outputs.has_changes }}" != "true" ]]; then
+          printf "::notice::No changes to commit\n"
+          exit 0
+        fi
+        
+        printf "::notice::has_changes=%s\n" "${{ steps.package_updater.outputs.has_changes }}"
+        printf "::notice::updated_packages=%s\n" "${{ steps.package_updater.outputs.updated_packages }}"
+        
+        git config user.name "github-actions[bot]" 
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+        while IFS= read -r line; do
+          [[ -z "$line" ]] && continue
+          pkg=$(printf "%s" "$line" | cut -d'|' -f1 | xargs)
+          pkgdir=$(printf "%s" "$line" | cut -d'|' -f2 | xargs)
+          printf "::notice::Committing changes for %s in %s\n" "$pkg" "$pkgdir"
+          git add "${pkgdir}"
+          if ! git diff --staged --quiet; then
+            git commit -m "$pkg: bump"
+          fi
+        done <<< "${{ steps.package_updater.outputs.updated_packages }}"
+
+        printf "::notice::Pushing changes to %s\n" "${{ github.ref_name }}"
+        for i in {1..5}; do
+          if git push origin HEAD:${{ github.ref_name }}; then
+            printf "::notice::Successfully pushed changes on attempt %d\n" "$i"
+            exit 0
+          fi
+          printf "::warning::Push failed on attempt %d, retrying...\n" "$i"
+          git pull --rebase origin ${{ github.ref_name }}
+          sleep $((5 * i))
+        done
+        printf "::error::Failed to push after 5 attempts\n"
+        exit 1

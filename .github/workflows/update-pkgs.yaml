@@ -1,0 +1,45 @@
+name: Update EUVlok Packages
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 */4 * * *"
+
+permissions:
+  contents: write
+
+jobs:
+  update-packages-linux:
+    name: Update Packages (linux)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6.0.2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v21
+
+      - name: Update Packages
+        uses: ./.github/actions/update-packages
+        with:
+          platform: linux
+
+  update-packages-darwin:
+    name: Update Packages (darwin)
+    needs: update-packages-linux
+    runs-on: macos-14
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6.0.2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v21
+
+      - name: Update Packages
+        uses: ./.github/actions/update-packages
+        with:
+          platform: darwin
