@@ -1,9 +1,9 @@
 { yt-dlp, fetchFromGitHub }:
 yt-dlp.overrideAttrs (oldAttrs: {
-  version = "2026.02.04-unstable-2026-02-17";
+  version = "2026.02.04-unstable-2026-02-18";
   src = fetchFromGitHub {
     inherit (oldAttrs.src) owner repo;
-    rev = "d108ca10b926410ed99031fec86894bfdea8f8eb";
-    hash = "sha256-+ZDkMNkYwT8UbqZjjK0jHHE9iuAAPa0e9d/YtP4GMW0=";
+    rev = "2204cee6d8301e491d8455a2c54fd0e1b23468f5";
+    hash = "sha256-RmeCt9o0pgnIGs2+VOy9m3319kFKBi9LvPoUn6OsI/k=";
   };
 })
