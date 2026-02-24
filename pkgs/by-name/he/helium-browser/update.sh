@@ -22,21 +22,14 @@ if [[ -z "$latest_version" || "$latest_version" == "null" ]]; then
 fi
 
 printf "Latest version: %s\n" "$latest_version"
-
-current_version=$(grep -A1 'aarch64-darwin' sources.nix | grep 'version' | sed 's/.*"\(.*\)".*/\1/')
-if [[ "$current_version" == "$latest_version" ]]; then
-    printf "Already at latest version %s\n" "$latest_version"
-    exit 0
-fi
-
 prefetch_url() {
     local hash
-    hash=$(nix-prefetch-url "$1" 2>/dev/null)
+    hash=$(nix-prefetch-url --type sha256 "$1" 2>/dev/null | xargs -I {} nix hash convert --hash-algo sha256 --from nix32 {})
     if [[ -z "$hash" ]]; then
         printf "Error: Failed to prefetch %s\n" "$1" >&2
         exit 1
     fi
-    printf "sha256:%s" "$hash"
+    printf "%s" "$hash"
 }
 
 darwin_hash=$(prefetch_url "https://github.com/imputnet/helium-macos/releases/download/$latest_version/helium_${latest_version}_arm64-macos.dmg")
