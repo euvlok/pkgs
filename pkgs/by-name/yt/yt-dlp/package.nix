@@ -1,6 +1,6 @@
 { yt-dlp, fetchFromGitHub }:
 yt-dlp.overrideAttrs (oldAttrs: {
-  version = "2026.02.21-unstable-2026-03-03";
+  version = "2026.03.03-unstable-2026-03-03";
   src = fetchFromGitHub {
     inherit (oldAttrs.src) owner repo;
     rev = "b8058cdf378cbbf60669b665dea146fb7dc90117";
