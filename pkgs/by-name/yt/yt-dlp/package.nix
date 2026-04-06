@@ -3,7 +3,7 @@ yt-dlp.overrideAttrs (oldAttrs: {
   version = "2026.03.17-unstable-2026-04-05";
   src = fetchFromGitHub {
     inherit (oldAttrs.src) owner repo;
-    rev = "04b2261cbf1aafb964320062dbb33e74ec613291";
-    hash = "sha256-7bdZ2jGqmW2egBh5SJM1O37bgK/aLE4mgGyMzFj8Tpg=";
+    rev = "565dcfec4e5c035b5544de4a369f654b8a60e9e6";
+    hash = "sha256-aj4nfoQKh/AWR2jZLmIL3zsIWTOwODbGZr9jRN6HmSo=";
   };
 })
