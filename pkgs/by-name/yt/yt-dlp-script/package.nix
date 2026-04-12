@@ -10,7 +10,7 @@
 }:
 writeShellApplication {
   name = "yt-dlp-script";
-  text = builtins.readFile ./yt-dlp-script.sh;
+  text = builtins.readFile ./yt-dlp-script.nu;
   runtimeInputs = [
     cacert
     uutils-findutils
