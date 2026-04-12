@@ -29,6 +29,16 @@ jobs:
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@v21
 
+      - name: Update Flake Inputs
+        run: |
+          nix flake update
+          if ! git diff --quiet flake.lock; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add flake.lock
+            git commit -m "flake.lock: update"
+          fi
+
       - name: Update Packages
         uses: ./.github/actions/update-packages
         with:
