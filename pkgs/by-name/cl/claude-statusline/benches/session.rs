@@ -1,7 +1,7 @@
 //! Benchmarks for session flash state and input parsing.
 
 use claude_statusline::input::Input;
-use claude_statusline::session;
+use claude_statusline::session::{self, SessionSnapshot};
 
 fn main() {
     divan::main();
@@ -15,23 +15,25 @@ fn session_update(bencher: divan::Bencher<'_, '_>) {
     let key = format!("divan-bench-{}", std::process::id());
     // Seed: first call establishes a baseline; subsequent calls measure
     // the steady-state "load -> diff -> save" round-trip.
-    let _ = session::update(
-        Some(&key),
-        Some(0.1),
-        Some(5),
-        Some(1),
-        Some(10_000),
-        Some(2_000),
-        session::DEFAULT_FLASH_TTL_SECS,
-    );
+    let seed = SessionSnapshot {
+        cost_usd: Some(0.1),
+        lines_added: Some(5),
+        lines_removed: Some(1),
+        context_tokens: Some(10_000),
+        output_tokens: Some(2_000),
+    };
+    let _ = session::update(Some(&key), &seed, session::DEFAULT_FLASH_TTL_SECS);
+    let snap = SessionSnapshot {
+        cost_usd: Some(0.25),
+        lines_added: Some(12),
+        lines_removed: Some(3),
+        context_tokens: Some(25_000),
+        output_tokens: Some(5_000),
+    };
     bencher.bench(|| {
         session::update(
             divan::black_box(Some(key.as_str())),
-            divan::black_box(Some(0.25)),
-            divan::black_box(Some(12)),
-            divan::black_box(Some(3)),
-            divan::black_box(Some(25_000)),
-            divan::black_box(Some(5_000)),
+            divan::black_box(&snap),
             divan::black_box(session::DEFAULT_FLASH_TTL_SECS),
         )
     });

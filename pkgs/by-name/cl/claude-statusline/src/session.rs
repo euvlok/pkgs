@@ -95,6 +95,7 @@ impl Deltas {
 /// Returns `None` when there's no usable transcript - in that case we
 /// skip all state tracking so tests and ad-hoc invocations don't pollute
 /// each other's history.
+#[must_use]
 pub fn session_key(transcript_path: Option<&str>) -> Option<String> {
     let p = std::path::Path::new(transcript_path?);
     let stem = p.file_stem()?.to_string_lossy();
@@ -148,22 +149,28 @@ fn now_unix() -> u64 {
         .unwrap_or(0)
 }
 
+/// Current-render metric values passed to [`update`]. `None` for any
+/// field means "no data this render" — the previous snapshot's value is
+/// carried forward rather than treated as zero.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct SessionSnapshot {
+    pub cost_usd: Option<f64>,
+    pub lines_added: Option<u64>,
+    pub lines_removed: Option<u64>,
+    pub context_tokens: Option<u64>,
+    pub output_tokens: Option<u64>,
+}
+
 /// Update the on-disk snapshot with the values from the current render
 /// and return the deltas that should flash.
 ///
 /// When nothing has changed but the last delta is still in its flash
 /// window, we re-emit the stored delta so the indicator persists across
 /// renders.
-///
-/// `None` for any value means "no data in current render" - we carry
-/// the previous snapshot's value forward instead of treating it as zero.
+#[must_use]
 pub fn update(
     key: Option<&str>,
-    cost: Option<f64>,
-    lines_added: Option<u64>,
-    lines_removed: Option<u64>,
-    context_tokens: Option<u64>,
-    output_tokens: Option<u64>,
+    snap: &SessionSnapshot,
     flash_ttl_secs: u64,
 ) -> Deltas {
     let Some(key) = key else {
@@ -176,11 +183,11 @@ pub fn update(
     // When the current render has no value for a field (e.g. cost can't
     // be computed), keep the previous snapshot's value so a flash isn't
     // faked out by a single-frame dropout.
-    let new_cost = cost.unwrap_or(state.cost_usd);
-    let new_la = lines_added.unwrap_or(state.lines_added);
-    let new_lr = lines_removed.unwrap_or(state.lines_removed);
-    let new_ctx = context_tokens.unwrap_or(state.context_tokens);
-    let new_out = output_tokens.unwrap_or(state.output_tokens);
+    let new_cost = snap.cost_usd.unwrap_or(state.cost_usd);
+    let new_la = snap.lines_added.unwrap_or(state.lines_added);
+    let new_lr = snap.lines_removed.unwrap_or(state.lines_removed);
+    let new_ctx = snap.context_tokens.unwrap_or(state.context_tokens);
+    let new_out = snap.output_tokens.unwrap_or(state.output_tokens);
 
     // Only positive deltas are interesting: cost and line diffs are
     // monotonic, and context tokens can dip after `/compact` but we

@@ -39,6 +39,7 @@ pub struct Tokens {
 
 /// Look up pricing for a model name. Returns `None` if no `LiteLLM` data
 /// is available or the model isn't recognized.
+#[must_use]
 pub fn lookup(model: &str) -> Option<Pricing> {
     let table = ensure_loaded()?;
     lookup_in(table, model).copied()
@@ -47,6 +48,7 @@ pub fn lookup(model: &str) -> Option<Pricing> {
 /// Pure lookup against an explicit table - exposed (rather than the
 /// `OnceLock`-cached `lookup`) so benches can measure resolution against
 /// a controlled fixture.
+#[must_use]
 pub fn lookup_in<'a, S: std::hash::BuildHasher>(
     table: &'a HashMap<String, Pricing, S>,
     model: &str,

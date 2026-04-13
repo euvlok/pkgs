@@ -48,6 +48,7 @@ impl SegmentName {
     /// `parse(canonical(x)) == Some(x)` for every variant. Used by the
     /// `--preview` header so the user can see exactly which form their
     /// resolved layout is in.
+    #[must_use]
     pub const fn canonical(self) -> &'static str {
         match self {
             Self::Dir => "dir",
@@ -63,6 +64,7 @@ impl SegmentName {
         }
     }
 
+    #[must_use]
     pub fn parse(s: &str) -> Option<Self> {
         Some(match s.trim() {
             "dir" => Self::Dir,
@@ -142,6 +144,7 @@ impl Layout {
     /// `render()` to skip precomputing data for segments that won't be
     /// displayed (e.g. don't walk the transcript if `Cost` isn't in the
     /// layout, don't open a git repo if `Vcs` isn't in the layout).
+    #[must_use]
     pub fn contains(&self, name: SegmentName) -> bool {
         self.lines.iter().any(|line| line.contains(&name))
     }
@@ -151,6 +154,7 @@ impl Layout {
     /// figures (cost, diff) and the model name sit below. Earlier
     /// versions kept the model name on top, which buried the rate-limit
     /// countdown that users actually need to see at a glance.
+    #[must_use]
     pub fn two_line() -> Self {
         use SegmentName::{Cache, Clock, Context, Cost, Diff, Dir, Model, RateLimits, Vcs};
         Self {
@@ -211,6 +215,14 @@ impl fmt::Display for ParseError {
 }
 
 impl std::error::Error for ParseError {}
+
+impl std::str::FromStr for Layout {
+    type Err = ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::parse(s)
+    }
+}
 
 #[cfg(test)]
 mod tests {

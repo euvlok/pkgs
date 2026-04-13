@@ -71,13 +71,16 @@ pub fn render_with(
     };
 
     let out_tokens = input.context_window.current_usage.output_tokens;
+    let snap = session::SessionSnapshot {
+        cost_usd,
+        lines_added: input.cost.total_lines_added,
+        lines_removed: input.cost.total_lines_removed,
+        context_tokens: Some(input.context_window.current_usage.total()),
+        output_tokens: (out_tokens > 0).then_some(out_tokens),
+    };
     let deltas = session::update(
         session::session_key(input.transcript_path.as_deref()).as_deref(),
-        cost_usd,
-        input.cost.total_lines_added,
-        input.cost.total_lines_removed,
-        Some(input.context_window.current_usage.total()),
-        (out_tokens > 0).then_some(out_tokens),
+        &snap,
         if settings.flash { settings.flash_ttl_secs } else { 0 },
     );
 

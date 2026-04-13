@@ -48,6 +48,7 @@ pub struct Currency {
 }
 
 impl Currency {
+    #[must_use]
     pub fn usd() -> Self {
         Self {
             symbol: "$".into(),
@@ -68,6 +69,7 @@ static RESOLVED: OnceLock<Currency> = OnceLock::new();
 /// Return the (cached, lazily-resolved) currency for this process.
 /// First call: read the `/tmp` cache, or fetch+cache, or fall back
 /// to USD. Subsequent calls: cheap `OnceLock` read.
+#[must_use]
 pub fn current() -> &'static Currency {
     RESOLVED.get_or_init(resolve)
 }

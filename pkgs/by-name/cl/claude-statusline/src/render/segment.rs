@@ -32,6 +32,7 @@ pub struct Cell {
 }
 
 impl Cell {
+    #[must_use]
     pub fn new(text: impl Into<CompactString>, style: Style) -> Self {
         Self {
             text: text.into(),
@@ -40,10 +41,12 @@ impl Cell {
         }
     }
 
+    #[must_use]
     pub fn plain(text: impl Into<CompactString>) -> Self {
         Self::new(text, Style::new())
     }
 
+    #[must_use]
     pub fn linked(
         text: impl Into<CompactString>,
         style: Style,
@@ -56,6 +59,7 @@ impl Cell {
         }
     }
 
+    #[must_use]
     pub fn width(&self) -> usize {
         UnicodeWidthStr::width(self.text.as_str())
     }
@@ -94,6 +98,7 @@ pub struct Segment {
 }
 
 impl Segment {
+    #[must_use]
     pub const fn anchor() -> Self {
         Self {
             cells: Vec::new(),
@@ -101,6 +106,7 @@ impl Segment {
         }
     }
 
+    #[must_use]
     pub const fn droppable() -> Self {
         Self {
             cells: Vec::new(),
@@ -128,6 +134,7 @@ impl Segment {
         self
     }
 
+    #[must_use]
     pub fn width(&self) -> usize {
         self.cells.iter().map(Cell::width).sum()
     }

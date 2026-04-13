@@ -61,12 +61,14 @@ pub struct ContextUsage {
 
 impl ContextUsage {
     /// Total input-side tokens (input + cache creation + cache read).
+    #[must_use]
     pub const fn total(&self) -> u64 {
         self.input_tokens + self.cache_creation_input_tokens + self.cache_read_input_tokens
     }
 
     /// Fraction of input tokens served from cache, as a percentage.
     /// Returns `None` when there's no meaningful denominator.
+    #[must_use]
     pub fn cache_hit_pct(&self) -> Option<u32> {
         let denom = self.total();
         if denom == 0 {

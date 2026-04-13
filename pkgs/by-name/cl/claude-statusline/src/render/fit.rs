@@ -86,6 +86,7 @@ pub fn fit_unaligned(lines: &mut [Vec<Segment>], sep_width: usize, max_cols: Opt
 /// Width a line will occupy *after* per-column padding is applied. We
 /// charge each non-final segment its column's full width, since that's
 /// what `write_line` will pad it to.
+#[must_use]
 pub fn aligned_width(line: &[Segment], col_widths: &[usize], sep_width: usize) -> usize {
     if line.is_empty() {
         return 0;
@@ -110,6 +111,7 @@ pub fn aligned_width(line: &[Segment], col_widths: &[usize], sep_width: usize) -
 /// Lines with fewer segments simply contribute nothing past their
 /// own length, which is the right behavior - we don't want to extend a
 /// short line's last column with phantom padding.
+#[must_use]
 pub fn column_widths(lines: &[Vec<Segment>]) -> Vec<usize> {
     let max_cols = lines.iter().map(Vec::len).max().unwrap_or(0);
     (0..max_cols)
