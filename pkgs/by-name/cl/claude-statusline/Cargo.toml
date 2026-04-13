@@ -23,7 +23,7 @@ nerd-font-symbols = "0.3.0"
 pollster = "0.4.0"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
-strum = { version = "0.27.1", features = ["derive"] }
+strum = { version = "0.28", features = ["derive"] }
 simd-json = "0.17.0"
 supports-hyperlinks = "3.2.0"
 tempfile = "3.27.0"
@@ -32,6 +32,9 @@ terminal-colorsaurus = "1.0.3"
 terminal_size = "0.4.4"
 unicode-width = "0.2.2"
 ureq = { version = "3.3.0", default-features = false, features = ["rustls", "platform-verifier"] }
+camino = { version = "1.2.2", default-features = false }
+csscolorparser = { version = "0.8.3", default-features = false }
+toml = { version = "1.1.2", default-features = false, features = ["parse", "serde"] }
 
 [lints.rust]
 # Hard errors

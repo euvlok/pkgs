@@ -180,10 +180,5 @@ impl Input {
 }
 
 fn basename(path: &str) -> &str {
-    let trimmed = path.trim_end_matches('/');
-    match trimmed.rsplit_once('/') {
-        Some((_, last)) if !last.is_empty() => last,
-        _ if !trimmed.is_empty() => trimmed,
-        _ => ".",
-    }
+    camino::Utf8Path::new(path).file_name().unwrap_or(".")
 }

@@ -151,47 +151,39 @@ fn kitty_bg_from_text(text: &str) -> Option<ThemeMode> {
     None
 }
 
-/// Alacritty: find `background` under `[colors.primary]` in TOML.
-/// We do a simple line-scan rather than pulling in a full TOML parser.
+/// Alacritty: extract `colors.primary.background` from TOML.
 fn detect_alacritty(text: &str) -> Option<ThemeMode> {
-    let mut in_colors_primary = false;
-    for line in text.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with('#') {
-            continue;
-        }
-        // Track TOML section headers.
-        if trimmed.starts_with('[') {
-            in_colors_primary = trimmed == "[colors.primary]";
-            continue;
-        }
-        if in_colors_primary && let Some(val) = strip_config_key(trimmed, "background") {
-            // Alacritty quotes hex values: background = "#1e1e2e"
-            let val = val.trim_matches(|c| c == '"' || c == '\'');
-            return mode_from_hex(val);
-        }
+    let table: toml::Table = toml::from_str(text).ok()?;
+
+    if let Some(bg) = table
+        .get("colors")
+        .and_then(|v| v.get("primary"))
+        .and_then(|v| v.get("background"))
+        .and_then(toml::Value::as_str)
+    {
+        return mode_from_hex(bg);
     }
 
-    // Alacritty also supports `import` of theme files. Check if we can
-    // find a `[colors.primary]` section in any imported file.
-    for line in text.lines() {
-        let trimmed = line.trim();
-        // `import = ["~/.config/alacritty/themes/catppuccin.toml"]`
-        if trimmed.starts_with("import") || trimmed.starts_with("general.import") {
-            // Extract quoted paths from the line.
-            for segment in trimmed.split('"') {
-                let candidate = shellexpand_tilde(segment);
-                let ext = Path::new(&candidate)
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .unwrap_or("");
-                if (ext.eq_ignore_ascii_case("toml") || ext.eq_ignore_ascii_case("yml"))
-                    && let Ok(inc_text) = std::fs::read_to_string(&candidate)
-                    && let Some(mode) = detect_alacritty(&inc_text)
-                {
-                    return Some(mode);
-                }
-            }
+    // Alacritty `import` array: check imported theme files.
+    let imports = table
+        .get("import")
+        .or_else(|| table.get("general").and_then(|g| g.get("import")))
+        .and_then(toml::Value::as_array)?;
+
+    for entry in imports {
+        let Some(path_str) = entry.as_str() else {
+            continue;
+        };
+        let candidate = shellexpand_tilde(path_str);
+        let ext = Path::new(&candidate)
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("");
+        if (ext.eq_ignore_ascii_case("toml") || ext.eq_ignore_ascii_case("yml"))
+            && let Ok(inc_text) = std::fs::read_to_string(&candidate)
+            && let Some(mode) = detect_alacritty(&inc_text)
+        {
+            return Some(mode);
         }
     }
     None
@@ -226,38 +218,32 @@ fn strip_config_key<'a>(line: &'a str, key: &str) -> Option<&'a str> {
     Some(rest.trim_start_matches(|c: char| c == '=' || c.is_ascii_whitespace()))
 }
 
-/// Parse `#RRGGBB` or `RRGGBB` and classify by luminance.
-#[allow(clippy::many_single_char_names)]
+/// Normalize terminal config color strings into a [`csscolorparser::Color`].
+/// Handles `#RRGGBB`, bare `RRGGBB`, and the `0xRRGGBB` form some configs use.
+fn parse_color(s: &str) -> Option<csscolorparser::Color> {
+    let s = s.trim();
+    // csscolorparser handles `#RRGGBB` natively; normalize the other forms.
+    if let Some(hex) = s.strip_prefix("0x") {
+        return format!("#{hex}").parse().ok();
+    }
+    if !s.starts_with('#') && s.len() == 6 && s.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return format!("#{s}").parse().ok();
+    }
+    s.parse().ok()
+}
+
+/// Parse a color string and classify by sRGB relative luminance.
 fn mode_from_hex(s: &str) -> Option<ThemeMode> {
-    let (r, g, b) = parse_hex_color(s)?;
-    Some(match relative_luminance(r, g, b) {
-        lum if lum >= 0.5 => ThemeMode::Light,
-        _ => ThemeMode::Dark,
-    })
-}
-
-/// Parse a hex color string like `#1e1e2e`, `1e1e2e`, or `0x1e1e2e`.
-fn parse_hex_color(s: &str) -> Option<(u8, u8, u8)> {
-    let hex = s.trim().trim_start_matches('#').trim_start_matches("0x");
-    if hex.len() != 6 || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
-        return None;
-    }
-    let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
-    let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
-    let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
-    Some((r, g, b))
-}
-
-/// sRGB relative luminance (simplified gamma with exponent 2.2).
-/// Returns a value in `[0.0, 1.0]` where 0 is black and 1 is white.
-fn relative_luminance(r: u8, g: u8, b: u8) -> f64 {
-    fn linearize(c: u8) -> f64 {
-        (c as f64 / 255.0).powf(2.2)
-    }
-    0.0722f64.mul_add(
-        linearize(b),
-        0.2126f64.mul_add(linearize(r), 0.7152 * linearize(g)),
-    )
+    let c = parse_color(s)?;
+    // sRGB relative luminance (simplified gamma with exponent 2.2).
+    // `c.r`, `c.g`, `c.b` are `f32` in [0.0, 1.0]; widen to `f64`
+    // for the luminance arithmetic.
+    let (r, g, b) = (f64::from(c.r), f64::from(c.g), f64::from(c.b));
+    let lum = 0.0722f64.mul_add(
+        b.powf(2.2),
+        0.2126f64.mul_add(r.powf(2.2), 0.7152 * g.powf(2.2)),
+    );
+    Some(if lum >= 0.5 { ThemeMode::Light } else { ThemeMode::Dark })
 }
 
 /// Expand a leading `~` to `$HOME`. Bare-minimum tilde expansion for
@@ -276,26 +262,38 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parse_hex_variants() {
-        assert_eq!(parse_hex_color("#1e1e2e"), Some((0x1e, 0x1e, 0x2e)));
-        assert_eq!(parse_hex_color("1e1e2e"), Some((0x1e, 0x1e, 0x2e)));
-        assert_eq!(parse_hex_color("0x1e1e2e"), Some((0x1e, 0x1e, 0x2e)));
-        assert_eq!(parse_hex_color("#FFFFFF"), Some((255, 255, 255)));
+    fn parse_color_variants() {
+        let to_rgb = |c: csscolorparser::Color| {
+            (
+                (c.r * 255.0).round() as u8,
+                (c.g * 255.0).round() as u8,
+                (c.b * 255.0).round() as u8,
+            )
+        };
+        assert_eq!(to_rgb(parse_color("#1e1e2e").unwrap()), (0x1e, 0x1e, 0x2e));
+        assert_eq!(to_rgb(parse_color("1e1e2e").unwrap()), (0x1e, 0x1e, 0x2e));
+        assert_eq!(
+            to_rgb(parse_color("0x1e1e2e").unwrap()),
+            (0x1e, 0x1e, 0x2e)
+        );
+        assert_eq!(
+            to_rgb(parse_color("#FFFFFF").unwrap()),
+            (255, 255, 255)
+        );
+        // Short hex is now accepted via csscolorparser.
+        assert!(parse_color("#fff").is_some());
     }
 
     #[test]
-    fn parse_hex_rejects_invalid() {
-        assert_eq!(parse_hex_color(""), None);
-        assert_eq!(parse_hex_color("#fff"), None);
-        assert_eq!(parse_hex_color("not-a-color"), None);
+    fn parse_color_rejects_invalid() {
+        assert!(parse_color("").is_none());
+        assert!(parse_color("not-a-color").is_none());
     }
 
     #[test]
     fn luminance_extremes() {
-        // Black → 0.0
-        assert!(relative_luminance(0, 0, 0) < 0.01);
-        // White → 1.0
-        assert!(relative_luminance(255, 255, 255) > 0.99);
+        assert_eq!(mode_from_hex("#000000"), Some(ThemeMode::Dark));
+        assert_eq!(mode_from_hex("#ffffff"), Some(ThemeMode::Light));
     }
 
     #[test]
