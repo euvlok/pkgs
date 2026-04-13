@@ -45,3 +45,6 @@ Temporary Items
 result
 result-*
 temp-wrapper.nix
+
+# Rust
+target/
