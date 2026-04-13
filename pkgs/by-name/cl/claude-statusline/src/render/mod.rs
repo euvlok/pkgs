@@ -81,7 +81,11 @@ pub fn render_with(
     let deltas = session::update(
         session::session_key(input.transcript_path.as_deref()).as_deref(),
         &snap,
-        if settings.flash { settings.flash_ttl_secs } else { 0 },
+        if settings.flash {
+            settings.flash_ttl_secs
+        } else {
+            0
+        },
     );
 
     let ctx = BuildCtx {

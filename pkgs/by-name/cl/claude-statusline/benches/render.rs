@@ -175,7 +175,11 @@ const SEGMENT_COUNTS: &[usize] = &[2, 4, 8, 16];
 fn make_segments(n: usize) -> Vec<Segment> {
     (0..n)
         .map(|i| {
-            let mut s = if i == 0 { Segment::anchor() } else { Segment::droppable() };
+            let mut s = if i == 0 {
+                Segment::anchor()
+            } else {
+                Segment::droppable()
+            };
             s.push_plain(format!("seg{i:02}-{}", "x".repeat(i % 7)));
             s
         })

@@ -158,11 +158,7 @@ pub struct SessionSnapshot {
 /// window, we re-emit the stored delta so the indicator persists across
 /// renders.
 #[must_use]
-pub fn update(
-    key: Option<&str>,
-    snap: &SessionSnapshot,
-    flash_ttl_secs: u64,
-) -> Deltas {
+pub fn update(key: Option<&str>, snap: &SessionSnapshot, flash_ttl_secs: u64) -> Deltas {
     let Some(key) = key else {
         return Deltas::default();
     };

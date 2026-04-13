@@ -23,7 +23,9 @@ pub fn dir(input: &Input, settings: &Settings) -> Segment {
             let url = format!("file://{full_path}");
             s.push_linked(text, anstyle::Style::new(), url);
         }
-        _ => { s.push_plain(text); }
+        _ => {
+            s.push_plain(text);
+        }
     }
     s
 }
@@ -176,7 +178,11 @@ pub fn speed(input: &Input, pal: &Palette) -> Option<Segment> {
 }
 
 pub fn cache(input: &Input, pal: &Palette) -> Option<Segment> {
-    let pct = input.context_window.current_usage.cache_hit_pct().filter(|&p| p > 0)?;
+    let pct = input
+        .context_window
+        .current_usage
+        .cache_hit_pct()
+        .filter(|&p| p > 0)?;
     let style = match pct {
         70.. => pal.green,
         40.. => pal.yellow,

@@ -243,7 +243,11 @@ fn mode_from_hex(s: &str) -> Option<ThemeMode> {
         b.powf(2.2),
         0.2126f64.mul_add(r.powf(2.2), 0.7152 * g.powf(2.2)),
     );
-    Some(if lum >= 0.5 { ThemeMode::Light } else { ThemeMode::Dark })
+    Some(if lum >= 0.5 {
+        ThemeMode::Light
+    } else {
+        ThemeMode::Dark
+    })
 }
 
 /// Expand a leading `~` to `$HOME`. Bare-minimum tilde expansion for
@@ -272,14 +276,8 @@ mod tests {
         };
         assert_eq!(to_rgb(parse_color("#1e1e2e").unwrap()), (0x1e, 0x1e, 0x2e));
         assert_eq!(to_rgb(parse_color("1e1e2e").unwrap()), (0x1e, 0x1e, 0x2e));
-        assert_eq!(
-            to_rgb(parse_color("0x1e1e2e").unwrap()),
-            (0x1e, 0x1e, 0x2e)
-        );
-        assert_eq!(
-            to_rgb(parse_color("#FFFFFF").unwrap()),
-            (255, 255, 255)
-        );
+        assert_eq!(to_rgb(parse_color("0x1e1e2e").unwrap()), (0x1e, 0x1e, 0x2e));
+        assert_eq!(to_rgb(parse_color("#FFFFFF").unwrap()), (255, 255, 255));
         // Short hex is now accepted via csscolorparser.
         assert!(parse_color("#fff").is_some());
     }
