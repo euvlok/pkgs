@@ -37,7 +37,7 @@ pub fn collect(dir: &Path, icons: &Icons, pal: &Palette) -> Option<Segment> {
     let commit = repo.store().get_commit(wc_id).ok()?;
     let change_id = commit.change_id();
 
-    let mut s = Segment::new(true);
+    let mut s = Segment::droppable();
     if !icons.jj.is_empty() {
         s.push_plain(format!("{} ", icons.jj));
     }

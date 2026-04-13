@@ -76,20 +76,35 @@ impl Cell {
     }
 }
 
-/// A statusline chunk (one logical thing: dir, vcs info, cost, …). The
-/// `droppable` flag tells the renderer it's safe to elide this segment
-/// when the line wouldn't fit in the terminal width.
+/// Whether the renderer may elide this segment to fit within the
+/// terminal width.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum SegmentKind {
+    /// First segment of a line — never dropped.
+    Anchor,
+    /// May be elided from the right when space is tight.
+    Droppable,
+}
+
+/// A statusline chunk (one logical thing: dir, vcs info, cost, …).
 #[derive(Debug, Clone)]
 pub struct Segment {
     pub cells: Vec<Cell>,
-    pub droppable: bool,
+    pub kind: SegmentKind,
 }
 
 impl Segment {
-    pub const fn new(droppable: bool) -> Self {
+    pub const fn anchor() -> Self {
         Self {
             cells: Vec::new(),
-            droppable,
+            kind: SegmentKind::Anchor,
+        }
+    }
+
+    pub const fn droppable() -> Self {
+        Self {
+            cells: Vec::new(),
+            kind: SegmentKind::Droppable,
         }
     }
 
@@ -156,7 +171,7 @@ mod tests {
 
     #[test]
     fn segment_width_sums_cells() {
-        let mut s = Segment::new(true);
+        let mut s = Segment::droppable();
         s.push_plain("ab");
         s.push_plain("cde");
         assert_eq!(s.width(), 5);

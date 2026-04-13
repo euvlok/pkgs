@@ -100,7 +100,7 @@ fn palette_for_theme_light() -> Palette {
 #[divan::bench]
 fn segment_push_plain(bencher: divan::Bencher<'_, '_>) {
     bencher
-        .with_inputs(|| Segment::new(true))
+        .with_inputs(|| Segment::droppable())
         .bench_local_values(|mut s| {
             s.push_plain("branch-name");
             s
@@ -111,7 +111,7 @@ fn segment_push_plain(bencher: divan::Bencher<'_, '_>) {
 fn segment_push_styled(bencher: divan::Bencher<'_, '_>) {
     let style = anstyle::AnsiColor::Green.on_default();
     bencher
-        .with_inputs(|| Segment::new(true))
+        .with_inputs(|| Segment::droppable())
         .bench_local_values(|mut s| {
             s.push_styled("+342", style);
             s
@@ -120,7 +120,7 @@ fn segment_push_styled(bencher: divan::Bencher<'_, '_>) {
 
 #[divan::bench(args = [1_usize, 3, 6, 10])]
 fn segment_width(bencher: divan::Bencher<'_, '_>, cells: usize) {
-    let mut s = Segment::new(true);
+    let mut s = Segment::droppable();
     for i in 0..cells {
         s.push_plain(format!("cell{i}"));
     }
@@ -130,7 +130,7 @@ fn segment_width(bencher: divan::Bencher<'_, '_>, cells: usize) {
 #[divan::bench]
 fn segment_write_to(bencher: divan::Bencher<'_, '_>) {
     let pal = Palette::dark();
-    let mut s = Segment::new(true);
+    let mut s = Segment::droppable();
     s.push_styled("+342", pal.green);
     s.push_plain(" ");
     s.push_styled("-89", pal.red);

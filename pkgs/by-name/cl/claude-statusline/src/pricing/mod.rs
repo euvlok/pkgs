@@ -70,6 +70,7 @@ pub fn lookup_in<'a, S: std::hash::BuildHasher>(
 
 /// Compute USD cost for a token bundle, applying tiered pricing when
 /// above-200k rates exist. Each token-type's tier check is independent.
+#[must_use]
 pub fn cost_of(tokens: &Tokens, p: &Pricing) -> f64 {
     tier(tokens.input, p.input, p.input_above_200k)
         + tier(tokens.output, p.output, p.output_above_200k)

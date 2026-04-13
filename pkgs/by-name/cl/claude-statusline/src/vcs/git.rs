@@ -24,7 +24,7 @@ pub fn collect(dir: &Path, icons: &Icons, pal: &Palette) -> Option<Segment> {
     }
 
     let repo = gix::open(dir).ok()?;
-    let mut s = Segment::new(true);
+    let mut s = Segment::droppable();
 
     // Branch / oid.
     let head_ref = repo.head_ref().ok().flatten();

@@ -107,7 +107,7 @@ fn now_plus_secs(secs: i64) -> Option<i64> {
 }
 
 fn sample_vcs(icons: &Icons, pal: &Palette) -> Segment {
-    let mut s = Segment::new(true);
+    let mut s = Segment::droppable();
     if !icons.git.is_empty() {
         s.push_plain(format!("{} ", icons.git));
     }

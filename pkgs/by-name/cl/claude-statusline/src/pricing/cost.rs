@@ -143,6 +143,7 @@ pub fn calculate_from_transcript(path: &Path) -> std::io::Result<f64> {
 /// segment narrow on a long-running session; the threshold is applied
 /// in the *converted* currency so a JPY user (where every figure is
 /// four-plus digits) gets the suffix at the right point.
+#[must_use]
 pub fn format_usd(amount: f64) -> String {
     let currency = crate::currency::current();
     let local = amount * currency.usd_rate;

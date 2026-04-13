@@ -9,7 +9,7 @@
 //! - [`fit_unaligned`]: budgets each line independently on its raw width, used by
 //!   `--no-align`.
 
-use crate::render::segment::Segment;
+use crate::render::segment::{Segment, SegmentKind};
 
 /// Drop segments across all lines until every line fits in `max_cols`.
 ///
@@ -38,7 +38,7 @@ pub fn fit_with_alignment(lines: &mut [Vec<Segment>], sep_width: usize, max_cols
             .iter()
             .enumerate()
             .rev()
-            .find(|(_, s)| s.droppable)
+            .find(|(_, s)| s.kind == SegmentKind::Droppable)
             .map(|(j, _)| j);
         match drop_idx {
             Some(j) => {
@@ -71,7 +71,7 @@ pub fn fit_unaligned(lines: &mut [Vec<Segment>], sep_width: usize, max_cols: Opt
                 .iter()
                 .enumerate()
                 .rev()
-                .find(|(_, s)| s.droppable)
+                .find(|(_, s)| s.kind == SegmentKind::Droppable)
                 .map(|(j, _)| j);
             match drop_idx {
                 Some(j) => {

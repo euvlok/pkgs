@@ -3,6 +3,7 @@
 /// Humanize a token count: `1_234_567` -> `"1.2M"`, `34_500` -> `"34k"`,
 /// small values -> bare integer. Mirrors the jq `humanize` def in the bash
 /// script.
+#[must_use]
 pub fn humanize_tokens(n: u64) -> String {
     match n {
         0 => String::new(),
@@ -21,6 +22,7 @@ pub fn humanize_tokens(n: u64) -> String {
 /// `45` -> `"45s"`, `750` -> `"12m"`, `5000` -> `"1h 23m"`,
 /// `300_000` -> `"3d 11h"`. Returns the empty string for zero or
 /// negative input so callers can drop the segment cleanly.
+#[must_use]
 pub fn humanize_duration(secs: i64) -> String {
     if secs <= 0 {
         return String::new();
@@ -57,6 +59,7 @@ pub fn humanize_duration(secs: i64) -> String {
 /// allocating a new `String`, we look at the first non-space character
 /// and dispatch on it. Returns the input unchanged if we don't recognize
 /// the leading letter, so a future model name still renders.
+#[must_use]
 pub fn shorten_model(name: &str) -> &str {
     let trimmed = name.trim_start();
     match trimmed.as_bytes().first() {

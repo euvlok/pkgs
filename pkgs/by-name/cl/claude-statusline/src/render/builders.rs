@@ -12,7 +12,7 @@ use crate::session::Deltas;
 use crate::settings::{ContextFormat, DirStyle, Settings};
 
 pub fn dir(input: &Input, settings: &Settings) -> Segment {
-    let mut s = Segment::new(false);
+    let mut s = Segment::anchor();
     let text = match settings.dir_style {
         DirStyle::Basename => input.dir_name(),
         DirStyle::Full => input.dir_full(),
@@ -34,7 +34,7 @@ pub fn model(input: &Input, _icons: &Icons, pal: &Palette) -> Option<Segment> {
     if short.is_empty() {
         return None;
     }
-    let mut s = Segment::new(true);
+    let mut s = Segment::droppable();
     s.push_styled(short, pal.blue);
     Some(s)
 }
@@ -50,7 +50,7 @@ pub fn cost(
     if cost <= 0.0 {
         return None;
     }
-    let mut s = Segment::new(true);
+    let mut s = Segment::droppable();
     s.push_styled(format_usd(cost), pal.green);
     if settings.flash && deltas.is_cost() {
         s.push_plain(" ");
@@ -65,7 +65,7 @@ pub fn diff(input: &Input, deltas: &Deltas, settings: &Settings, pal: &Palette) 
     if added == 0 && removed == 0 {
         return None;
     }
-    let mut s = Segment::new(true);
+    let mut s = Segment::droppable();
     s.push_styled(format!("+{added}"), pal.green);
     if settings.flash && deltas.lines_added > 0 {
         s.push_styled(format!(" (+{})", deltas.lines_added), pal.bold_green);
@@ -109,7 +109,7 @@ pub fn context(
         }
         _ => format!("{pct}%"),
     };
-    let mut s = Segment::new(true);
+    let mut s = Segment::droppable();
     s.push_styled(text, style);
     if settings.flash && deltas.is_context() {
         s.push_styled(
@@ -141,7 +141,7 @@ pub fn clock(input: &Input, icons: &Icons, pal: &Palette) -> Option<Segment> {
     if dur.is_empty() {
         return None;
     }
-    let mut s = Segment::new(true);
+    let mut s = Segment::droppable();
     if !icons.clock.is_empty() {
         s.push_plain(format!("{} ", icons.clock));
     }
@@ -166,7 +166,7 @@ pub fn speed(input: &Input, pal: &Palette) -> Option<Segment> {
     }
     let secs = api_ms as f64 / 1000.0;
     let tps = tokens as f64 / secs;
-    let mut s = Segment::new(true);
+    let mut s = Segment::droppable();
     let text = match tps {
         t if t >= 1000.0 => format!("{:.1}k tok/s", t / 1000.0),
         _ => format!("{tps:.0} tok/s"),
@@ -182,7 +182,7 @@ pub fn cache(input: &Input, pal: &Palette) -> Option<Segment> {
         40.. => pal.yellow,
         _ => pal.red,
     };
-    let mut s = Segment::new(true);
+    let mut s = Segment::droppable();
     s.push_styled(format!("cache {pct}%"), style);
     Some(s)
 }
@@ -255,7 +255,7 @@ pub fn rate_limits(
         return None;
     }
 
-    let mut s = Segment::new(true);
+    let mut s = Segment::droppable();
     if !icons.clock.is_empty() {
         s.push_plain(format!("{} ", icons.clock));
     }

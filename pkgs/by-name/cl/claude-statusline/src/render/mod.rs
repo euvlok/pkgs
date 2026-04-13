@@ -206,13 +206,13 @@ mod tests {
     fn columns_align_across_lines() {
         use crate::render::segment::Segment;
         let p = pal();
-        let mut a1 = Segment::new(false);
+        let mut a1 = Segment::anchor();
         a1.push_plain("claude-statusline");
-        let mut a2 = Segment::new(false);
+        let mut a2 = Segment::anchor();
         a2.push_plain("Opus");
-        let mut b1 = Segment::new(false);
+        let mut b1 = Segment::anchor();
         b1.push_plain("$0.22");
-        let mut b2 = Segment::new(false);
+        let mut b2 = Segment::anchor();
         b2.push_plain("5h 7%");
         let lines = vec![vec![a1, a2], vec![b1, b2]];
         let sep = write::build_separator("│", &p);
@@ -236,13 +236,13 @@ mod tests {
     fn last_segment_is_not_padded() {
         use crate::render::segment::Segment;
         let p = pal();
-        let mut a1 = Segment::new(false);
+        let mut a1 = Segment::anchor();
         a1.push_plain("aaaa");
-        let mut a2 = Segment::new(false);
+        let mut a2 = Segment::anchor();
         a2.push_plain("b");
-        let mut c1 = Segment::new(false);
+        let mut c1 = Segment::anchor();
         c1.push_plain("a");
-        let mut c2 = Segment::new(false);
+        let mut c2 = Segment::anchor();
         c2.push_plain("bbbbbb");
         let lines = vec![vec![a1, a2], vec![c1, c2]];
         let sep = write::build_separator("│", &p);
