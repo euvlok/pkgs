@@ -227,13 +227,13 @@ fn strip_config_key<'a>(line: &'a str, key: &str) -> Option<&'a str> {
 }
 
 /// Parse `#RRGGBB` or `RRGGBB` and classify by luminance.
+#[allow(clippy::many_single_char_names)]
 fn mode_from_hex(s: &str) -> Option<ThemeMode> {
     let (r, g, b) = parse_hex_color(s)?;
-    if relative_luminance(r, g, b) >= 0.5 {
-        Some(ThemeMode::Light)
-    } else {
-        Some(ThemeMode::Dark)
-    }
+    Some(match relative_luminance(r, g, b) {
+        lum if lum >= 0.5 => ThemeMode::Light,
+        _ => ThemeMode::Dark,
+    })
 }
 
 /// Parse a hex color string like `#1e1e2e`, `1e1e2e`, or `0x1e1e2e`.

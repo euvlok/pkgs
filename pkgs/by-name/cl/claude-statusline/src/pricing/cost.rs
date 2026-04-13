@@ -147,9 +147,8 @@ pub fn format_usd(amount: f64) -> String {
     let currency = crate::currency::current();
     let local = amount * currency.usd_rate;
     let sym = &currency.symbol;
-    if local >= 1000.0 {
-        format!("{sym}{:.1}k", local / 1000.0)
-    } else {
-        format!("{sym}{local:.2}")
+    match local {
+        l if l >= 1000.0 => format!("{sym}{:.1}k", l / 1000.0),
+        _ => format!("{sym}{local:.2}"),
     }
 }

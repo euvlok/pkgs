@@ -77,16 +77,8 @@ pub fn render_with(
         input.cost.total_lines_added,
         input.cost.total_lines_removed,
         Some(input.context_window.current_usage.total()),
-        if out_tokens > 0 {
-            Some(out_tokens)
-        } else {
-            None
-        },
-        if settings.flash {
-            settings.flash_ttl_secs
-        } else {
-            0
-        },
+        (out_tokens > 0).then_some(out_tokens),
+        if settings.flash { settings.flash_ttl_secs } else { 0 },
     );
 
     let ctx = BuildCtx {

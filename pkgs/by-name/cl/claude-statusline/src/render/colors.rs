@@ -85,12 +85,10 @@ impl Palette {
 
     /// Returns the style for a percentage value — low/mid/high urgency.
     pub const fn color_for_pct(&self, pct: u32, low: u32, high: u32) -> Style {
-        if pct < low {
-            self.cyan
-        } else if pct < high {
-            self.yellow
-        } else {
-            self.red
+        match pct {
+            p if p < low => self.cyan,
+            p if p < high => self.yellow,
+            _ => self.red,
         }
     }
 
@@ -100,12 +98,10 @@ impl Palette {
     /// window where the percentage looks comfortable. 300k is the "you are
     /// running hot" marker.
     pub const fn color_for_token_count(&self, tokens: u64) -> Style {
-        if tokens >= 300_000 {
-            self.red
-        } else if tokens >= 200_000 {
-            self.yellow
-        } else {
-            self.cyan
+        match tokens {
+            300_000.. => self.red,
+            200_000.. => self.yellow,
+            _ => self.cyan,
         }
     }
 }

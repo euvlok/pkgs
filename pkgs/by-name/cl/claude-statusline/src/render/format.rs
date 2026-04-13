@@ -4,17 +4,15 @@
 /// small values -> bare integer. Mirrors the jq `humanize` def in the bash
 /// script.
 pub fn humanize_tokens(n: u64) -> String {
-    if n == 0 {
-        return String::new();
-    }
-    if n >= 1_000_000 {
-        // ((n + 50_000) / 100_000) gives tenths of millions, rounded.
-        let tenths = (n + 50_000) / 100_000;
-        format!("{}.{}M", tenths / 10, tenths % 10)
-    } else if n >= 1_000 {
-        format!("{}k", n / 1_000)
-    } else {
-        n.to_string()
+    match n {
+        0 => String::new(),
+        1_000_000.. => {
+            // ((n + 50_000) / 100_000) gives tenths of millions, rounded.
+            let tenths = (n + 50_000) / 100_000;
+            format!("{}.{}M", tenths / 10, tenths % 10)
+        }
+        1_000.. => format!("{}k", n / 1_000),
+        _ => n.to_string(),
     }
 }
 
@@ -28,25 +26,24 @@ pub fn humanize_duration(secs: i64) -> String {
         return String::new();
     }
     let secs = secs as u64;
-    if secs < 60 {
-        format!("{secs}s")
-    } else if secs < 3600 {
-        format!("{}m", secs / 60)
-    } else if secs < 86400 {
-        let h = secs / 3600;
-        let m = (secs % 3600) / 60;
-        if m == 0 {
-            format!("{h}h")
-        } else {
-            format!("{h}h {m}m")
+    match secs {
+        0..60 => format!("{secs}s"),
+        60..3600 => format!("{}m", secs / 60),
+        3600..86400 => {
+            let h = secs / 3600;
+            let m = (secs % 3600) / 60;
+            match m {
+                0 => format!("{h}h"),
+                _ => format!("{h}h {m}m"),
+            }
         }
-    } else {
-        let d = secs / 86400;
-        let h = (secs % 86400) / 3600;
-        if h == 0 {
-            format!("{d}d")
-        } else {
-            format!("{d}d {h}h")
+        _ => {
+            let d = secs / 86400;
+            let h = (secs % 86400) / 3600;
+            match h {
+                0 => format!("{d}d"),
+                _ => format!("{d}d {h}h"),
+            }
         }
     }
 }

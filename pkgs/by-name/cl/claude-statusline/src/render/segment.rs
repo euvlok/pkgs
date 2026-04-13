@@ -61,20 +61,16 @@ impl Cell {
     }
 
     pub fn write_to(&self, out: &mut String) {
-        let has_link = self.link.is_some();
+        use std::fmt::Write as _;
         if let Some(url) = &self.link {
-            // OSC 8 open: \x1b]8;;<url>\x1b\\
-            use std::fmt::Write as _;
             let _ = write!(out, "\x1b]8;;{url}\x1b\\");
         }
         if self.style == Style::new() {
             out.push_str(&self.text);
         } else {
-            use std::fmt::Write as _;
             let _ = write!(out, "{}{}{}", self.style, self.text, Reset);
         }
-        if has_link {
-            // OSC 8 close: \x1b]8;;\x1b\\
+        if self.link.is_some() {
             out.push_str("\x1b]8;;\x1b\\");
         }
     }

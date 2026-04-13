@@ -18,15 +18,12 @@ pub fn dir(input: &Input, settings: &Settings) -> Segment {
         DirStyle::Full => input.dir_full(),
         DirStyle::Home => input.dir_home(),
     };
-    if settings.hyperlinks {
-        if let Some(full_path) = input.workspace.current_dir.as_deref() {
+    match (settings.hyperlinks, input.workspace.current_dir.as_deref()) {
+        (true, Some(full_path)) => {
             let url = format!("file://{full_path}");
             s.push_linked(text, anstyle::Style::new(), url);
-        } else {
-            s.push_plain(text);
         }
-    } else {
-        s.push_plain(text);
+        _ => { s.push_plain(text); }
     }
     s
 }
@@ -102,14 +99,15 @@ pub fn context(
         pal.color_for_pct(pct, 50, 75)
     };
 
-    let text = if have_tokens && !matches!(settings.context_format, ContextFormat::Percent) {
-        format!(
-            "{}/{}",
-            humanize_tokens(cur_tokens),
-            humanize_tokens(max_tokens)
-        )
-    } else {
-        format!("{pct}%")
+    let text = match (have_tokens, settings.context_format) {
+        (true, ContextFormat::Auto | ContextFormat::Tokens) => {
+            format!(
+                "{}/{}",
+                humanize_tokens(cur_tokens),
+                humanize_tokens(max_tokens)
+            )
+        }
+        _ => format!("{pct}%"),
     };
     let mut s = Segment::new(true);
     s.push_styled(text, style);
@@ -169,10 +167,9 @@ pub fn speed(input: &Input, pal: &Palette) -> Option<Segment> {
     let secs = api_ms as f64 / 1000.0;
     let tps = tokens as f64 / secs;
     let mut s = Segment::new(true);
-    let text = if tps >= 1000.0 {
-        format!("{:.1}k tok/s", tps / 1000.0)
-    } else {
-        format!("{tps:.0} tok/s")
+    let text = match tps {
+        t if t >= 1000.0 => format!("{:.1}k tok/s", t / 1000.0),
+        _ => format!("{tps:.0} tok/s"),
     };
     s.push_styled(text, pal.cyan);
     Some(s)
@@ -180,12 +177,10 @@ pub fn speed(input: &Input, pal: &Palette) -> Option<Segment> {
 
 pub fn cache(input: &Input, pal: &Palette) -> Option<Segment> {
     let pct = input.context_window.current_usage.cache_hit_pct().filter(|&p| p > 0)?;
-    let style = if pct >= 70 {
-        pal.green
-    } else if pct >= 40 {
-        pal.yellow
-    } else {
-        pal.red
+    let style = match pct {
+        70.. => pal.green,
+        40.. => pal.yellow,
+        _ => pal.red,
     };
     let mut s = Segment::new(true);
     s.push_styled(format!("cache {pct}%"), style);

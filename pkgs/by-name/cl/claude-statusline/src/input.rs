@@ -187,7 +187,7 @@ impl Input {
             // On Windows the separator is `\`, on Unix it's `/`. Match
             // either so the home collapse works on both without us
             // having to import `MAIN_SEPARATOR`.
-            if rest.starts_with('/') || rest.starts_with('\\') {
+            if rest.starts_with(['/', '\\']) {
                 return format!("~{rest}");
             }
         }
