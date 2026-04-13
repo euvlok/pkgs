@@ -6,56 +6,44 @@
 use serde::Deserialize;
 
 #[derive(Debug, Default, Deserialize)]
+#[serde(default)]
 pub struct Input {
-    #[serde(default)]
     pub workspace: Workspace,
-    #[serde(default)]
     pub cwd: Option<String>,
-    #[serde(default)]
     pub transcript_path: Option<String>,
-    #[serde(default)]
     pub session_id: Option<String>,
-    #[serde(default)]
     pub model: Model,
-    #[serde(default)]
     pub context_window: ContextWindow,
-    #[serde(default)]
     pub rate_limits: RateLimits,
-    #[serde(default)]
     pub cost: Cost,
 }
 
 #[derive(Debug, Default, Deserialize)]
+#[serde(default)]
 pub struct Workspace {
-    #[serde(default)]
     pub current_dir: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
+#[serde(default)]
 pub struct Model {
-    #[serde(default)]
     pub display_name: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
+#[serde(default)]
 pub struct ContextWindow {
-    #[serde(default)]
     pub used_percentage: Option<f64>,
-    #[serde(default)]
     pub context_window_size: Option<u64>,
-    #[serde(default)]
     pub current_usage: ContextUsage,
 }
 
 #[derive(Debug, Default, Deserialize)]
+#[serde(default)]
 pub struct ContextUsage {
-    #[serde(default)]
     pub input_tokens: u64,
-    #[serde(default)]
     pub output_tokens: u64,
-    #[serde(default)]
     pub cache_creation_input_tokens: u64,
-    #[serde(default)]
     pub cache_read_input_tokens: u64,
 }
 
@@ -79,20 +67,18 @@ impl ContextUsage {
 }
 
 #[derive(Debug, Default, Deserialize)]
+#[serde(default)]
 pub struct RateLimits {
-    #[serde(default)]
     pub five_hour: RateLimit,
-    #[serde(default)]
     pub seven_day: RateLimit,
 }
 
 #[derive(Debug, Default, Deserialize)]
+#[serde(default)]
 pub struct RateLimit {
-    #[serde(default)]
     pub used_percentage: Option<f64>,
     /// Unix epoch seconds at which this window resets. When present we
     /// render a `1h 23m left` countdown next to the percentage.
-    #[serde(default)]
     pub resets_at: Option<i64>,
 }
 
@@ -101,16 +87,12 @@ pub struct RateLimit {
 /// Passed down on stdin. When present, mirroring ccusage's "auto" mode,
 /// we prefer this number over walking the transcript ourselves.
 #[derive(Debug, Default, Deserialize)]
+#[serde(default)]
 pub struct Cost {
-    #[serde(default)]
     pub total_cost_usd: Option<f64>,
-    #[serde(default)]
     pub total_duration_ms: Option<u64>,
-    #[serde(default)]
     pub total_api_duration_ms: Option<u64>,
-    #[serde(default)]
     pub total_lines_added: Option<u64>,
-    #[serde(default)]
     pub total_lines_removed: Option<u64>,
 }
 

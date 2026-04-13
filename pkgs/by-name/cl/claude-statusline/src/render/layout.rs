@@ -18,6 +18,9 @@
 //! is droppable from the right.
 
 use std::fmt;
+use std::str::FromStr;
+
+use strum::EnumString;
 
 use crate::input::Input;
 use crate::render::builders;
@@ -27,58 +30,47 @@ use crate::session::Deltas;
 use crate::settings::Settings;
 
 /// Names of every renderable segment. Add a variant here, wire it in
-/// [`SegmentName::build`] and [`SegmentName::parse`], and it instantly
-/// becomes available in the layout DSL.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+/// [`SegmentName::build`], and add `strum` annotations for any aliases,
+/// and it instantly becomes available in the layout DSL.
+///
+/// `strum::Display` emits the canonical name (the `to_string` value);
+/// `strum::EnumString` accepts both the canonical name and any aliases
+/// listed in `serialize`.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, strum::Display, EnumString)]
 pub enum SegmentName {
+    #[strum(to_string = "dir")]
     Dir,
+    #[strum(to_string = "vcs", serialize = "git", serialize = "jj")]
     Vcs,
+    #[strum(to_string = "model")]
     Model,
+    #[strum(to_string = "cost")]
     Cost,
+    #[strum(to_string = "diff", serialize = "lines")]
     Diff,
+    #[strum(to_string = "context", serialize = "ctx")]
     Context,
+    #[strum(
+        to_string = "rate_limits",
+        serialize = "rate-limits",
+        serialize = "rates",
+        serialize = "limits"
+    )]
     RateLimits,
+    #[strum(to_string = "clock", serialize = "time", serialize = "elapsed")]
     Clock,
+    #[strum(to_string = "speed", serialize = "tps", serialize = "throughput")]
     Speed,
+    #[strum(to_string = "cache")]
     Cache,
 }
 
 impl SegmentName {
-    /// Canonical name used by the DSL parser. The inverse of [`parse`]:
-    /// `parse(canonical(x)) == Some(x)` for every variant. Used by the
-    /// `--preview` header so the user can see exactly which form their
-    /// resolved layout is in.
-    #[must_use]
-    pub const fn canonical(self) -> &'static str {
-        match self {
-            Self::Dir => "dir",
-            Self::Vcs => "vcs",
-            Self::Model => "model",
-            Self::Cost => "cost",
-            Self::Diff => "diff",
-            Self::Context => "context",
-            Self::RateLimits => "rate_limits",
-            Self::Clock => "clock",
-            Self::Speed => "speed",
-            Self::Cache => "cache",
-        }
-    }
-
+    /// Parse a segment name from user input (trimmed). Returns `None`
+    /// for unrecognised names.
     #[must_use]
     pub fn parse(s: &str) -> Option<Self> {
-        Some(match s.trim() {
-            "dir" => Self::Dir,
-            "vcs" | "git" | "jj" => Self::Vcs,
-            "model" => Self::Model,
-            "cost" => Self::Cost,
-            "diff" | "lines" => Self::Diff,
-            "context" | "ctx" => Self::Context,
-            "rate_limits" | "rate-limits" | "rates" | "limits" => Self::RateLimits,
-            "clock" | "time" | "elapsed" => Self::Clock,
-            "speed" | "tps" | "throughput" => Self::Speed,
-            "cache" => Self::Cache,
-            _ => return None,
-        })
+        Self::from_str(s.trim()).ok()
     }
 
     /// Build the styled [`Segment`] for this name. Returns `None` when
@@ -132,7 +124,7 @@ impl fmt::Display for Layout {
                 if j > 0 {
                     f.write_str(",")?;
                 }
-                f.write_str(name.canonical())?;
+                write!(f, "{name}")?;
             }
         }
         Ok(())
@@ -199,24 +191,15 @@ impl Layout {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum ParseError {
+    #[error("unknown segment `{0}`")]
     Unknown(String),
+    #[error("layout is empty")]
     Empty,
 }
 
-impl fmt::Display for ParseError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Unknown(name) => write!(f, "unknown segment `{name}`"),
-            Self::Empty => write!(f, "layout is empty"),
-        }
-    }
-}
-
-impl std::error::Error for ParseError {}
-
-impl std::str::FromStr for Layout {
+impl FromStr for Layout {
     type Err = ParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {

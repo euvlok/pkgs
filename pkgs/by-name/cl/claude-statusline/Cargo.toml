@@ -23,9 +23,11 @@ nerd-font-symbols = "0.3.0"
 pollster = "0.4.0"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
+strum = { version = "0.27.1", features = ["derive"] }
 simd-json = "0.17.0"
 supports-hyperlinks = "3.2.0"
 tempfile = "3.27.0"
+thiserror = "2"
 terminal-colorsaurus = "1.0.3"
 terminal_size = "0.4.4"
 unicode-width = "0.2.2"

@@ -37,30 +37,20 @@ pub const DEFAULT_FLASH_TTL_SECS: u64 = 30;
 /// file, partial write, hand-editing) degrades to zero rather than
 /// poisoning the whole record.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct SessionState {
-    #[serde(default)]
     pub cost_usd: f64,
-    #[serde(default)]
     pub lines_added: u64,
-    #[serde(default)]
     pub lines_removed: u64,
-    #[serde(default)]
     pub context_tokens: u64,
-    #[serde(default)]
     pub output_tokens: u64,
 
     // Most-recent observed delta and the wall-clock time we saw it.
-    #[serde(default)]
     pub delta_cost_usd: f64,
-    #[serde(default)]
     pub delta_lines_added: u64,
-    #[serde(default)]
     pub delta_lines_removed: u64,
-    #[serde(default)]
     pub delta_context_tokens: u64,
-    #[serde(default)]
     pub delta_output_tokens: u64,
-    #[serde(default)]
     pub delta_at: u64,
 }
 
