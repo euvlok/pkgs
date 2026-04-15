@@ -1,6 +1,6 @@
 { opencode, fetchFromGitHub }:
 opencode.overrideAttrs (oldAttrs: {
-  version = "1.4.5-unstable-2026-04-15";
+  version = "1.4.6-unstable-2026-04-15";
   src = fetchFromGitHub {
     inherit (oldAttrs.src) owner repo;
     tag = "v1.4.3";
