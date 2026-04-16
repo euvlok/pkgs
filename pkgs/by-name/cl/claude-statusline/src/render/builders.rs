@@ -3,6 +3,7 @@
 //! position cleanly.
 
 use crate::input::{Input, RateLimit};
+use crate::pace::{self, PaceSettings};
 use crate::pricing::cost::format_usd;
 use crate::render::colors::Palette;
 use crate::render::format::{humanize_duration, humanize_tokens, shorten_model};
@@ -226,6 +227,10 @@ impl<'a> RateLimitRow<'a> {
             show_countdown: self.show_countdown,
         })
     }
+}
+
+pub fn pace(input: &Input, settings: &PaceSettings, pal: &Palette) -> Option<Segment> {
+    pace::pace(input, settings, pal, pace::now_unix())
 }
 
 pub fn rate_limits(

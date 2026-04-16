@@ -23,6 +23,7 @@ use std::str::FromStr;
 use strum::EnumString;
 
 use crate::input::Input;
+use crate::pace::PaceSettings;
 use crate::render::builders;
 use crate::render::colors::Palette;
 use crate::render::segment::Segment;
@@ -63,6 +64,8 @@ pub enum SegmentName {
     Speed,
     #[strum(to_string = "cache")]
     Cache,
+    #[strum(to_string = "pace", serialize = "burn")]
+    Pace,
 }
 
 impl SegmentName {
@@ -89,6 +92,7 @@ impl SegmentName {
             Self::Clock => builders::clock(ctx.input, ctx.icons, pal),
             Self::Speed => builders::speed(ctx.input, pal),
             Self::Cache => builders::cache(ctx.input, pal),
+            Self::Pace => builders::pace(ctx.input, ctx.pace_settings, pal),
         }
     }
 }
@@ -104,6 +108,7 @@ pub struct BuildCtx<'a> {
     pub cost_usd: Option<f64>,
     pub deltas: Deltas,
     pub settings: &'a Settings,
+    pub pace_settings: &'a PaceSettings,
 }
 
 #[derive(Debug, Clone)]

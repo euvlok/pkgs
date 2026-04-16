@@ -18,6 +18,7 @@ pub mod segment;
 mod write;
 
 use crate::input::Input;
+use crate::pace::PaceSettings;
 use crate::pricing::cost::session_cost;
 use crate::render::colors::Palette;
 use crate::render::icons::Icons;
@@ -38,6 +39,17 @@ pub fn render_with(
     icons: &Icons,
     layout: &Layout,
     settings: &Settings,
+    pal: &Palette,
+) -> String {
+    render_with_pace(input, icons, layout, settings, &PaceSettings::default(), pal)
+}
+
+pub fn render_with_pace(
+    input: &Input,
+    icons: &Icons,
+    layout: &Layout,
+    settings: &Settings,
+    pace_settings: &PaceSettings,
     pal: &Palette,
 ) -> String {
     let want_vcs = layout.contains(SegmentName::Vcs);
@@ -96,6 +108,7 @@ pub fn render_with(
         cost_usd,
         deltas,
         settings,
+        pace_settings,
     };
     render_lines(&ctx, layout, None)
 }
@@ -329,6 +342,85 @@ mod tests {
         let out = render(&input, icons(), &layout);
         assert!(out.contains("39m"), "got: {out}");
         assert!(out.contains("chat 12m"), "got: {out}");
+    }
+
+    #[test]
+    fn pace_segment_shows_projection() {
+        use crate::input::{RateLimit, RateLimits};
+        use crate::pace::{self, PaceSettings, PctSample, Window};
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        // Seed the ring with samples that establish a steady burn.
+        let window = Window {
+            started_at: now - 30 * 60,
+            resets_at: now - 30 * 60 + crate::pace::window::BLOCK_SECS,
+        };
+        let mut seeded = Vec::new();
+        for i in 0..=20 {
+            seeded.push(PctSample {
+                ts_unix: window.started_at + i * 60,
+                used_pct: i as f64,
+            });
+        }
+        pace::ring::persist_ring(&seeded);
+
+        let input = Input {
+            rate_limits: RateLimits {
+                five_hour: RateLimit {
+                    used_percentage: Some(20.0),
+                    resets_at: Some(window.resets_at as i64),
+                },
+                seven_day: RateLimit::default(),
+            },
+            ..Default::default()
+        };
+        let pace_settings = PaceSettings {
+            warmup_mins: 0,
+            ..PaceSettings::default()
+        };
+        let layout = Layout::parse("pace").unwrap();
+        let out = render_with_pace(
+            &input,
+            icons(),
+            &layout,
+            &Settings::default(),
+            &pace_settings,
+            &pal(),
+        );
+        // Compact format: glyph + signed delta (or "on track"). The
+        // seeded ring gives a steady 1%/m burn, current_pct=20%, so
+        // runway ≈ 80min and window ≈ 270min → strongly negative delta.
+        let plain = strip_ansi(&out);
+        assert!(
+            plain.contains("−") || plain.contains("on track") || plain.contains("at cap"),
+            "got: {plain}"
+        );
+        assert!(
+            !plain.contains("by reset") && !plain.contains("%/m"),
+            "old verbose format still present: {plain}"
+        );
+    }
+
+    #[test]
+    fn pace_segment_elides_without_rate_limits() {
+        use crate::pace::PaceSettings;
+        let input = Input::default();
+        let layout = Layout::parse("dir,pace").unwrap();
+        let out = render_with_pace(
+            &input,
+            icons(),
+            &layout,
+            &Settings::default(),
+            &PaceSettings::default(),
+            &pal(),
+        );
+        assert!(!out.contains("by reset"), "got: {out}");
+        assert!(!out.contains("on track"), "got: {out}");
     }
 
     #[test]

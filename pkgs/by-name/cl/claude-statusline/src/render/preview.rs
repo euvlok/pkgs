@@ -15,6 +15,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::input::{
     ContextUsage, ContextWindow, Cost, Input, Model, RateLimit, RateLimits, Workspace,
 };
+use crate::pace::PaceSettings;
 use crate::render::colors::Palette;
 use crate::render::icons::Icons;
 use crate::render::layout::{BuildCtx, Layout};
@@ -42,6 +43,7 @@ pub fn preview_with(
     let vcs = Some(sample_vcs(icons, pal));
     let deltas = sample_deltas(settings);
 
+    let pace_settings = PaceSettings::default();
     let ctx = BuildCtx {
         input: &input,
         icons,
@@ -50,6 +52,7 @@ pub fn preview_with(
         cost_usd: input.cost.total_cost_usd,
         deltas,
         settings,
+        pace_settings: &pace_settings,
     };
     super::render_lines(&ctx, layout, max_cols)
 }

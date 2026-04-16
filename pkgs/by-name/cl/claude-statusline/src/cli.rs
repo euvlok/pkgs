@@ -10,6 +10,7 @@ use std::path::PathBuf;
 
 use clap::{Parser, ValueEnum};
 
+use crate::pace::{PaceGlyphs, PaceSettings};
 use crate::render::icons::IconSet;
 use crate::settings::{ContextFormat, DirStyle, Settings};
 use crate::theme::ThemeMode;
@@ -28,6 +29,7 @@ Segments:
   clock        session elapsed time              (alias: time, elapsed)
   speed        token throughput (tok/s)          (alias: tps, throughput)
   cache        prompt cache hit ratio
+  pace         5h burn-rate projection           (alias: burn)
 
 Layout DSL:
   Comma `,` separates segments inside a line.
@@ -255,12 +257,94 @@ pub struct Cli {
         action = clap::ArgAction::SetTrue,
     )]
     pub preview: bool,
+
+    /// Pace segment glyph set [auto-detected from terminal font]
+    #[arg(
+        long = "pace-glyphs",
+        value_enum,
+        env = "CLAUDE_STATUSLINE_PACE_GLYPHS",
+        value_name = "SET",
+        default_value_t = PaceGlyphs::default(),
+        help_heading = "Pace",
+        hide_env = true,
+        hide_default_value = true,
+    )]
+    pub pace_glyphs: PaceGlyphs,
+
+    /// EWMA smoothing factor for pace rate (0.0–1.0)
+    #[arg(
+        long = "pace-alpha",
+        env = "CLAUDE_STATUSLINE_PACE_ALPHA",
+        value_name = "F",
+        default_value_t = 0.2,
+        help_heading = "Pace",
+        hide_env = true,
+        hide_default_value = true,
+    )]
+    pub pace_alpha: f64,
+
+    /// Classify `cool` when `rate / fair_share` is below this ratio
+    #[arg(
+        long = "pace-cool-below",
+        env = "CLAUDE_STATUSLINE_PACE_COOL_BELOW",
+        value_name = "F",
+        default_value_t = 0.9,
+        help_heading = "Pace",
+        hide_env = true,
+        hide_default_value = true,
+    )]
+    pub pace_cool_below: f64,
+
+    /// Classify `too hot` when `rate / fair_share` is above this ratio
+    #[arg(
+        long = "pace-hot-above",
+        env = "CLAUDE_STATUSLINE_PACE_HOT_ABOVE",
+        value_name = "F",
+        default_value_t = 1.2,
+        help_heading = "Pace",
+        hide_env = true,
+        hide_default_value = true,
+    )]
+    pub pace_hot_above: f64,
+
+    /// Suppress pace projection for the first N minutes of a 5h window
+    #[arg(
+        long = "pace-warmup-mins",
+        env = "CLAUDE_STATUSLINE_PACE_WARMUP_MINS",
+        value_name = "N",
+        default_value_t = 10,
+        help_heading = "Pace",
+        hide_env = true,
+        hide_default_value = true,
+    )]
+    pub pace_warmup_mins: u32,
+
+    /// Emit pace internals to stderr on every render
+    #[arg(
+        long = "pace-debug",
+        env = "CLAUDE_STATUSLINE_PACE_DEBUG",
+        help_heading = "Pace",
+        hide_env = true,
+        action = clap::ArgAction::SetTrue,
+    )]
+    pub pace_debug: bool,
 }
 
 impl Cli {
     /// Collapse the parsed flags into the resolved [`Settings`] bundle
     /// the renderer consumes. Keeping this conversion here means
     /// `render()` never has to know about clap.
+    pub const fn to_pace_settings(&self) -> PaceSettings {
+        PaceSettings {
+            alpha: self.pace_alpha,
+            cool_below: self.pace_cool_below,
+            hot_above: self.pace_hot_above,
+            warmup_mins: self.pace_warmup_mins,
+            glyphs: self.pace_glyphs,
+            debug: self.pace_debug,
+        }
+    }
+
     pub fn to_settings(&self) -> Settings {
         // Auto-detect hyperlink support when the user hasn't explicitly
         // opted in via `--hyperlinks` or the env var.

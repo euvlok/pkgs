@@ -18,7 +18,7 @@ use claude_statusline::render::colors::Palette;
 use claude_statusline::render::icons::Icons;
 use claude_statusline::render::layout::Layout;
 use claude_statusline::render::preview::{preview, preview_with};
-use claude_statusline::render::render_with;
+use claude_statusline::render::render_with_pace;
 use claude_statusline::settings::Settings;
 use claude_statusline::{config, font_detect, theme};
 
@@ -42,6 +42,7 @@ fn main() {
 
     let layout = config::load(cli.layout.as_deref(), cli.config.as_deref(), &cli.exclude);
     let settings = cli.to_settings();
+    let pace_settings = cli.to_pace_settings();
 
     // Detect terminal theme (dark/light) and build the color palette.
     let theme_mode = theme::detect(cli.theme);
@@ -62,7 +63,7 @@ fn main() {
     let result = std::panic::catch_unwind(|| {
         let stdin = io::stdin().lock();
         let input: Input = serde_json::from_reader(stdin).unwrap_or_default();
-        render_with(&input, icons, &layout, &settings, &palette)
+        render_with_pace(&input, icons, &layout, &settings, &pace_settings, &palette)
     });
 
     let line = result.unwrap_or_else(|_| fallback_dir());
