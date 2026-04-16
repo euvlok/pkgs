@@ -6,4 +6,5 @@ opencode.overrideAttrs (oldAttrs: {
     tag = "v1.4.3";
     hash = "sha256-m+Ue7FWiTjKMAn1QefAwOMfOb2Vybk0mJPV9zcbkOmE=";
   };
+  npmDepsHash = "sha256-hVXlQcUuvUudIB35Td6ucBYopM/QOSx59tQbCTqoB/0=";
 })
