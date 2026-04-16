@@ -58,7 +58,7 @@ fn main() {
 
     std::panic::set_hook(Box::new(|_| {}));
 
-    #[allow(clippy::significant_drop_tightening)]
+    #[expect(clippy::significant_drop_tightening)]
     let result = std::panic::catch_unwind(|| {
         let stdin = io::stdin().lock();
         let input: Input = serde_json::from_reader(stdin).unwrap_or_default();

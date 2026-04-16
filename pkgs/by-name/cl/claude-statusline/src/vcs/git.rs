@@ -18,7 +18,7 @@ pub fn collect(dir: &Path, icons: &Icons, pal: &Palette) -> Option<Segment> {
     // Disable optional file locks - read-only operations shouldn't
     // contend with concurrent git processes.
     // SAFETY: single-threaded init time, called before any threads are spawned.
-    #[allow(unsafe_code)]
+    #[expect(unsafe_code)]
     unsafe {
         std::env::set_var("GIT_OPTIONAL_LOCKS", "0");
     }
@@ -148,7 +148,7 @@ struct Tracking {
     behind: usize,
 }
 
-#[allow(clippy::literal_string_with_formatting_args)]
+#[expect(clippy::literal_string_with_formatting_args)]
 fn upstream_divergence(repo: &gix::Repository) -> Tracking {
     let (Ok(head), Ok(upstream)) = (
         repo.rev_parse_single("HEAD"),

@@ -12,7 +12,7 @@ pub mod cost;
 pub mod litellm;
 
 use std::collections::HashMap;
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 
 const TIER_THRESHOLD: u64 = 200_000;
 
@@ -46,7 +46,7 @@ pub fn lookup(model: &str) -> Option<Pricing> {
 }
 
 /// Pure lookup against an explicit table - exposed (rather than the
-/// `OnceLock`-cached `lookup`) so benches can measure resolution against
+/// `LazyLock`-cached `lookup`) so benches can measure resolution against
 /// a controlled fixture.
 #[must_use]
 pub fn lookup_in<'a, S: std::hash::BuildHasher>(
@@ -98,10 +98,10 @@ fn tier(total: u64, base: f64, above: Option<f64>) -> f64 {
     }
 }
 
-static TABLE: OnceLock<Option<HashMap<String, Pricing>>> = OnceLock::new();
+static TABLE: LazyLock<Option<HashMap<String, Pricing>>> = LazyLock::new(litellm::load_table);
 
 fn ensure_loaded() -> Option<&'static HashMap<String, Pricing>> {
-    TABLE.get_or_init(litellm::load_table).as_ref()
+    TABLE.as_ref()
 }
 
 #[cfg(test)]

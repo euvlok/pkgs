@@ -101,7 +101,7 @@ fn sample_input() -> Input {
 }
 
 fn now_plus_secs(secs: i64) -> Option<i64> {
-    #[allow(clippy::cast_possible_wrap)]
+    #[expect(clippy::cast_possible_wrap)]
     let now = SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_secs() as i64;
     Some(now + secs)
 }

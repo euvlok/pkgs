@@ -28,7 +28,7 @@
 
 use std::fs;
 use std::path::PathBuf;
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -36,7 +36,7 @@ use serde::{Deserialize, Serialize};
 /// Resolved per-session currency.
 ///
 /// `usd_rate` is the multiplier to apply to a USD amount; for USD
-/// itself it's `1.0`. Held in a `OnceLock` so the geoip + FX fetch
+/// itself it's `1.0`. Held in a `LazyLock` so the geoip + FX fetch
 /// happens at most once per process even if the cost segment renders
 /// many times in a single invocation (e.g. tests, benches, the preview
 /// pipeline).
@@ -64,14 +64,14 @@ impl Currency {
 /// show dollars than block.
 const FETCH_TIMEOUT: Duration = Duration::from_millis(800);
 
-static RESOLVED: OnceLock<Currency> = OnceLock::new();
+static RESOLVED: LazyLock<Currency> = LazyLock::new(resolve);
 
 /// Return the (cached, lazily-resolved) currency for this process.
 /// First call: read the `/tmp` cache, or fetch+cache, or fall back
-/// to USD. Subsequent calls: cheap `OnceLock` read.
+/// to USD. Subsequent calls: cheap `LazyLock` deref.
 #[must_use]
 pub fn current() -> &'static Currency {
-    RESOLVED.get_or_init(resolve)
+    &RESOLVED
 }
 
 /// Resolve the currency by walking the cache -> geoip -> FX pipeline.
@@ -218,7 +218,7 @@ fn write_currency_cache(c: &Currency) {
 /// Read the cached ISO 3166-1 alpha-2 country code, if present.
 fn read_country_cache() -> Option<String> {
     let s = fs::read_to_string(country_cache_path()).ok()?;
-    let trimmed = s.trim().to_ascii_uppercase();
+    let trimmed = s.trim_ascii().to_ascii_uppercase();
     if trimmed.len() == 2 && trimmed.chars().all(|c| c.is_ascii_alphabetic()) {
         Some(trimmed)
     } else {

@@ -138,7 +138,7 @@ pub fn clock(input: &Input, icons: &Icons, pal: &Palette) -> Option<Segment> {
     if ms == 0 {
         return None;
     }
-    #[allow(clippy::cast_possible_wrap)]
+    #[expect(clippy::cast_possible_wrap)]
     let dur = humanize_duration((ms / 1000) as i64);
     if dur.is_empty() {
         return None;
@@ -151,7 +151,7 @@ pub fn clock(input: &Input, icons: &Icons, pal: &Palette) -> Option<Segment> {
     if let Some(api_ms) = input.cost.total_api_duration_ms
         && api_ms > 0
     {
-        #[allow(clippy::cast_possible_wrap)]
+        #[expect(clippy::cast_possible_wrap)]
         let wait = humanize_duration((api_ms / 1000) as i64);
         if !wait.is_empty() && wait != dur {
             s.push_styled(format!(" (chat {wait})"), pal.dim);
@@ -236,7 +236,7 @@ pub fn rate_limits(
 ) -> Option<Segment> {
     use std::time::{SystemTime, UNIX_EPOCH};
     let now = SystemTime::now().duration_since(UNIX_EPOCH).ok().map(|d| {
-        #[allow(clippy::cast_possible_wrap)]
+        #[expect(clippy::cast_possible_wrap)]
         let secs = d.as_secs() as i64;
         secs
     });
