@@ -14,6 +14,17 @@
     in
     {
       /**
+        Overlay that adds every package under `pkgs/by-name` to a consumer's
+        nixpkgs. Compose this into your own `nixpkgs` overlays list so the
+        resulting package set inherits your `config` (e.g. `allowUnfree`)
+        rather than being pinned to the nixpkgs this flake imports.
+      */
+      overlays.default = import ./pkgs/top-level/by-name-overlay.nix {
+        baseDirectory = ./pkgs/by-name;
+        inherit lib;
+      };
+
+      /**
         A nested structure of [packages](https://nix.dev/manual/nix/latest/glossary#package-attribute-set) and other values.
 
         The "legacy" in `legacyPackages` doesn't imply that the packages exposed
