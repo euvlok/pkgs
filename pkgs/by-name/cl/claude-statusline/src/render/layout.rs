@@ -153,10 +153,10 @@ impl Layout {
     /// countdown that users actually need to see at a glance.
     #[must_use]
     pub fn two_line() -> Self {
-        use SegmentName::{Cache, Clock, Context, Cost, Diff, Dir, Model, RateLimits, Vcs};
+        use SegmentName::{Cache, Clock, Context, Cost, Diff, Dir, Model, Pace, RateLimits, Vcs};
         Self {
             lines: vec![
-                vec![Dir, Context, RateLimits, Vcs],
+                vec![Dir, Context, RateLimits, Pace, Vcs],
                 vec![Model, Diff, Cost, Clock, Cache],
             ],
         }
