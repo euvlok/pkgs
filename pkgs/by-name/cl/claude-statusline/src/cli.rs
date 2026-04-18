@@ -271,17 +271,17 @@ pub struct Cli {
     )]
     pub pace_glyphs: PaceGlyphs,
 
-    /// EWMA smoothing factor for pace rate (0.0–1.0)
+    /// Trailing wall-clock window (minutes) used to fit the pace rate
     #[arg(
-        long = "pace-alpha",
-        env = "CLAUDE_STATUSLINE_PACE_ALPHA",
-        value_name = "F",
-        default_value_t = 0.2,
+        long = "pace-lookback-mins",
+        env = "CLAUDE_STATUSLINE_PACE_LOOKBACK_MINS",
+        value_name = "N",
+        default_value_t = 20,
         help_heading = "Pace",
         hide_env = true,
         hide_default_value = true,
     )]
-    pub pace_alpha: f64,
+    pub pace_lookback_mins: u32,
 
     /// Classify `cool` when `rate / fair_share` is below this ratio
     #[arg(
@@ -336,7 +336,7 @@ impl Cli {
     /// `render()` never has to know about clap.
     pub const fn to_pace_settings(&self) -> PaceSettings {
         PaceSettings {
-            alpha: self.pace_alpha,
+            lookback_mins: self.pace_lookback_mins,
             cool_below: self.pace_cool_below,
             hot_above: self.pace_hot_above,
             warmup_mins: self.pace_warmup_mins,

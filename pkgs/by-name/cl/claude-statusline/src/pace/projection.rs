@@ -1,9 +1,16 @@
 //! Classify the current burn rate against the fair-share budget and
 //! project where the 5h window will end up at reset.
+//!
+//! The displayed value is the **projected percentage at reset** — not a
+//! "minutes until cap" delta. Projected % is linear in the rate
+//! estimate, so small rate wiggles produce small display wiggles.
+//! Runway-style `(100 − pct)/rate − remaining` has a `1/rate²`
+//! sensitivity that made the segment snap between `−2h` and `−1h`
+//! across adjacent renders with only a tiny real change in burn.
 
 use std::time::Duration;
 
-use super::ewma::EwmaTracker;
+use super::rate::RateEstimate;
 use super::window::Window;
 use crate::pace::PaceSettings;
 
@@ -32,11 +39,6 @@ pub struct Projection {
     /// format with a reasonable cap.
     pub projected_pct_at_reset: f64,
     pub remaining: Duration,
-    /// Minutes between hitting the 100% cap and the window reset.
-    /// Positive = runway outlasts the window (safe, "spare"); negative
-    /// = you'd hit the cap before reset (hot, "over"). `None` when not
-    /// meaningful (zero rate, already at/over cap, ColdStart).
-    pub delta_to_cap_mins: Option<f64>,
 }
 
 /// Fold the window + current percentage + rolling rate into a
@@ -45,19 +47,19 @@ pub struct Projection {
 pub fn classify(
     window: &Window,
     current_pct: f64,
-    ewma: &EwmaTracker,
+    estimate: &RateEstimate,
     settings: &PaceSettings,
     now: u64,
 ) -> Projection {
     let remaining = window.remaining(now);
     let remaining_mins = remaining.as_secs() as f64 / 60.0;
     let fair = window.fair_share(current_pct, now);
-    let rate = ewma.rate_pct_per_min.max(0.0);
+    let rate = estimate.rate_pct_per_min.max(0.0);
     let projected = (current_pct + rate * remaining_mins).max(current_pct);
 
     let elapsed_secs = window.elapsed(now).as_secs();
     let warmup_secs = u64::from(settings.warmup_mins) * 60;
-    let warming_up = elapsed_secs < warmup_secs || ewma.samples_consumed < 1;
+    let warming_up = elapsed_secs < warmup_secs || estimate.samples_consumed < 2;
 
     let state = if warming_up {
         PaceState::ColdStart
@@ -80,16 +82,6 @@ pub fn classify(
         }
     };
 
-    // Runway in minutes — how long current rate keeps us below 100%.
-    // Zero rate → infinite runway (no meaningful delta to show).
-    // Already at/over cap → already zero runway.
-    let delta_to_cap_mins = if rate > 0.0 && current_pct < 100.0 {
-        let runway = (100.0 - current_pct) / rate;
-        Some(runway - remaining_mins)
-    } else {
-        None
-    };
-
     Projection {
         state,
         current_pct,
@@ -97,7 +89,6 @@ pub fn classify(
         fair_share_pct_per_min: fair,
         projected_pct_at_reset: projected,
         remaining,
-        delta_to_cap_mins,
     }
 }
 
@@ -116,11 +107,11 @@ mod tests {
         }
     }
 
-    fn ewma(rate: f64) -> EwmaTracker {
-        EwmaTracker {
-            alpha: 0.2,
+    fn estimate(rate: f64) -> RateEstimate {
+        RateEstimate {
             rate_pct_per_min: rate,
             samples_consumed: 4,
+            span_mins: 20.0,
         }
     }
 
@@ -133,7 +124,18 @@ mod tests {
             started_at: now - 60, // one minute in
             resets_at: now - 60 + super::super::window::BLOCK_SECS,
         };
-        let p = classify(&w, 5.0, &ewma(0.2), &s, now);
+        let p = classify(&w, 5.0, &estimate(0.2), &s, now);
+        assert_eq!(p.state, PaceState::ColdStart);
+    }
+
+    #[test]
+    fn cold_start_when_no_samples() {
+        let mut s = settings();
+        s.warmup_mins = 0;
+        let now = 1_000_000;
+        let w = window_at(now, now + 60 * 60);
+        let empty = RateEstimate::empty();
+        let p = classify(&w, 10.0, &empty, &s, now);
         assert_eq!(p.state, PaceState::ColdStart);
     }
 
@@ -143,7 +145,7 @@ mod tests {
         let w = window_at(now, now + 60 * 60); // 1h left
         // current=10 → headroom 90 over 60min → fair=1.5 %/min.
         // rate 0.5 %/min → ratio 0.33 → cool.
-        let p = classify(&w, 10.0, &ewma(0.5), &settings(), now);
+        let p = classify(&w, 10.0, &estimate(0.5), &settings(), now);
         assert_eq!(p.state, PaceState::Cool);
         assert!((p.projected_pct_at_reset - (10.0 + 0.5 * 60.0)).abs() < 1e-6);
     }
@@ -153,7 +155,7 @@ mod tests {
         let now = 1_000_000;
         let w = window_at(now, now + 60 * 60);
         // fair=1.5 %/min, rate=3 → ratio 2 → hot.
-        let p = classify(&w, 10.0, &ewma(3.0), &settings(), now);
+        let p = classify(&w, 10.0, &estimate(3.0), &settings(), now);
         assert_eq!(p.state, PaceState::TooHot);
         assert!(p.projected_pct_at_reset > 100.0);
     }
@@ -162,7 +164,7 @@ mod tests {
     fn on_pace_within_corridor() {
         let now = 1_000_000;
         let w = window_at(now, now + 60 * 60); // fair=1.5
-        let p = classify(&w, 10.0, &ewma(1.5), &settings(), now);
+        let p = classify(&w, 10.0, &estimate(1.5), &settings(), now);
         assert_eq!(p.state, PaceState::OnPace);
     }
 
@@ -170,7 +172,7 @@ mod tests {
     fn projection_never_decreases() {
         let now = 1_000_000;
         let w = window_at(now, now + 60 * 60);
-        let p = classify(&w, 42.0, &ewma(0.0), &settings(), now);
+        let p = classify(&w, 42.0, &estimate(0.0), &settings(), now);
         assert!(p.projected_pct_at_reset >= p.current_pct);
     }
 }

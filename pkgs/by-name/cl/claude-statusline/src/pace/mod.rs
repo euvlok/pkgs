@@ -1,17 +1,18 @@
 //! Pacing / burn-rate segment.
 //!
 //! Treats `rate_limits.five_hour.used_percentage` from stdin as the
-//! authoritative current consumption and folds a small on-disk ring of
-//! `(timestamp, used_pct)` observations into an EWMA of `%/min`. The
-//! resulting projection — *where will the window land at reset?* — is
-//! rendered next to `clock` in the layout.
+//! authoritative current consumption and fits a trailing-window linear
+//! regression over a small on-disk ring of `(timestamp, used_pct)`
+//! observations to get `%/min`. The resulting projection — *where will
+//! the window land at reset?* — is rendered next to `clock` in the
+//! layout.
 //!
 //! Design doc: `PACING_DESIGN.md`.
 
-pub mod ewma;
 pub mod format;
 pub mod glyphs;
 pub mod projection;
+pub mod rate;
 pub mod ring;
 pub mod window;
 
@@ -30,15 +31,17 @@ pub use window::Window;
 /// and none of them derive from model / tier / plan — see design §1.
 #[derive(Copy, Clone, Debug)]
 pub struct PaceSettings {
-    /// EWMA smoothing factor. `0.0` freezes at the first observation,
-    /// `1.0` tracks the latest delta exactly. `0.2` is the ship default.
-    pub alpha: f64,
+    /// Trailing wall-clock window (minutes) over which the rate is fit.
+    /// Shorter = more reactive, longer = more stable. `20` is the ship
+    /// default — it filters one-off idle or burst renders while still
+    /// reacting inside a single 5h block.
+    pub lookback_mins: u32,
     /// `rate/fair < cool_below` → [`PaceState::Cool`].
     pub cool_below: f64,
     /// `rate/fair > hot_above` → [`PaceState::TooHot`].
     pub hot_above: f64,
     /// Wall-clock minutes at the start of a window during which we
-    /// suppress the projection — EWMA is not yet trustworthy.
+    /// suppress the projection — the rate estimate is not yet trustworthy.
     pub warmup_mins: u32,
     /// Which glyph family to render.
     pub glyphs: PaceGlyphs,
@@ -49,7 +52,7 @@ pub struct PaceSettings {
 impl Default for PaceSettings {
     fn default() -> Self {
         Self {
-            alpha: 0.2,
+            lookback_mins: 20,
             cool_below: 0.9,
             hot_above: 1.2,
             warmup_mins: 10,
@@ -99,8 +102,8 @@ pub(crate) fn compute(
     });
     ring::persist_ring(&samples);
 
-    let ewma = ewma::EwmaTracker::from_samples(&samples, settings.alpha);
-    projection::classify(window, current_pct, &ewma, settings, now)
+    let estimate = rate::RateEstimate::from_samples(&samples, settings.lookback_mins, now);
+    projection::classify(window, current_pct, &estimate, settings, now)
 }
 
 /// Wall-clock "now" in unix seconds. Mirrors the helper in `session.rs`

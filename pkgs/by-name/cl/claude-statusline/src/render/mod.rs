@@ -358,7 +358,7 @@ mod tests {
         // Seed the ring with samples that establish a steady burn.
         let window = Window {
             started_at: now - 30 * 60,
-            resets_at: now - 30 * 60 + crate::pace::window::BLOCK_SECS,
+            resets_at: now - 30 * 60 + pace::window::BLOCK_SECS,
         };
         let mut seeded = Vec::new();
         for i in 0..=20 {
@@ -392,12 +392,12 @@ mod tests {
             &pace_settings,
             &pal(),
         );
-        // Compact format: glyph + signed delta (or "on track"). The
-        // seeded ring gives a steady 1%/m burn, current_pct=20%, so
-        // runway ≈ 80min and window ≈ 270min → strongly negative delta.
+        // Compact format: glyph + projected-% at reset. The seeded ring
+        // gives a steady 1%/min burn, current_pct=20%, ~270min remain,
+        // so the projection is well above 100% (clamped display cap).
         let plain = strip_ansi(&out);
         assert!(
-            plain.contains("−") || plain.contains("on track") || plain.contains("at cap"),
+            plain.contains("→") || plain.contains("at cap") || plain.contains("warming"),
             "got: {plain}"
         );
         assert!(
