@@ -8,9 +8,9 @@
 //!
 //! | State      | Example     | Meaning                                  |
 //! |------------|-------------|------------------------------------------|
-//! | Cool       | `❄ →42%`   | projected to reach 42% by reset          |
-//! | On-pace    | `✓ →97%`   | projected to land near the cap           |
-//! | Too hot    | `🔥 →142%`  | projected to blow past the cap           |
+//! | Cool       | `❄ → 42%`   | projected to reach 42% by reset         |
+//! | On-pace    | `✓ → 97%`   | projected to land near the cap          |
+//! | Too hot    | `🔥 → 142%`  | projected to blow past the cap          |
 //! | Cold start | `⏳ warming`| too early in the window to project       |
 //! | At cap     | `🔥 at cap` | already ≥100%, no runway left            |
 
@@ -61,18 +61,18 @@ fn body_text(proj: &Projection) -> String {
     format_projected_pct(proj.projected_pct_at_reset)
 }
 
-/// `→142%`, `→97%`, `→9%`. Non-finite / out-of-range values clamp to
+/// `→ 142%`, `→ 97%`, `→ 9%`. Non-finite / out-of-range values clamp to
 /// [`MAX_DISPLAYED_PCT`] so the segment width stays stable.
 #[must_use]
 pub fn format_projected_pct(pct: f64) -> String {
     if !pct.is_finite() || pct < 0.0 {
-        return format!("→{MAX_DISPLAYED_PCT}%+");
+        return format!("→ {MAX_DISPLAYED_PCT}%+");
     }
     let rounded = pct.round();
     if rounded >= f64::from(MAX_DISPLAYED_PCT) {
-        return format!("→{MAX_DISPLAYED_PCT}%+");
+        return format!("→ {MAX_DISPLAYED_PCT}%+");
     }
-    format!("→{}%", rounded as u32)
+    format!("→ {}%", rounded as u32)
 }
 
 #[cfg(test)]
@@ -81,13 +81,13 @@ mod tests {
 
     #[test]
     fn projected_pct_formatting() {
-        assert_eq!(format_projected_pct(0.0), "→0%");
-        assert_eq!(format_projected_pct(42.0), "→42%");
-        assert_eq!(format_projected_pct(97.4), "→97%");
-        assert_eq!(format_projected_pct(142.6), "→143%");
-        assert_eq!(format_projected_pct(999.0), "→999%+");
-        assert_eq!(format_projected_pct(10_000.0), "→999%+");
-        assert_eq!(format_projected_pct(f64::INFINITY), "→999%+");
+        assert_eq!(format_projected_pct(0.0), "→ 0%");
+        assert_eq!(format_projected_pct(42.0), "→ 42%");
+        assert_eq!(format_projected_pct(97.4), "→ 97%");
+        assert_eq!(format_projected_pct(142.6), "→ 143%");
+        assert_eq!(format_projected_pct(999.0), "→ 999%+");
+        assert_eq!(format_projected_pct(10_000.0), "→ 999%+");
+        assert_eq!(format_projected_pct(f64::INFINITY), "→ 999%+");
     }
 
     fn proj(state: PaceState, projected: f64, current: f64) -> Projection {
@@ -104,9 +104,9 @@ mod tests {
 
     #[test]
     fn body_shows_projected_pct() {
-        assert_eq!(body_text(&proj(PaceState::Cool, 42.0, 10.0)), "→42%");
-        assert_eq!(body_text(&proj(PaceState::OnPace, 97.0, 30.0)), "→97%");
-        assert_eq!(body_text(&proj(PaceState::TooHot, 142.0, 60.0)), "→142%");
+        assert_eq!(body_text(&proj(PaceState::Cool, 42.0, 10.0)), "→ 42%");
+        assert_eq!(body_text(&proj(PaceState::OnPace, 97.0, 30.0)), "→ 97%");
+        assert_eq!(body_text(&proj(PaceState::TooHot, 142.0, 60.0)), "→ 142%");
     }
 
     #[test]
@@ -123,8 +123,8 @@ mod tests {
         // swing near low rates.
         let a = body_text(&proj(PaceState::Cool, 41.0, 10.0));
         let b = body_text(&proj(PaceState::Cool, 42.0, 10.0));
-        assert_eq!(a, "→41%");
-        assert_eq!(b, "→42%");
+        assert_eq!(a, "→ 41%");
+        assert_eq!(b, "→ 42%");
     }
 
     #[test]
@@ -135,7 +135,7 @@ mod tests {
         let mut out = String::new();
         seg.write_to(&mut out);
         assert!(out.contains("🔥"), "missing hot glyph: {out}");
-        assert!(out.contains("→142%"), "missing projection: {out}");
+        assert!(out.contains("→ 142%"), "missing projection: {out}");
     }
 
     #[test]
@@ -146,7 +146,7 @@ mod tests {
         let mut out = String::new();
         seg.write_to(&mut out);
         assert!(out.contains("❄"));
-        assert!(out.contains("→34%"));
+        assert!(out.contains("→ 34%"));
     }
 
     #[test]
