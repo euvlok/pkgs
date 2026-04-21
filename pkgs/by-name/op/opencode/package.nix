@@ -7,7 +7,7 @@ let
   };
 in
 opencode.overrideAttrs (oldAttrs: {
-  version = "1.14.19-unstable-2026-04-20";
+  version = "1.14.19-unstable-2026-04-21";
   src = newSrc;
   node_modules = oldAttrs.node_modules.overrideAttrs {
     inherit (oldAttrs) version;
