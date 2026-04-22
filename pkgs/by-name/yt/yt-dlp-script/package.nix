@@ -8,8 +8,7 @@
   ffmpeg-full,
   jq,
   gnused,
-  callPackage,
-  yt-dlp ? (callPackage ../yt-dlp/package.nix { }),
+  yt-dlp,
 }:
 runCommand "yt-dlp-script"
   {
