@@ -41,7 +41,14 @@ pub fn render_with(
     settings: &Settings,
     pal: &Palette,
 ) -> String {
-    render_with_pace(input, icons, layout, settings, &PaceSettings::default(), pal)
+    render_with_pace(
+        input,
+        icons,
+        layout,
+        settings,
+        &PaceSettings::default(),
+        pal,
+    )
 }
 
 pub fn render_with_pace(
@@ -91,7 +98,11 @@ pub fn render_with_pace(
         output_tokens: (out_tokens > 0).then_some(out_tokens),
     };
     let deltas = session::update(
-        session::session_key(input.transcript_path.as_deref()).as_deref(),
+        session::session_key(
+            input.transcript_path.as_deref(),
+            input.session_id.as_deref(),
+        )
+        .as_deref(),
         &snap,
         if settings.flash {
             settings.flash_ttl_secs

@@ -16,12 +16,12 @@ use crate::settings::{ContextFormat, DirStyle, Settings};
 use crate::theme::ThemeMode;
 
 const LONG_ABOUT: &str = "\
-Fast Claude Code statusline (gix + jj-lib).
+Fast Claude Code / Codex statusline (gix + jj-lib).
 
 Segments:
   dir          working directory basename (anchor)
   vcs          git/jj branch + status            (alias: git, jj)
-  model        Claude model display name
+  model        agent model display name
   cost         session $ + cumulative model time
   diff         lines added / removed             (alias: lines)
   context      context-window usage              (alias: ctx)
@@ -60,6 +60,7 @@ pub const HELP_LAYOUT_SHAPES: &[(&str, &str)] = &[
 pub const HELP_AFTER_EXAMPLES: &str = "\
 Other examples:
   claude-statusline --exclude cost,rates < payload.json
+  claude-statusline --input-json '{\"hook_event_name\":\"SessionStart\",\"cwd\":\"/tmp\",\"model\":\"gpt-5-codex\"}'
   claude-statusline --separator ' • ' --no-align
   claude-statusline --dir home --context-format percent
   claude-statusline --preview --layout 'dir,vcs,model | cost,context'
@@ -71,7 +72,7 @@ Config file (same DSL, `#` comments allowed):
 #[derive(Parser, Debug)]
 #[command(
     version,
-    about = "Fast Claude Code statusline (gix + jj-lib)",
+    about = "Fast Claude Code / Codex statusline (gix + jj-lib)",
     long_about = LONG_ABOUT,
     // `after_help` is set at runtime by `main` to include rendered
     // preview output (requires runtime icon detection).
@@ -258,6 +259,10 @@ pub struct Cli {
     )]
     pub preview: bool,
 
+    /// Read the payload from a JSON string instead of stdin
+    #[arg(long = "input-json", value_name = "JSON", help_heading = "Shell integration")]
+    pub input_json: Option<String>,
+
     /// Pace segment glyph set [auto-detected from terminal font]
     #[arg(
         long = "pace-glyphs",
@@ -279,7 +284,7 @@ pub struct Cli {
         default_value_t = 20,
         help_heading = "Pace",
         hide_env = true,
-        hide_default_value = true,
+        hide_default_value = true
     )]
     pub pace_lookback_mins: u32,
 
@@ -291,7 +296,7 @@ pub struct Cli {
         default_value_t = 0.9,
         help_heading = "Pace",
         hide_env = true,
-        hide_default_value = true,
+        hide_default_value = true
     )]
     pub pace_cool_below: f64,
 
@@ -303,7 +308,7 @@ pub struct Cli {
         default_value_t = 1.2,
         help_heading = "Pace",
         hide_env = true,
-        hide_default_value = true,
+        hide_default_value = true
     )]
     pub pace_hot_above: f64,
 
@@ -315,7 +320,7 @@ pub struct Cli {
         default_value_t = 10,
         help_heading = "Pace",
         hide_env = true,
-        hide_default_value = true,
+        hide_default_value = true
     )]
     pub pace_warmup_mins: u32,
 

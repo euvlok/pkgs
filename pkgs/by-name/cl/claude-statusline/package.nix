@@ -17,7 +17,7 @@ rustPlatform.buildRustPackage {
   doCheck = false;
 
   meta = {
-    description = "Fast Claude Code statusline using gix + jj-lib";
+    description = "Fast Claude Code / Codex statusline using gix + jj-lib";
     mainProgram = "claude-statusline";
     license = lib.licenses.mit;
     platforms = lib.platforms.unix;

@@ -1,9 +1,10 @@
-//! claude-statusline - fast Claude Code statusline rendered from a Rust binary.
+//! claude-statusline - fast Claude Code / Codex statusline rendered from a Rust
+//! binary.
 //!
-//! Reads the Claude Code stdin payload as JSON, gathers VCS info via `gix`
-//! (or `jj-lib` for jj repos), and prints a single colored line that mirrors
-//! the previous bash implementation. On any error or panic, falls back to
-//! printing just the directory name so the statusline is never blank.
+//! Reads the Claude Code payload or supported Codex hook payloads as JSON,
+//! gathers VCS info via `gix` (or `jj-lib` for jj repos), and prints a single
+//! colored line. On any error or panic, falls back to printing just the
+//! directory name so the statusline is never blank.
 
 use std::fmt::Write as _;
 use std::io::{self, Write as _};
@@ -61,8 +62,12 @@ fn main() {
 
     #[expect(clippy::significant_drop_tightening)]
     let result = std::panic::catch_unwind(|| {
-        let stdin = io::stdin().lock();
-        let input: Input = serde_json::from_reader(stdin).unwrap_or_default();
+        let input: Input = if let Some(json) = cli.input_json.as_deref() {
+            serde_json::from_str(json).unwrap_or_default()
+        } else {
+            let stdin = io::stdin().lock();
+            serde_json::from_reader(stdin).unwrap_or_default()
+        };
         render_with_pace(&input, icons, &layout, &settings, &pace_settings, &palette)
     });
 

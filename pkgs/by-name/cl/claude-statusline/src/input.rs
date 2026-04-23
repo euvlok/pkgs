@@ -1,12 +1,16 @@
-//! Serde structs for the Claude Code stdin payload.
+//! Serde structs for the Claude Code / Codex input payload.
 //!
-//! Every field is optional; missing fields just suppress the corresponding
-//! statusline segment, mirroring the bash script's leniency.
+//! Claude Code streams a rich status payload on stdin; Codex exposes several
+//! smaller JSON hook payloads instead. We normalize both into one lenient
+//! `Input` so the renderer can stay provider-agnostic and simply omit segments
+//! whose backing data is unavailable.
 
 use serde::Deserialize;
+use serde::Deserializer;
+use serde::de;
+use serde_json::Value;
 
-#[derive(Debug, Default, Deserialize)]
-#[serde(default)]
+#[derive(Debug, Default)]
 pub struct Input {
     pub workspace: Workspace,
     pub cwd: Option<String>,
@@ -16,6 +20,16 @@ pub struct Input {
     pub context_window: ContextWindow,
     pub rate_limits: RateLimits,
     pub cost: Cost,
+}
+
+impl<'de> Deserialize<'de> for Input {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = Value::deserialize(deserializer)?;
+        Self::from_json_value(value).map_err(de::Error::custom)
+    }
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -97,8 +111,26 @@ pub struct Cost {
 }
 
 impl Input {
+    fn from_json_value(value: Value) -> Result<Self, serde_json::Error> {
+        if let Some(hook_event_name) = value.get("hook_event_name").and_then(Value::as_str) {
+            return match hook_event_name {
+                "SessionStart" | "PostToolUse" | "UserPromptSubmit" | "Stop" => {
+                    Ok(CodexHookInput::from_value(value)?.into_input())
+                }
+                _ => Ok(ClaudeInput::from_value(value)?.into_input()),
+            };
+        }
+
+        if value.get("type").and_then(Value::as_str) == Some("agent-turn-complete") {
+            return Ok(CodexNotifyInput::from_value(value)?.into_input());
+        }
+
+        Ok(ClaudeInput::from_value(value)?.into_input())
+    }
+
     /// First non-empty path field, ignoring `Some("")` which Claude Code
-    /// occasionally emits during early hook events.
+    /// occasionally emits during early hook events. Codex hook payloads are
+    /// normalized into the same fields so they follow the same fallback path.
     fn path_field(&self) -> Option<&str> {
         [self.workspace.current_dir.as_deref(), self.cwd.as_deref()]
             .into_iter()
@@ -181,4 +213,168 @@ impl Input {
 
 fn basename(path: &str) -> &str {
     camino::Utf8Path::new(path).file_name().unwrap_or(".")
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+struct ClaudeInput {
+    workspace: Workspace,
+    cwd: Option<String>,
+    transcript_path: Option<String>,
+    session_id: Option<String>,
+    model: Model,
+    context_window: ContextWindow,
+    rate_limits: RateLimits,
+    cost: Cost,
+}
+
+impl ClaudeInput {
+    fn from_value(value: Value) -> Result<Self, serde_json::Error> {
+        serde_json::from_value(value)
+    }
+
+    fn into_input(self) -> Input {
+        Input {
+            workspace: self.workspace,
+            cwd: self.cwd,
+            transcript_path: self.transcript_path,
+            session_id: self.session_id,
+            model: self.model,
+            context_window: self.context_window,
+            rate_limits: self.rate_limits,
+            cost: self.cost,
+        }
+    }
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+struct CodexHookInput {
+    session_id: Option<String>,
+    transcript_path: Option<String>,
+    cwd: Option<String>,
+    model: Option<String>,
+}
+
+impl CodexHookInput {
+    fn from_value(value: Value) -> Result<Self, serde_json::Error> {
+        serde_json::from_value(value)
+    }
+
+    fn into_input(self) -> Input {
+        let cwd = self.cwd.and_then(nonempty_owned);
+        Input {
+            workspace: Workspace {
+                current_dir: cwd.clone(),
+            },
+            cwd,
+            transcript_path: self.transcript_path.and_then(nonempty_owned),
+            session_id: self.session_id.and_then(nonempty_owned),
+            model: Model {
+                display_name: self.model.and_then(nonempty_owned),
+            },
+            ..Input::default()
+        }
+    }
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+struct CodexNotifyInput {
+    cwd: Option<String>,
+    #[serde(rename = "thread-id")]
+    thread_id: Option<String>,
+}
+
+impl CodexNotifyInput {
+    fn from_value(value: Value) -> Result<Self, serde_json::Error> {
+        serde_json::from_value(value)
+    }
+
+    fn into_input(self) -> Input {
+        let cwd = self.cwd.and_then(nonempty_owned);
+        Input {
+            workspace: Workspace {
+                current_dir: cwd.clone(),
+            },
+            cwd,
+            session_id: self.thread_id.and_then(nonempty_owned),
+            ..Input::default()
+        }
+    }
+}
+
+fn nonempty_owned(value: String) -> Option<String> {
+    (!value.trim().is_empty()).then_some(value)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_claude_payload() {
+        let input: Input = serde_json::from_str(
+            r#"{
+                "workspace": {"current_dir": "/tmp/claude"},
+                "transcript_path": "/tmp/claude/session.jsonl",
+                "session_id": "sess-1",
+                "model": {"display_name": "Opus 4.1"},
+                "context_window": {"used_percentage": 12.5}
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(input.dir_full(), "/tmp/claude");
+        assert_eq!(
+            input.transcript_path.as_deref(),
+            Some("/tmp/claude/session.jsonl")
+        );
+        assert_eq!(input.session_id.as_deref(), Some("sess-1"));
+        assert_eq!(input.model.display_name.as_deref(), Some("Opus 4.1"));
+        assert_eq!(input.context_window.used_percentage, Some(12.5));
+    }
+
+    #[test]
+    fn parses_codex_session_start_hook_payload() {
+        let input: Input = serde_json::from_str(
+            r#"{
+                "session_id": "thread-123",
+                "transcript_path": "/tmp/codex/rollout.jsonl",
+                "cwd": "/tmp/codex",
+                "hook_event_name": "SessionStart",
+                "model": "gpt-5-codex",
+                "permission_mode": "default",
+                "source": "startup"
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(input.dir_full(), "/tmp/codex");
+        assert_eq!(
+            input.transcript_path.as_deref(),
+            Some("/tmp/codex/rollout.jsonl")
+        );
+        assert_eq!(input.session_id.as_deref(), Some("thread-123"));
+        assert_eq!(input.model.display_name.as_deref(), Some("gpt-5-codex"));
+    }
+
+    #[test]
+    fn parses_codex_notify_payload() {
+        let input: Input = serde_json::from_str(
+            r#"{
+                "type": "agent-turn-complete",
+                "thread-id": "thread-456",
+                "turn-id": "turn-1",
+                "cwd": "/tmp/project",
+                "input-messages": ["hello"],
+                "last-assistant-message": "done"
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(input.dir_full(), "/tmp/project");
+        assert_eq!(input.session_id.as_deref(), Some("thread-456"));
+        assert!(input.model.display_name.is_none());
+    }
 }

@@ -2,13 +2,14 @@
 //! and context values so the next render can briefly highlight what's
 //! new.
 //!
-//! Every session gets its own file so parallel `claude` instances
-//! (one per terminal) never trample each other's history.
+//! Every session gets its own file so parallel agent instances never trample
+//! each other's history.
 //!
 //! The session key is the transcript's file stem - the UUID-like name
 //! Claude Code writes to `~/.claude/projects/<dir>/<uuid>.jsonl`. If
-//! there's no transcript path (tests, invocations without stdin) we
-//! skip state tracking and return empty deltas.
+//! there is no transcript path, we fall back to the provider's own session or
+//! thread id. That keeps Codex hook payloads isolated even though they don't
+//! always expose a transcript file.
 //!
 //! The "flash" window is wall-clock: when we observe a fresh delta we
 //! stamp `delta_at = now`, and subsequent renders keep showing the same
@@ -80,19 +81,24 @@ impl Deltas {
     }
 }
 
-/// Derive the isolation key for a session from its transcript path.
+/// Derive the isolation key for a session from its transcript path or an
+/// explicit session id.
 ///
 /// Returns `None` when there's no usable transcript - in that case we
 /// skip all state tracking so tests and ad-hoc invocations don't pollute
 /// each other's history.
 #[must_use]
-pub fn session_key(transcript_path: Option<&str>) -> Option<String> {
-    let p = std::path::Path::new(transcript_path?);
-    let stem = p.file_stem()?.to_string_lossy();
-    if stem.is_empty() {
-        return None;
+pub fn session_key(transcript_path: Option<&str>, session_id: Option<&str>) -> Option<String> {
+    if let Some(transcript_path) = transcript_path {
+        let p = std::path::Path::new(transcript_path);
+        let stem = p.file_stem()?.to_string_lossy();
+        if !stem.is_empty() {
+            return Some(stem.into_owned());
+        }
     }
-    Some(stem.into_owned())
+
+    let session_id = session_id?.trim();
+    (!session_id.is_empty()).then(|| session_id.to_string())
 }
 
 fn state_path(key: &str) -> Option<PathBuf> {
@@ -238,11 +244,15 @@ mod tests {
     #[test]
     fn session_key_uses_transcript_stem() {
         assert_eq!(
-            session_key(Some("/Users/foo/.claude/projects/bar/abc-123.jsonl")).as_deref(),
+            session_key(Some("/Users/foo/.claude/projects/bar/abc-123.jsonl"), None).as_deref(),
             Some("abc-123")
         );
-        assert_eq!(session_key(None), None);
-        assert_eq!(session_key(Some("")), None);
+        assert_eq!(
+            session_key(None, Some("thread-123")).as_deref(),
+            Some("thread-123")
+        );
+        assert_eq!(session_key(None, None), None);
+        assert_eq!(session_key(Some(""), None), None);
     }
 
     #[test]
