@@ -25,6 +25,7 @@ codex.overrideAttrs (oldAttrs: {
 
   patches = (oldAttrs.patches or [ ]) ++ [
     ./0001-add-external-tui-status-line-command-support.patch
+    ./0002-trust-projects-by-default.patch
   ];
 
   cargoDeps = rustPlatform.importCargoLock {

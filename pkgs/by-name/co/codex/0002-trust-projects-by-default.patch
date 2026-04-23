@@ -1,0 +1,149 @@
+From 1161bbec8ba9563eb284b648b670f44d668af1dc Mon Sep 17 00:00:00 2001
+From: FlameFlag <git@ps1.sh>
+Date: Thu, 23 Apr 2026 14:52:26 +0300
+Subject: [PATCH] Trust projects by default
+
+---
+ codex-rs/config/src/config_toml.rs       |  9 ++++-----
+ codex-rs/core/src/config/config_tests.rs |  2 +-
+ codex-rs/core/src/config_loader/mod.rs   |  2 +-
+ codex-rs/core/src/config_loader/tests.rs | 22 ++++++++--------------
+ 4 files changed, 14 insertions(+), 21 deletions(-)
+
+diff --git a/codex-rs/config/src/config_toml.rs b/codex-rs/config/src/config_toml.rs
+index 543cb59ef..b1661fc8a 100644
+--- a/codex-rs/config/src/config_toml.rs
++++ b/codex-rs/config/src/config_toml.rs
+@@ -448,7 +448,7 @@ pub struct ProjectConfig {
+ 
+ impl ProjectConfig {
+     pub fn is_trusted(&self) -> bool {
+-        matches!(self.trust_level, Some(TrustLevel::Trusted))
++        !matches!(self.trust_level, Some(TrustLevel::Untrusted))
+     }
+ 
+     pub fn is_untrusted(&self) -> bool {
+@@ -696,9 +696,8 @@ impl ConfigToml {
+         sandbox_policy
+     }
+ 
+-    /// Resolves the cwd to an existing project, or returns None if ConfigToml
+-    /// does not contain a project corresponding to cwd or the resolved git repo
+-    /// root for cwd.
++    /// Resolves the cwd to a configured project when one exists, otherwise
++    /// returns the default trust decision for the current cwd.
+     pub fn get_active_project(
+         &self,
+         resolved_cwd: &Path,
+@@ -722,7 +721,7 @@ impl ConfigToml {
+             }
+         }
+ 
+-        None
++        Some(ProjectConfig { trust_level: None })
+     }
+ 
+     pub fn get_config_profile(
+diff --git a/codex-rs/core/src/config/config_tests.rs b/codex-rs/core/src/config/config_tests.rs
+index fa27ba4f4..cd8dfb925 100644
+--- a/codex-rs/core/src/config/config_tests.rs
++++ b/codex-rs/core/src/config/config_tests.rs
+@@ -5962,7 +5962,7 @@ async fn active_project_does_not_match_configured_alias_for_canonical_cwd() -> a
+ 
+     assert_eq!(
+         config.get_active_project(&project_root, /*repo_root*/ None),
+-        None
++        Some(ProjectConfig { trust_level: None })
+     );
+ 
+     Ok(())
+diff --git a/codex-rs/core/src/config_loader/mod.rs b/codex-rs/core/src/config_loader/mod.rs
+index 4681aa075..13f889100 100644
+--- a/codex-rs/core/src/config_loader/mod.rs
++++ b/codex-rs/core/src/config_loader/mod.rs
+@@ -656,7 +656,7 @@ struct ProjectTrustDecision {
+ 
+ impl ProjectTrustDecision {
+     fn is_trusted(&self) -> bool {
+-        matches!(self.trust_level, Some(TrustLevel::Trusted))
++        !matches!(self.trust_level, Some(TrustLevel::Untrusted))
+     }
+ }
+ 
+diff --git a/codex-rs/core/src/config_loader/tests.rs b/codex-rs/core/src/config_loader/tests.rs
+index 7f6195269..271f780fb 100644
+--- a/codex-rs/core/src/config_loader/tests.rs
++++ b/codex-rs/core/src/config_loader/tests.rs
+@@ -1543,7 +1543,7 @@ async fn codex_home_within_project_tree_is_not_double_loaded() -> std::io::Resul
+ }
+ 
+ #[tokio::test]
+-async fn project_layers_disabled_when_untrusted_or_unknown() -> std::io::Result<()> {
++async fn project_layers_disabled_when_untrusted_and_enabled_when_unknown() -> std::io::Result<()> {
+     let tmp = tempdir()?;
+     let project_root = tmp.path().join("project");
+     let nested = project_root.join("child");
+@@ -1634,17 +1634,14 @@ async fn project_layers_disabled_when_untrusted_or_unknown() -> std::io::Result<
+         .filter(|layer| matches!(layer.name, super::ConfigLayerSource::Project { .. }))
+         .collect();
+     assert_eq!(project_layers_unknown.len(), 1);
+-    assert!(
+-        project_layers_unknown[0].disabled_reason.is_some(),
+-        "expected unknown-trust project layer to be disabled"
+-    );
++    assert_eq!(project_layers_unknown[0].disabled_reason, None);
+     assert_eq!(
+         project_layers_unknown[0].config.get("foo"),
+         Some(&TomlValue::String("child".to_string()))
+     );
+     assert_eq!(
+         layers_unknown.effective_config().get("foo"),
+-        Some(&TomlValue::String("user".to_string()))
++        Some(&TomlValue::String("child".to_string()))
+     );
+ 
+     Ok(())
+@@ -1804,7 +1801,7 @@ enabled = false
+ }
+ 
+ #[tokio::test]
+-async fn invalid_project_config_ignored_when_untrusted_or_unknown() -> std::io::Result<()> {
++async fn invalid_project_config_ignored_when_untrusted() -> std::io::Result<()> {
+     let tmp = tempdir()?;
+     let project_root = tmp.path().join("project");
+     let nested = project_root.join("child");
+@@ -1813,10 +1810,7 @@ async fn invalid_project_config_ignored_when_untrusted_or_unknown() -> std::io::
+     tokio::fs::write(nested.join(".codex").join(CONFIG_TOML_FILE), "foo =").await?;
+ 
+     let cwd = AbsolutePathBuf::from_absolute_path(&nested)?;
+-    let cases = [
+-        ("untrusted", Some(TrustLevel::Untrusted)),
+-        ("unknown", None),
+-    ];
++    let cases = [("untrusted", Some(TrustLevel::Untrusted))];
+ 
+     for (name, trust_level) in cases {
+         let codex_home = tmp.path().join(format!("home_{name}"));
+@@ -1879,8 +1873,8 @@ async fn invalid_project_config_ignored_when_untrusted_or_unknown() -> std::io::
+ }
+ 
+ #[tokio::test]
+-async fn project_layer_without_config_toml_is_disabled_when_untrusted_or_unknown()
+--> std::io::Result<()> {
++async fn project_layer_without_config_toml_is_disabled_only_when_untrusted() -> std::io::Result<()>
++{
+     let tmp = tempdir()?;
+     let project_root = tmp.path().join("project");
+     let nested = project_root.join("child");
+@@ -1890,7 +1884,7 @@ async fn project_layer_without_config_toml_is_disabled_when_untrusted_or_unknown
+     let cwd = AbsolutePathBuf::from_absolute_path(&nested)?;
+     let cases = [
+         ("untrusted", Some(TrustLevel::Untrusted), true),
+-        ("unknown", None, true),
++        ("unknown", None, false),
+         ("trusted", Some(TrustLevel::Trusted), false),
+     ];
+ 
+-- 
+2.53.0
+
