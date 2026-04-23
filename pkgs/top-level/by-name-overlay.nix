@@ -5,7 +5,7 @@
 # and validity checks are done by CI on PRs.
 #
 # This is a close mirror of nixpkgs's pkgs/top-level/by-name-overlay.nix.
-# The only deliberate divergence is in the final `self: super:` function:
+# The only deliberate divergence is in the final `final: prev:` function:
 # because this overlay is applied on top of an existing nixpkgs, a by-name
 # package may intentionally override an upstream attribute of the same name.
 # See the comment next to that code for details.
@@ -14,6 +14,7 @@
 { baseDirectory, lib, ... }:
 let
   inherit (builtins)
+    hasAttr
     readDir
     ;
 
@@ -45,7 +46,7 @@ let
   # if the overlay has to be applied multiple times
   packageFiles = mergeAttrsList (mapAttrsToList namesForShard (readDir baseDirectory));
 in
-self: super:
+final: prev:
 {
   # This attribute is necessary to allow CI to ensure that all packages defined in `pkgs/by-name`
   # don't have an overriding definition in `all-packages.nix` with an empty (`{ }`) second `callPackage` argument.
@@ -53,19 +54,19 @@ self: super:
   # and whether it's defined by this file here or `all-packages.nix`.
   # TODO: This can be removed once `pkgs/by-name` can handle custom `callPackage` arguments without `all-packages.nix` (or any other way of achieving the same result).
   # Because at that point the code in ./stage.nix can be changed to not allow definitions in `all-packages.nix` to override ones from `pkgs/by-name` anymore and throw an error if that happens instead.
-  _internalCallByNamePackageFile = file: self.callPackage file { };
+  _internalCallByNamePackageFile = file: final.callPackage file { };
 }
 // mapAttrs (
   name: file:
   # Divergence from upstream nixpkgs: this overlay is applied on top of an
   # existing nixpkgs, so a by-name package may intentionally override an
-  # upstream attribute of the same name. `self.callPackage` would then
+  # upstream attribute of the same name. `final.callPackage` would then
   # infinitely recurse when the package references itself (e.g. via
-  # `.overrideAttrs`), so for colliding names we use `super.callPackage` and
+  # `.overrideAttrs`), so for colliding names we use `prev.callPackage` and
   # explicitly pass the original attribute. Fresh names use the normal
-  # upstream path so they can see sibling by-name packages through `self`.
-  if super ? ${name} then
-    super.callPackage file { ${name} = super.${name}; }
+  # upstream path so they can see sibling by-name packages through `final`.
+  if hasAttr name prev then
+    prev.callPackage file { ${name} = prev.${name}; }
   else
-    self._internalCallByNamePackageFile file
+    final._internalCallByNamePackageFile file
 ) packageFiles
