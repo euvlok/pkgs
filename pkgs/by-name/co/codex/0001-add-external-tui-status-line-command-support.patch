@@ -1,4 +1,4 @@
-From 10b69c6fcb8819052bb6299693c5bdd492b5eeeb Mon Sep 17 00:00:00 2001
+From 9c9bf23bc4eb6b5a3c56a25a18f7c5d79c522f99 Mon Sep 17 00:00:00 2001
 From: FlameFlag <git@ps1.sh>
 Date: Thu, 23 Apr 2026 12:47:01 +0300
 Subject: [PATCH] Add external TUI status line command support
@@ -12,10 +12,10 @@ Subject: [PATCH] Add external TUI status line command support
  codex-rs/tui/src/app/event_dispatch.rs        |   4 +
  codex-rs/tui/src/app_event.rs                 |   4 +
  codex-rs/tui/src/chatwidget.rs                |  14 +-
- .../tui/src/chatwidget/status_surfaces.rs     | 274 ++++++++++++++++++
+ .../tui/src/chatwidget/status_surfaces.rs     | 291 ++++++++++++++++++
  codex-rs/tui/src/chatwidget/tests.rs          |   1 +
  codex-rs/tui/src/chatwidget/tests/helpers.rs  |   6 +-
- 11 files changed, 332 insertions(+), 2 deletions(-)
+ 11 files changed, 349 insertions(+), 2 deletions(-)
 
 diff --git a/codex-rs/config/src/types.rs b/codex-rs/config/src/types.rs
 index 7413686a7..34531fd93 100644
@@ -215,7 +215,7 @@ index 91a2e7555..a833c3f79 100644
              .bottom_pane
              .set_collaboration_modes_enabled(/*enabled*/ true);
 diff --git a/codex-rs/tui/src/chatwidget/status_surfaces.rs b/codex-rs/tui/src/chatwidget/status_surfaces.rs
-index 94ed21600..69aeb7b09 100644
+index 94ed21600..220674b56 100644
 --- a/codex-rs/tui/src/chatwidget/status_surfaces.rs
 +++ b/codex-rs/tui/src/chatwidget/status_surfaces.rs
 @@ -4,6 +4,14 @@
@@ -303,7 +303,7 @@ index 94ed21600..69aeb7b09 100644
      /// Clears the terminal title Codex most recently wrote, if any.
      ///
      /// This does not attempt to restore the shell or terminal's previous title;
-@@ -413,6 +470,14 @@ impl ChatWidget {
+@@ -413,6 +470,15 @@ impl ChatWidget {
          });
      }
  
@@ -311,14 +311,15 @@ index 94ed21600..69aeb7b09 100644
 +        self.status_line_command_pending = false;
 +        if output.is_none() {
 +            self.status_line_command_running_payload = None;
++        } else {
++            self.status_line_command_output = output;
 +        }
-+        self.status_line_command_output = output;
 +    }
 +
      /// Resolves a display string for one configured status-line item.
      ///
      /// Returning `None` means "omit this item for now", not "configuration error". Callers rely on
-@@ -734,3 +799,212 @@ where
+@@ -734,3 +800,228 @@ where
      }
      (items, invalid)
  }
@@ -529,6 +530,22 @@ index 94ed21600..69aeb7b09 100644
 +            value["context_window"]["current_usage"]["cache_read_input_tokens"],
 +            25
 +        );
++    }
++
++    #[tokio::test]
++    async fn status_line_command_failure_keeps_previous_output() {
++        let (mut chat, _rx, _op_rx) =
++            crate::chatwidget::tests::make_chatwidget_manual(Some("gpt-5.4")).await;
++
++        chat.set_status_line_command_output(Some("cached footer".to_string()));
++        chat.set_status_line_command_output(None);
++
++        assert_eq!(
++            chat.status_line_command_output.as_deref(),
++            Some("cached footer")
++        );
++        assert_eq!(chat.status_line_command_running_payload, None);
++        assert!(!chat.status_line_command_pending);
 +    }
 +}
 diff --git a/codex-rs/tui/src/chatwidget/tests.rs b/codex-rs/tui/src/chatwidget/tests.rs
