@@ -1,0 +1,572 @@
+From 10b69c6fcb8819052bb6299693c5bdd492b5eeeb Mon Sep 17 00:00:00 2001
+From: FlameFlag <git@ps1.sh>
+Date: Thu, 23 Apr 2026 12:47:01 +0300
+Subject: [PATCH] Add external TUI status line command support
+
+---
+ codex-rs/config/src/types.rs                  |   8 +
+ codex-rs/core/config.schema.json              |   8 +
+ codex-rs/core/src/config/config_tests.rs      |   6 +
+ codex-rs/core/src/config/mod.rs               |   8 +
+ codex-rs/tui/Cargo.toml                       |   1 +
+ codex-rs/tui/src/app/event_dispatch.rs        |   4 +
+ codex-rs/tui/src/app_event.rs                 |   4 +
+ codex-rs/tui/src/chatwidget.rs                |  14 +-
+ .../tui/src/chatwidget/status_surfaces.rs     | 274 ++++++++++++++++++
+ codex-rs/tui/src/chatwidget/tests.rs          |   1 +
+ codex-rs/tui/src/chatwidget/tests/helpers.rs  |   6 +-
+ 11 files changed, 332 insertions(+), 2 deletions(-)
+
+diff --git a/codex-rs/config/src/types.rs b/codex-rs/config/src/types.rs
+index 7413686a7..34531fd93 100644
+--- a/codex-rs/config/src/types.rs
++++ b/codex-rs/config/src/types.rs
+@@ -567,6 +567,14 @@ pub struct Tui {
+     #[serde(default)]
+     pub status_line: Option<Vec<String>>,
+ 
++    /// External command used to render the status line.
++    ///
++    /// When set, Codex runs this argv-style command in the active working directory, writes a
++    /// JSON snapshot of runtime status information to stdin, and renders the first stdout line in
++    /// the footer status line. This overrides `status_line` item rendering while configured.
++    #[serde(default)]
++    pub status_line_command: Option<Vec<String>>,
++
+     /// Ordered list of terminal title item identifiers.
+     ///
+     /// When set, the TUI renders the selected items into the terminal window/tab title.
+diff --git a/codex-rs/core/config.schema.json b/codex-rs/core/config.schema.json
+index 1223b45a6..43d804a26 100644
+--- a/codex-rs/core/config.schema.json
++++ b/codex-rs/core/config.schema.json
+@@ -2222,6 +2222,14 @@
+           },
+           "type": "array"
+         },
++        "status_line_command": {
++          "default": null,
++          "description": "External command used to render the status line.\n\nWhen set, Codex runs this argv-style command in the active working directory, writes a JSON snapshot of runtime status information to stdin, and renders the first stdout line in the footer status line. This overrides `status_line` item rendering while configured.",
++          "items": {
++            "type": "string"
++          },
++          "type": "array"
++        },
+         "terminal_title": {
+           "default": null,
+           "description": "Ordered list of terminal title item identifiers.\n\nWhen set, the TUI renders the selected items into the terminal window/tab title. When unset, the TUI defaults to: `spinner` and `project`.",
+diff --git a/codex-rs/core/src/config/config_tests.rs b/codex-rs/core/src/config/config_tests.rs
+index 820cd7e8b..fa27ba4f4 100644
+--- a/codex-rs/core/src/config/config_tests.rs
++++ b/codex-rs/core/src/config/config_tests.rs
+@@ -513,6 +513,7 @@ fn config_toml_deserializes_model_availability_nux() {
+             show_tooltips: true,
+             alternate_screen: AltScreenMode::default(),
+             status_line: None,
++            status_line_command: None,
+             terminal_title: None,
+             theme: None,
+             model_availability_nux: ModelAvailabilityNuxConfig {
+@@ -1425,6 +1426,7 @@ fn tui_config_missing_notifications_field_defaults_to_enabled() {
+             show_tooltips: true,
+             alternate_screen: AltScreenMode::Auto,
+             status_line: None,
++            status_line_command: None,
+             terminal_title: None,
+             theme: None,
+             model_availability_nux: ModelAvailabilityNuxConfig::default(),
+@@ -5272,6 +5274,7 @@ async fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
+             tool_suggest: ToolSuggestConfig::default(),
+             tui_alternate_screen: AltScreenMode::Auto,
+             tui_status_line: None,
++            tui_status_line_command: None,
+             tui_terminal_title: None,
+             tui_theme: None,
+             otel: OtelConfig::default(),
+@@ -5468,6 +5471,7 @@ async fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
+         tool_suggest: ToolSuggestConfig::default(),
+         tui_alternate_screen: AltScreenMode::Auto,
+         tui_status_line: None,
++        tui_status_line_command: None,
+         tui_terminal_title: None,
+         tui_theme: None,
+         otel: OtelConfig::default(),
+@@ -5618,6 +5622,7 @@ async fn test_precedence_fixture_with_zdr_profile() -> std::io::Result<()> {
+         tool_suggest: ToolSuggestConfig::default(),
+         tui_alternate_screen: AltScreenMode::Auto,
+         tui_status_line: None,
++        tui_status_line_command: None,
+         tui_terminal_title: None,
+         tui_theme: None,
+         otel: OtelConfig::default(),
+@@ -5753,6 +5758,7 @@ async fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
+         tool_suggest: ToolSuggestConfig::default(),
+         tui_alternate_screen: AltScreenMode::Auto,
+         tui_status_line: None,
++        tui_status_line_command: None,
+         tui_terminal_title: None,
+         tui_theme: None,
+         otel: OtelConfig::default(),
+diff --git a/codex-rs/core/src/config/mod.rs b/codex-rs/core/src/config/mod.rs
+index 5f77a6c5e..4a3ef0792 100644
+--- a/codex-rs/core/src/config/mod.rs
++++ b/codex-rs/core/src/config/mod.rs
+@@ -370,6 +370,13 @@ pub struct Config {
+     /// When unset, the TUI defaults to: `model-with-reasoning` and `current-dir`.
+     pub tui_status_line: Option<Vec<String>>,
+ 
++    /// External command used to render the TUI status line.
++    ///
++    /// When set, Codex writes a JSON snapshot of runtime status information to
++    /// the command's stdin and uses the first stdout line as the footer status
++    /// line.
++    pub tui_status_line_command: Option<Vec<String>>,
++
+     /// Ordered list of terminal title item identifiers for the TUI.
+     ///
+     /// When unset, the TUI defaults to: `project` and `spinner`.
+@@ -2460,6 +2467,7 @@ impl Config {
+                 .map(|t| t.alternate_screen)
+                 .unwrap_or_default(),
+             tui_status_line: cfg.tui.as_ref().and_then(|t| t.status_line.clone()),
++            tui_status_line_command: cfg.tui.as_ref().and_then(|t| t.status_line_command.clone()),
+             tui_terminal_title: cfg.tui.as_ref().and_then(|t| t.terminal_title.clone()),
+             tui_theme: cfg.tui.as_ref().and_then(|t| t.theme.clone()),
+             otel: {
+diff --git a/codex-rs/tui/Cargo.toml b/codex-rs/tui/Cargo.toml
+index 29d6d0c39..65341ab6a 100644
+--- a/codex-rs/tui/Cargo.toml
++++ b/codex-rs/tui/Cargo.toml
+@@ -94,6 +94,7 @@ tempfile = { workspace = true }
+ textwrap = { workspace = true }
+ thiserror = { workspace = true }
+ tokio = { workspace = true, features = [
++    "io-util",
+     "io-std",
+     "macros",
+     "process",
+diff --git a/codex-rs/tui/src/app/event_dispatch.rs b/codex-rs/tui/src/app/event_dispatch.rs
+index 2b9e3c91b..1dee3864f 100644
+--- a/codex-rs/tui/src/app/event_dispatch.rs
++++ b/codex-rs/tui/src/app/event_dispatch.rs
+@@ -1582,6 +1582,10 @@ impl App {
+                 self.chat_widget.set_status_line_branch(cwd, branch);
+                 self.refresh_status_line();
+             }
++            AppEvent::StatusLineCommandUpdated { output } => {
++                self.chat_widget.set_status_line_command_output(output);
++                self.refresh_status_line();
++            }
+             AppEvent::StatusLineSetupCancelled => {
+                 self.chat_widget.cancel_status_line_setup();
+             }
+diff --git a/codex-rs/tui/src/app_event.rs b/codex-rs/tui/src/app_event.rs
+index 8654684ac..0240c81a2 100644
+--- a/codex-rs/tui/src/app_event.rs
++++ b/codex-rs/tui/src/app_event.rs
+@@ -656,6 +656,10 @@ pub(crate) enum AppEvent {
+         cwd: PathBuf,
+         branch: Option<String>,
+     },
++    /// Async update of external-command status line output.
++    StatusLineCommandUpdated {
++        output: Option<String>,
++    },
+     /// Apply a user-confirmed status-line item ordering/selection.
+     StatusLineSetup {
+         items: Vec<StatusLineItem>,
+diff --git a/codex-rs/tui/src/chatwidget.rs b/codex-rs/tui/src/chatwidget.rs
+index 91a2e7555..a833c3f79 100644
+--- a/codex-rs/tui/src/chatwidget.rs
++++ b/codex-rs/tui/src/chatwidget.rs
+@@ -1026,6 +1026,14 @@ pub(crate) struct ChatWidget {
+     status_line_branch_pending: bool,
+     // True once we've attempted a branch lookup for the current CWD.
+     status_line_branch_lookup_complete: bool,
++    // Most recent desired JSON payload for the external status-line command.
++    status_line_command_desired_payload: Option<String>,
++    // JSON payload currently being rendered by the in-flight status-line command.
++    status_line_command_running_payload: Option<String>,
++    // Cached stdout from the most recent completed status-line command run.
++    status_line_command_output: Option<String>,
++    // True while an async status-line command run is in flight.
++    status_line_command_pending: bool,
+     external_editor_state: ExternalEditorState,
+     realtime_conversation: RealtimeConversationUiState,
+     last_rendered_user_message_event: Option<RenderedUserMessageEvent>,
+@@ -5283,6 +5291,10 @@ impl ChatWidget {
+             status_line_branch_cwd: None,
+             status_line_branch_pending: false,
+             status_line_branch_lookup_complete: false,
++            status_line_command_desired_payload: None,
++            status_line_command_running_payload: None,
++            status_line_command_output: None,
++            status_line_command_pending: false,
+             external_editor_state: ExternalEditorState::Closed,
+             realtime_conversation: RealtimeConversationUiState::default(),
+             last_rendered_user_message_event: None,
+@@ -5297,7 +5309,7 @@ impl ChatWidget {
+             .set_audio_device_selection_enabled(widget.realtime_audio_device_selection_enabled());
+         widget
+             .bottom_pane
+-            .set_status_line_enabled(!widget.configured_status_line_items().is_empty());
++            .set_status_line_enabled(widget.status_line_enabled_in_config());
+         widget
+             .bottom_pane
+             .set_collaboration_modes_enabled(/*enabled*/ true);
+diff --git a/codex-rs/tui/src/chatwidget/status_surfaces.rs b/codex-rs/tui/src/chatwidget/status_surfaces.rs
+index 94ed21600..69aeb7b09 100644
+--- a/codex-rs/tui/src/chatwidget/status_surfaces.rs
++++ b/codex-rs/tui/src/chatwidget/status_surfaces.rs
+@@ -4,6 +4,14 @@
+ //! behavior easier to review without paging through the rest of `chatwidget.rs`.
+ 
+ use super::*;
++use codex_ansi_escape::ansi_escape_line;
++use serde::Serialize;
++use std::process::Stdio;
++use tokio::io::AsyncReadExt;
++use tokio::io::AsyncWriteExt;
++use tokio::process::Command;
++
++const STATUS_LINE_COMMAND_TIMEOUT: Duration = Duration::from_millis(750);
+ 
+ /// Items shown in the terminal title when the user has not configured a
+ /// custom selection. Intentionally minimal: spinner + project name.
+@@ -65,6 +73,18 @@ pub(super) struct CachedProjectRootName {
+ }
+ 
+ impl ChatWidget {
++    fn configured_status_line_command(&self) -> Option<&[String]> {
++        self.config
++            .tui_status_line_command
++            .as_deref()
++            .filter(|cmd| !cmd.is_empty())
++    }
++
++    pub(super) fn status_line_enabled_in_config(&self) -> bool {
++        self.configured_status_line_command().is_some()
++            || !self.configured_status_line_items().is_empty()
++    }
++
+     fn status_surface_selections(&self) -> StatusSurfaceSelections {
+         let (status_line_items, invalid_status_line_items) = self.status_line_items_with_invalids();
+         let (terminal_title_items, invalid_terminal_title_items) =
+@@ -135,6 +155,16 @@ impl ChatWidget {
+     }
+ 
+     fn refresh_status_line_from_selections(&mut self, selections: &StatusSurfaceSelections) {
++        if let Some(command) = self
++            .configured_status_line_command()
++            .map(<[String]>::to_vec)
++        {
++            self.refresh_status_line_from_command(command);
++            return;
++        }
++
++        self.status_line_command_desired_payload = None;
++
+         let enabled = !selections.status_line_items.is_empty();
+         self.bottom_pane.set_status_line_enabled(enabled);
+         if !enabled {
+@@ -157,6 +187,33 @@ impl ChatWidget {
+         self.set_status_line(line);
+     }
+ 
++    fn refresh_status_line_from_command(&mut self, command: Vec<String>) {
++        self.bottom_pane.set_status_line_enabled(true);
++
++        let payload = build_status_line_command_payload(self);
++        self.status_line_command_desired_payload = Some(payload.clone());
++
++        if !self.status_line_command_pending
++            && self.status_line_command_running_payload.as_deref() != Some(payload.as_str())
++        {
++            self.status_line_command_running_payload = Some(payload.clone());
++            self.status_line_command_pending = true;
++
++            let cwd = self.status_line_cwd().to_path_buf();
++            let tx = self.app_event_tx.clone();
++            tokio::spawn(async move {
++                let output = run_status_line_command(command, cwd, payload).await;
++                tx.send(AppEvent::StatusLineCommandUpdated { output });
++            });
++        }
++
++        let line = self
++            .status_line_command_output
++            .as_deref()
++            .map(ansi_escape_line);
++        self.set_status_line(line);
++    }
++
+     /// Clears the terminal title Codex most recently wrote, if any.
+     ///
+     /// This does not attempt to restore the shell or terminal's previous title;
+@@ -413,6 +470,14 @@ impl ChatWidget {
+         });
+     }
+ 
++    pub(crate) fn set_status_line_command_output(&mut self, output: Option<String>) {
++        self.status_line_command_pending = false;
++        if output.is_none() {
++            self.status_line_command_running_payload = None;
++        }
++        self.status_line_command_output = output;
++    }
++
+     /// Resolves a display string for one configured status-line item.
+     ///
+     /// Returning `None` means "omit this item for now", not "configuration error". Callers rely on
+@@ -734,3 +799,212 @@ where
+     }
+     (items, invalid)
+ }
++
++#[derive(Serialize)]
++struct StatusLineCommandWorkspace {
++    current_dir: Option<String>,
++}
++
++#[derive(Serialize)]
++struct StatusLineCommandModel {
++    display_name: Option<String>,
++}
++
++#[derive(Serialize)]
++struct StatusLineCommandContextUsage {
++    input_tokens: u64,
++    output_tokens: u64,
++    cache_creation_input_tokens: u64,
++    cache_read_input_tokens: u64,
++}
++
++#[derive(Serialize)]
++struct StatusLineCommandContextWindow {
++    used_percentage: Option<f64>,
++    context_window_size: Option<u64>,
++    current_usage: StatusLineCommandContextUsage,
++}
++
++#[derive(Serialize)]
++struct StatusLineCommandRateLimitWindow {
++    used_percentage: Option<f64>,
++    resets_at: Option<i64>,
++}
++
++#[derive(Serialize)]
++struct StatusLineCommandRateLimits {
++    five_hour: StatusLineCommandRateLimitWindow,
++    seven_day: StatusLineCommandRateLimitWindow,
++}
++
++#[derive(Serialize)]
++struct StatusLineCommandPayload {
++    workspace: StatusLineCommandWorkspace,
++    cwd: Option<String>,
++    session_id: Option<String>,
++    model: StatusLineCommandModel,
++    context_window: StatusLineCommandContextWindow,
++    rate_limits: StatusLineCommandRateLimits,
++}
++
++fn build_status_line_command_payload(chat: &ChatWidget) -> String {
++    let cwd = chat
++        .current_cwd
++        .as_ref()
++        .and_then(|cwd| cwd.to_str().map(str::to_owned))
++        .or_else(|| chat.config.cwd.to_str().map(str::to_owned));
++    let usage = chat.status_line_total_usage();
++    let context_window_size = chat.status_line_context_window_size();
++    let limit_snapshot = chat.rate_limit_snapshots_by_limit_id.get("codex");
++
++    let payload = StatusLineCommandPayload {
++        workspace: StatusLineCommandWorkspace {
++            current_dir: cwd.clone(),
++        },
++        cwd,
++        session_id: chat.thread_id.map(|id| id.to_string()),
++        model: StatusLineCommandModel {
++            display_name: Some(chat.model_display_name().to_string()),
++        },
++        context_window: StatusLineCommandContextWindow {
++            used_percentage: chat
++                .status_line_context_used_percent()
++                .map(|used| used as f64),
++            context_window_size: context_window_size.and_then(|size| u64::try_from(size).ok()),
++            current_usage: StatusLineCommandContextUsage {
++                input_tokens: usage.input_tokens.max(0) as u64,
++                output_tokens: usage.output_tokens.max(0) as u64,
++                cache_creation_input_tokens: 0,
++                cache_read_input_tokens: usage.cached_input_tokens.max(0) as u64,
++            },
++        },
++        rate_limits: StatusLineCommandRateLimits {
++            five_hour: StatusLineCommandRateLimitWindow {
++                used_percentage: limit_snapshot
++                    .and_then(|snapshot| snapshot.primary.as_ref())
++                    .map(|window| window.used_percent),
++                resets_at: None,
++            },
++            seven_day: StatusLineCommandRateLimitWindow {
++                used_percentage: limit_snapshot
++                    .and_then(|snapshot| snapshot.secondary.as_ref())
++                    .map(|window| window.used_percent),
++                resets_at: None,
++            },
++        },
++    };
++
++    serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string())
++}
++
++async fn run_status_line_command(
++    command: Vec<String>,
++    cwd: PathBuf,
++    payload: String,
++) -> Option<String> {
++    let mut child = Command::new(command.first()?);
++    child
++        .args(&command[1..])
++        .current_dir(cwd)
++        .stdin(Stdio::piped())
++        .stdout(Stdio::piped())
++        .stderr(Stdio::null());
++
++    let mut child = child.spawn().ok()?;
++    let mut stdout = child.stdout.take()?;
++    let stdout_task = tokio::spawn(async move {
++        let mut bytes = Vec::new();
++        let _ = stdout.read_to_end(&mut bytes).await;
++        bytes
++    });
++
++    if let Some(mut stdin) = child.stdin.take() {
++        if stdin.write_all(payload.as_bytes()).await.is_err() {
++            let _ = child.start_kill();
++            let _ = child.wait().await;
++            return None;
++        }
++    }
++
++    let status = match tokio::time::timeout(STATUS_LINE_COMMAND_TIMEOUT, child.wait()).await {
++        Ok(Ok(status)) => status,
++        Ok(Err(_)) => return None,
++        Err(_) => {
++            let _ = child.start_kill();
++            let _ = child.wait().await;
++            return None;
++        }
++    };
++
++    let stdout = stdout_task.await.ok()?;
++    if !status.success() {
++        return None;
++    }
++
++    let output = String::from_utf8_lossy(&stdout);
++    let line = output.lines().next().unwrap_or_default();
++    (!line.trim().is_empty()).then(|| line.to_string())
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use pretty_assertions::assert_eq;
++
++    #[tokio::test]
++    #[cfg(unix)]
++    async fn status_line_command_receives_json_on_stdin() {
++        use std::fs;
++        use std::os::unix::fs::PermissionsExt;
++
++        let dir = tempfile::tempdir().expect("tempdir");
++        let script = dir.path().join("status-line.sh");
++        fs::write(&script, "#!/bin/sh\ncat\n").expect("write script");
++        let mut perms = fs::metadata(&script).expect("stat").permissions();
++        perms.set_mode(0o755);
++        fs::set_permissions(&script, perms).expect("chmod");
++
++        let output = run_status_line_command(
++            vec![script.to_string_lossy().to_string()],
++            dir.path().to_path_buf(),
++            "{\"cwd\":\"/tmp/project\"}\n".to_string(),
++        )
++        .await;
++
++        assert_eq!(output, Some("{\"cwd\":\"/tmp/project\"}".to_string()));
++    }
++
++    #[tokio::test]
++    async fn status_line_command_payload_matches_claude_statusline_shape() {
++        let (mut chat, _rx, _op_rx) =
++            crate::chatwidget::tests::make_chatwidget_manual(Some("gpt-5.4")).await;
++        chat.thread_id = Some(ThreadId::new());
++        chat.current_cwd = Some(PathBuf::from("/tmp/project"));
++        chat.token_info = Some(TokenUsageInfo {
++            total_token_usage: TokenUsage {
++                input_tokens: 100,
++                cached_input_tokens: 25,
++                output_tokens: 50,
++                reasoning_output_tokens: 0,
++                total_tokens: 175,
++            },
++            last_token_usage: TokenUsage::default(),
++            model_context_window: Some(272_000),
++        });
++
++        let payload = build_status_line_command_payload(&chat);
++        let value: serde_json::Value = serde_json::from_str(&payload).expect("payload json");
++
++        assert_eq!(value["workspace"]["current_dir"], "/tmp/project");
++        assert_eq!(value["cwd"], "/tmp/project");
++        assert_eq!(value["model"]["display_name"], "gpt-5.4");
++        assert_eq!(
++            value["context_window"]["current_usage"]["input_tokens"],
++            100
++        );
++        assert_eq!(
++            value["context_window"]["current_usage"]["cache_read_input_tokens"],
++            25
++        );
++    }
++}
+diff --git a/codex-rs/tui/src/chatwidget/tests.rs b/codex-rs/tui/src/chatwidget/tests.rs
+index 487e8a356..bde687359 100644
+--- a/codex-rs/tui/src/chatwidget/tests.rs
++++ b/codex-rs/tui/src/chatwidget/tests.rs
+@@ -284,6 +284,7 @@ mod status_and_layout;
+ mod status_command_tests;
+ mod status_surface_previews;
+ 
++pub(crate) use helpers::make_chatwidget_manual;
+ pub(crate) use helpers::make_chatwidget_manual_with_sender;
+ pub(crate) use helpers::set_chatgpt_auth;
+ pub(crate) use helpers::set_fast_mode_test_catalog;
+diff --git a/codex-rs/tui/src/chatwidget/tests/helpers.rs b/codex-rs/tui/src/chatwidget/tests/helpers.rs
+index 960ab992a..23ba3812d 100644
+--- a/codex-rs/tui/src/chatwidget/tests/helpers.rs
++++ b/codex-rs/tui/src/chatwidget/tests/helpers.rs
+@@ -139,7 +139,7 @@ pub(super) fn test_model_catalog(config: &Config) -> Arc<ModelCatalog> {
+ }
+ 
+ // --- Helpers for tests that need direct construction and event draining ---
+-pub(super) async fn make_chatwidget_manual(
++pub(crate) async fn make_chatwidget_manual(
+     model_override: Option<&str>,
+ ) -> (
+     ChatWidget,
+@@ -304,6 +304,10 @@ pub(super) async fn make_chatwidget_manual(
+         status_line_branch_cwd: None,
+         status_line_branch_pending: false,
+         status_line_branch_lookup_complete: false,
++        status_line_command_desired_payload: None,
++        status_line_command_running_payload: None,
++        status_line_command_output: None,
++        status_line_command_pending: false,
+         external_editor_state: ExternalEditorState::Closed,
+         realtime_conversation: RealtimeConversationUiState::default(),
+         last_rendered_user_message_event: None,
+-- 
+2.53.0
+
