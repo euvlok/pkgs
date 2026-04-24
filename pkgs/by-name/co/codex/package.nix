@@ -9,12 +9,12 @@
   unzip,
 }:
 let
-  version = "0.123.0";
+  version = "0.124.0";
   src = fetchFromGitHub {
     owner = "openai";
     repo = "codex";
     rev = "rust-v${version}";
-    hash = "sha256-v0eqZFObF4Gla8v/MbdchpGZZ0DTL4x2LvX/LNBTzS8=";
+    hash = "sha256-YFnzzwCm9/b30qLDMbkf/rEizuTjeqdCgoBZeS0wNBo=";
   };
   webrtcTag = "webrtc-24f6822-2";
   macosWebrtcTriple =
@@ -55,7 +55,7 @@ codex.overrideAttrs (prevAttrs: {
     name = "codex-${version}-vendor";
     inherit src;
     sourceRoot = "${src.name}/codex-rs";
-    hash = "sha256-PY0y8yhqdzrgZgKjEWseD5ePTlZM1NWvYNHW76XgOvU=";
+    hash = "sha256-tuUY+Mg7DwYnYLt1zfqo0rrz5ip0fukxj947yBJAyks=";
   };
 
   patches = (prevAttrs.patches or [ ]) ++ [
