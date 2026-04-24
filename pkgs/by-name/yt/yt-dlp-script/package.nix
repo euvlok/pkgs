@@ -5,7 +5,7 @@
   nushell,
   cacert,
   uutils-findutils,
-  ffmpeg-full,
+  ffmpeg,
   jq,
   gnused,
   yt-dlp,
@@ -28,7 +28,7 @@ runCommand "yt-dlp-script"
           cacert
           uutils-findutils
           gnused
-          ffmpeg-full
+          ffmpeg
           jq
           yt-dlp
         ]
