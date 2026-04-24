@@ -62,6 +62,7 @@ codex.overrideAttrs (prevAttrs: {
     ./0001-add-external-tui-status-line-command-support.patch
     ./0002-trust-projects-by-default.patch
     ./0003-shift-empty-placeholder-off-cursor-cell.patch
+    ./0004-add-richer-status-line-command-telemetry.patch
   ];
 
   env = (prevAttrs.env or { }) // lib.optionalAttrs stdenv.hostPlatform.isDarwin {
