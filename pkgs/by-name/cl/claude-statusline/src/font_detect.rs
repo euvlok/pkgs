@@ -59,12 +59,14 @@ pub fn config_path_for(terminal: Terminal) -> Option<PathBuf> {
 
     match terminal {
         Terminal::Ghostty => {
+            let xdg_path = xdg_config.join("ghostty/config");
             let mac_path = home.join("Library/Application Support/com.mitchellh.ghostty/config");
-            if mac_path.exists() {
-                Some(mac_path)
-            } else {
-                Some(xdg_config.join("ghostty/config"))
+            for candidate in [xdg_path.clone(), mac_path] {
+                if candidate.exists() {
+                    return Some(candidate);
+                }
             }
+            Some(xdg_path)
         }
         Terminal::WezTerm => {
             for candidate in [

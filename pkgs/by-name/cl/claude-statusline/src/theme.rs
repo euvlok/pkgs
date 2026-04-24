@@ -73,35 +73,14 @@ fn detect_from_config() -> Option<ThemeMode> {
     }
 }
 
-/// Ghostty: look for `theme = light:X,dark:Y` (the prefix tells us the
-/// mode directly) or `background = #RRGGBB`.
+/// Ghostty: prefer an explicit `background = #RRGGBB`; otherwise infer from
+/// `theme = SomeName` or unambiguous `theme = light:X,dark:Y` entries.
 fn detect_ghostty(text: &str, _config_path: &Path) -> Option<ThemeMode> {
+    let mut theme_mode = None;
     for line in text.lines() {
         let line = line.trim();
         if line.starts_with('#') {
             continue;
-        }
-        // `theme = light:Foo,dark:Bar` or just `theme = SomeName`
-        if let Some(val) = strip_config_key(line, "theme") {
-            // Ghostty's light/dark auto-switch syntax: the *first*
-            // prefix tells us what the "primary" mode is. If neither
-            // prefix is present, we can't infer mode from the theme
-            // name alone — fall through to background color.
-            if val.starts_with("light:") {
-                return Some(ThemeMode::Light);
-            }
-            if val.starts_with("dark:") {
-                return Some(ThemeMode::Dark);
-            }
-            // Single theme name — check for common light theme naming
-            // conventions as a heuristic.
-            let lower = val.to_ascii_lowercase();
-            if lower.contains("light") || lower.contains("latte") || lower.contains("dawn") {
-                return Some(ThemeMode::Light);
-            }
-            if lower.contains("dark") || lower.contains("mocha") || lower.contains("night") {
-                return Some(ThemeMode::Dark);
-            }
         }
         // `background = #RRGGBB` or `background = RRGGBB`
         if let Some(val) = strip_config_key(line, "background")
@@ -109,6 +88,51 @@ fn detect_ghostty(text: &str, _config_path: &Path) -> Option<ThemeMode> {
         {
             return Some(mode);
         }
+        // `theme = light:Foo,dark:Bar` or just `theme = SomeName`
+        if let Some(val) = strip_config_key(line, "theme") {
+            theme_mode = mode_from_ghostty_theme(val);
+        }
+    }
+    theme_mode
+}
+
+fn mode_from_ghostty_theme(val: &str) -> Option<ThemeMode> {
+    let entries: Vec<&str> = val.split(',').collect();
+    if entries.len() > 1 || entries.iter().any(|entry| entry.contains(':')) {
+        let mut inferred = None;
+        for entry in entries {
+            let entry = entry.trim();
+            if entry.is_empty() {
+                continue;
+            }
+            let (prefix, name) = entry
+                .split_once(':')
+                .map_or(("", entry), |(prefix, name)| (prefix.trim(), name.trim()));
+            let mode = mode_from_theme_name(name).or_else(|| match prefix {
+                "light" => Some(ThemeMode::Light),
+                "dark" => Some(ThemeMode::Dark),
+                _ => None,
+            })?;
+
+            match inferred {
+                Some(existing) if existing != mode => return None,
+                Some(_) => {}
+                None => inferred = Some(mode),
+            }
+        }
+        return inferred;
+    }
+
+    mode_from_theme_name(val)
+}
+
+fn mode_from_theme_name(name: &str) -> Option<ThemeMode> {
+    let lower = name.to_ascii_lowercase();
+    if lower.contains("light") || lower.contains("latte") || lower.contains("dawn") {
+        return Some(ThemeMode::Light);
+    }
+    if lower.contains("dark") || lower.contains("mocha") || lower.contains("night") {
+        return Some(ThemeMode::Dark);
     }
     None
 }
@@ -342,14 +366,17 @@ mod tests {
     }
 
     #[test]
-    fn ghostty_theme_prefix() {
+    fn ghostty_theme_auto_switch_is_ambiguous() {
         let config = "theme = light:Catppuccin Latte,dark:Catppuccin Mocha\n";
-        assert_eq!(
-            detect_ghostty(config, Path::new("")),
-            Some(ThemeMode::Light)
-        );
+        assert_eq!(detect_ghostty(config, Path::new("")), None);
 
         let config = "theme = dark:Gruvbox,light:Gruvbox Light\n";
+        assert_eq!(detect_ghostty(config, Path::new("")), None);
+    }
+
+    #[test]
+    fn ghostty_theme_auto_switch_same_theme_name() {
+        let config = "theme = light:Catppuccin Mocha,dark:Catppuccin Mocha\n";
         assert_eq!(detect_ghostty(config, Path::new("")), Some(ThemeMode::Dark));
     }
 

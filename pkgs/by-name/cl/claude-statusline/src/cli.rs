@@ -260,7 +260,11 @@ pub struct Cli {
     pub preview: bool,
 
     /// Read the payload from a JSON string instead of stdin
-    #[arg(long = "input-json", value_name = "JSON", help_heading = "Shell integration")]
+    #[arg(
+        long = "input-json",
+        value_name = "JSON",
+        help_heading = "Shell integration"
+    )]
     pub input_json: Option<String>,
 
     /// Pace segment glyph set [auto-detected from terminal font]
@@ -352,8 +356,11 @@ impl Cli {
 
     pub fn to_settings(&self) -> Settings {
         // Auto-detect hyperlink support when the user hasn't explicitly
-        // opted in via `--hyperlinks` or the env var.
-        let hyperlinks = self.hyperlinks || supports_hyperlinks::supports_hyperlinks();
+        // opted in via `--hyperlinks` or the env var. Codex captures status
+        // command stdout through a pipe, so only auto-enable OSC 8 when stdout
+        // is an actual terminal.
+        let hyperlinks =
+            self.hyperlinks || supports_hyperlinks::on(supports_hyperlinks::Stream::Stdout);
         Settings {
             flash: !self.no_flash,
             flash_ttl_secs: self.flash_ttl,
