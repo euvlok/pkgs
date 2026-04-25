@@ -229,11 +229,36 @@ def update_one(
 
 
 def is_fetchable_derivation(pkg_path: Path) -> bool:
-    expr = (
-        f'let p = (with import <nixpkgs> {{}}; callPackage "{pkg_path}" {{}}); '
-        f'in if (p.type or "") == "derivation" && p ? src then "1" else ""'
+    name = pkg_path.parent.name
+    system = nix_eval("builtins.currentSystem", check=True)
+    r = run(
+        [
+            "nix",
+            "eval",
+            "--impure",
+            "--raw",
+            f".#legacyPackages.{system}.{name}.type",
+        ],
+        cwd=REPO_ROOT,
+        capture=True,
+        env_extra={"NIXPKGS_ALLOW_UNFREE": "1"},
     )
-    return nix_eval(expr) == "1"
+    if r.returncode != 0 or r.stdout.strip() != "derivation":
+        return False
+
+    r = run(
+        [
+            "nix",
+            "eval",
+            "--impure",
+            "--raw",
+            f".#legacyPackages.{system}.{name}.src.drvPath",
+        ],
+        cwd=REPO_ROOT,
+        capture=True,
+        env_extra={"NIXPKGS_ALLOW_UNFREE": "1"},
+    )
+    return r.returncode == 0 and bool(r.stdout.strip())
 
 
 def build_pkg(pkg_path: Path) -> bool:

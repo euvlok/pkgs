@@ -33,16 +33,18 @@ let
       null;
   macosWebrtcPrebuilt =
     if stdenv.hostPlatform.isDarwin then
-      runCommand "codex-${upstreamVersion}-${macosWebrtcTriple}" {
-        nativeBuildInputs = [ unzip ];
-        src = fetchurl {
-          url = "https://github.com/livekit/rust-sdks/releases/download/${webrtcTag}/webrtc-${macosWebrtcTriple}.zip";
-          hash = macosWebrtcZipHash;
-        };
-      } ''
-        mkdir -p "$out"
-        unzip -q "$src" -d "$out"
-      ''
+      runCommand "codex-${upstreamVersion}-${macosWebrtcTriple}"
+        {
+          nativeBuildInputs = [ unzip ];
+          src = fetchurl {
+            url = "https://github.com/livekit/rust-sdks/releases/download/${webrtcTag}/webrtc-${macosWebrtcTriple}.zip";
+            hash = macosWebrtcZipHash;
+          };
+        }
+        ''
+          mkdir -p "$out"
+          unzip -q "$src" -d "$out"
+        ''
     else
       null;
 in
@@ -59,13 +61,16 @@ codex.overrideAttrs (
         sourceRoot = "${upstreamSrc.name}/codex-rs";
         hash = "sha256-fDVlj7zAZnwP9YBaYaSQZXYYWrBm5IEyLT9zoorvzFg=";
       };
-      env = (prevAttrs.env or { }) // lib.optionalAttrs stdenv.hostPlatform.isDarwin {
-        LK_CUSTOM_WEBRTC = "${macosWebrtcPrebuilt}/${macosWebrtcTriple}";
-      };
     };
   in
   versionBump
   // {
+    env =
+      (prevAttrs.env or { })
+      // lib.optionalAttrs stdenv.hostPlatform.isDarwin {
+        LK_CUSTOM_WEBRTC = "${macosWebrtcPrebuilt}/${macosWebrtcTriple}";
+      };
+
     patches = (prevAttrs.patches or [ ]) ++ [
       ./0001-add-external-tui-status-line-command-support.patch
       ./0002-trust-projects-by-default.patch

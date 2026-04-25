@@ -62,6 +62,7 @@
                 jq
                 gh
                 sd
+                yamlfmt
                 ;
               python3 = pkgs.python3.withPackages (
                 ps:
@@ -100,6 +101,7 @@
             meta.description = "Update packages and verify changed builds";
             program = toString (
               pkgs.writeShellScript "update" ''
+                export EUPKGS_REPO_ROOT="''${EUPKGS_REPO_ROOT:-$PWD}"
                 exec ${scriptPython}/bin/python3 ${self}/scripts/update.py "$@"
               ''
             );
@@ -109,6 +111,7 @@
             meta.description = "Regenerate the README package table";
             program = toString (
               pkgs.writeShellScript "gen-pkg-table" ''
+                export EUPKGS_REPO_ROOT="''${EUPKGS_REPO_ROOT:-$PWD}"
                 exec ${scriptPython}/bin/python3 ${self}/scripts/gen-pkg-table.py "$@"
               ''
             );
@@ -118,6 +121,7 @@
             meta.description = "Report local package pin status against nixpkgs master";
             program = toString (
               pkgs.writeShellScript "status" ''
+                export EUPKGS_REPO_ROOT="''${EUPKGS_REPO_ROOT:-$PWD}"
                 exec ${scriptPython}/bin/python3 ${self}/scripts/status.py "$@"
               ''
             );

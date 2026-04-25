@@ -10,7 +10,7 @@ from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(os.environ.get("EUPKGS_REPO_ROOT", Path(__file__).resolve().parent.parent))
 FORMAL_ARG_RE = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_'-]*)")
 TOP_LEVEL_ARGS_RE = re.compile(r"\A\s*\{(?P<body>.*?)\}\s*:", re.DOTALL)
 
@@ -34,7 +34,13 @@ def gha_output(key: str, value: str) -> None:
     if not path:
         return
     with open(path, "a") as f:
-        f.write(f"{key}={value}\n")
+        if "\n" in value:
+            delimiter = "EOF"
+            while delimiter in value:
+                delimiter += "_EOF"
+            f.write(f"{key}<<{delimiter}\n{value}\n{delimiter}\n")
+        else:
+            f.write(f"{key}={value}\n")
 
 
 def gha_summary(content: str) -> None:
