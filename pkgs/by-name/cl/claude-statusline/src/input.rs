@@ -12,6 +12,7 @@ use serde_json::Value;
 
 #[derive(Debug, Default)]
 pub struct Input {
+    pub source: InputSource,
     pub workspace: Workspace,
     pub cwd: Option<String>,
     pub transcript_path: Option<String>,
@@ -20,6 +21,13 @@ pub struct Input {
     pub context_window: ContextWindow,
     pub rate_limits: RateLimits,
     pub cost: Cost,
+}
+
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
+pub enum InputSource {
+    #[default]
+    Claude,
+    Codex,
 }
 
 impl<'de> Deserialize<'de> for Input {
@@ -235,6 +243,7 @@ impl ClaudeInput {
 
     fn into_input(self) -> Input {
         Input {
+            source: InputSource::Claude,
             workspace: self.workspace,
             cwd: self.cwd,
             transcript_path: self.transcript_path,
@@ -264,6 +273,7 @@ impl CodexHookInput {
     fn into_input(self) -> Input {
         let cwd = self.cwd.and_then(nonempty_owned);
         Input {
+            source: InputSource::Codex,
             workspace: Workspace {
                 current_dir: cwd.clone(),
             },
@@ -294,6 +304,7 @@ impl CodexNotifyInput {
     fn into_input(self) -> Input {
         let cwd = self.cwd.and_then(nonempty_owned);
         Input {
+            source: InputSource::Codex,
             workspace: Workspace {
                 current_dir: cwd.clone(),
             },
@@ -333,6 +344,7 @@ mod tests {
         assert_eq!(input.session_id.as_deref(), Some("sess-1"));
         assert_eq!(input.model.display_name.as_deref(), Some("Opus 4.1"));
         assert_eq!(input.context_window.used_percentage, Some(12.5));
+        assert_eq!(input.source, InputSource::Claude);
     }
 
     #[test]
@@ -357,6 +369,7 @@ mod tests {
         );
         assert_eq!(input.session_id.as_deref(), Some("thread-123"));
         assert_eq!(input.model.display_name.as_deref(), Some("gpt-5-codex"));
+        assert_eq!(input.source, InputSource::Codex);
     }
 
     #[test]
@@ -376,5 +389,6 @@ mod tests {
         assert_eq!(input.dir_full(), "/tmp/project");
         assert_eq!(input.session_id.as_deref(), Some("thread-456"));
         assert!(input.model.display_name.is_none());
+        assert_eq!(input.source, InputSource::Codex);
     }
 }

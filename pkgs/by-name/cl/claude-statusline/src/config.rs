@@ -29,7 +29,16 @@ use crate::render::layout::{Layout, SegmentName};
 /// On any parse failure we silently fall back to the default - the
 /// statusline must never blank out.
 pub fn load(cli_layout: Option<&str>, cli_config: Option<&Path>, excludes: &[String]) -> Layout {
-    let mut layout = resolve_base(cli_layout, cli_config);
+    load_with_default(cli_layout, cli_config, excludes, Layout::two_line())
+}
+
+pub fn load_with_default(
+    cli_layout: Option<&str>,
+    cli_config: Option<&Path>,
+    excludes: &[String],
+    default_layout: Layout,
+) -> Layout {
+    let mut layout = resolve_base(cli_layout, cli_config, &default_layout);
     if !excludes.is_empty() {
         let drop: Vec<SegmentName> = excludes
             .iter()
@@ -41,12 +50,16 @@ pub fn load(cli_layout: Option<&str>, cli_config: Option<&Path>, excludes: &[Str
         layout.lines.retain(|line| !line.is_empty());
     }
     if layout.lines.is_empty() {
-        return Layout::two_line();
+        return default_layout;
     }
     layout
 }
 
-fn resolve_base(cli_layout: Option<&str>, cli_config: Option<&Path>) -> Layout {
+fn resolve_base(
+    cli_layout: Option<&str>,
+    cli_config: Option<&Path>,
+    default_layout: &Layout,
+) -> Layout {
     if let Some(spec) = cli_layout
         && let Ok(l) = Layout::parse(spec)
     {
@@ -64,7 +77,7 @@ fn resolve_base(cli_layout: Option<&str>, cli_config: Option<&Path>) -> Layout {
                 return l;
             }
         }
-        return Layout::two_line();
+        return default_layout.clone();
     }
 
     if let Some(path) = config_file()
@@ -76,7 +89,7 @@ fn resolve_base(cli_layout: Option<&str>, cli_config: Option<&Path>) -> Layout {
         }
     }
 
-    Layout::two_line()
+    default_layout.clone()
 }
 
 fn config_file() -> Option<PathBuf> {
@@ -119,6 +132,17 @@ mod tests {
     fn invalid_cli_layout_falls_back_to_default() {
         let l = load(Some("definitely-not-a-segment"), None, &[]);
         assert_eq!(l.lines.len(), 2); // two-line default
+    }
+
+    #[test]
+    fn invalid_cli_layout_falls_back_to_supplied_default() {
+        let l = load_with_default(
+            Some("definitely-not-a-segment"),
+            None,
+            &[],
+            Layout::one_line(),
+        );
+        assert_eq!(l.lines.len(), 1);
     }
 
     #[test]

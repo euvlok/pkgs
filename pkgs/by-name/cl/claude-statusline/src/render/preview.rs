@@ -100,6 +100,7 @@ fn sample_input() -> Input {
             total_lines_added: Some(1062),
             total_lines_removed: Some(290),
         },
+        ..Input::default()
     }
 }
 

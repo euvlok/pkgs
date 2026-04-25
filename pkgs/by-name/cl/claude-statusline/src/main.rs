@@ -14,7 +14,7 @@ use clap::{CommandFactory, FromArgMatches};
 use clap_complete::Shell as ClapShell;
 
 use claude_statusline::cli::{Cli, HELP_AFTER_EXAMPLES, HELP_LAYOUT_SHAPES, Shell};
-use claude_statusline::input::Input;
+use claude_statusline::input::{Input, InputSource};
 use claude_statusline::render::colors::Palette;
 use claude_statusline::render::icons::Icons;
 use claude_statusline::render::layout::Layout;
@@ -41,7 +41,6 @@ fn main() {
         None => base_icons,
     };
 
-    let layout = config::load(cli.layout.as_deref(), cli.config.as_deref(), &cli.exclude);
     let settings = cli.to_settings();
     let pace_settings = cli.to_pace_settings();
 
@@ -50,6 +49,7 @@ fn main() {
     let palette = Palette::for_theme(theme_mode);
 
     if cli.preview {
+        let layout = config::load(cli.layout.as_deref(), cli.config.as_deref(), &cli.exclude);
         let line = preview(icons, &layout, &settings, &palette);
         let mut stdout = AutoStream::new(io::stdout().lock(), cli.color.into());
         let _ = writeln!(stdout, "layout: {layout}");
@@ -68,6 +68,16 @@ fn main() {
             let stdin = io::stdin().lock();
             serde_json::from_reader(stdin).unwrap_or_default()
         };
+        let default_layout = match input.source {
+            InputSource::Claude => Layout::two_line(),
+            InputSource::Codex => Layout::one_line(),
+        };
+        let layout = config::load_with_default(
+            cli.layout.as_deref(),
+            cli.config.as_deref(),
+            &cli.exclude,
+            default_layout,
+        );
         render_with_pace(&input, icons, &layout, &settings, &pace_settings, &palette)
     });
 

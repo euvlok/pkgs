@@ -162,6 +162,15 @@ impl Layout {
         }
     }
 
+    /// Single-row default for hosts that only reserve one footer line.
+    #[must_use]
+    pub fn one_line() -> Self {
+        use SegmentName::{Context, Cost, Dir, Model, RateLimits, Vcs};
+        Self {
+            lines: vec![vec![Dir, Vcs, RateLimits, Context, Cost, Model]],
+        }
+    }
+
     /// Parse the DSL described in this module's docstring. Returns
     /// [`ParseError`] on unknown names or empty input so misconfigured
     /// users get a clear failure rather than a silently-empty prompt.
