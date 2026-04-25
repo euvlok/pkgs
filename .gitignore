@@ -46,5 +46,13 @@ result
 result-*
 temp-wrapper.nix
 
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.ruff_cache/
+.ty_cache/
+
 # Rust
 target/

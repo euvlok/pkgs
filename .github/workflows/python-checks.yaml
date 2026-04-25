@@ -1,0 +1,44 @@
+name: Python checks
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "scripts/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".python-version"
+      - ".github/workflows/python-checks.yaml"
+  pull_request:
+    paths:
+      - "scripts/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".python-version"
+      - ".github/workflows/python-checks.yaml"
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: ty + ruff
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+
+      - name: Sync dev dependencies
+        run: uv sync --frozen --dev
+
+      - name: ty
+        run: uv run ty check scripts/
+
+      - name: ruff format
+        run: uv run ruff format --check scripts/
+
+      - name: ruff
+        run: uv run ruff check scripts/

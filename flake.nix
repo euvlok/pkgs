@@ -60,9 +60,13 @@
                 nix-update
                 ripgrep
                 jq
+                ty
+                uv
+                ruff
                 gh
                 sd
                 yamlfmt
+                just
                 ;
               python3 = pkgs.python3.withPackages (
                 ps:
@@ -76,24 +80,22 @@
                 })
               );
             };
+
+            shellHook = ''
+              if [ -f pyproject.toml ] && [ -f uv.lock ]; then
+                uv sync --frozen --quiet 2>/dev/null || true
+              fi
+            '';
           };
         }
       );
+
+      formatter = forAllSystems (system: self.legacyPackages.${system}.nixfmt);
 
       apps = forAllSystems (
         system:
         let
           pkgs = self.legacyPackages.${system};
-          scriptPython = pkgs.python3.withPackages (
-            ps:
-            (builtins.attrValues {
-              inherit (ps)
-                tabulate
-                rich
-                typer
-                ;
-            })
-          );
         in
         {
           update = {
@@ -102,7 +104,8 @@
             program = toString (
               pkgs.writeShellScript "update" ''
                 export EUPKGS_REPO_ROOT="''${EUPKGS_REPO_ROOT:-$PWD}"
-                exec ${scriptPython}/bin/python3 ${self}/scripts/update.py "$@"
+                exec ${pkgs.uv}/bin/uv run --project ${self} \
+                  ${self}/scripts/update.py "$@"
               ''
             );
           };
@@ -112,7 +115,8 @@
             program = toString (
               pkgs.writeShellScript "gen-pkg-table" ''
                 export EUPKGS_REPO_ROOT="''${EUPKGS_REPO_ROOT:-$PWD}"
-                exec ${scriptPython}/bin/python3 ${self}/scripts/gen-pkg-table.py "$@"
+                exec ${pkgs.uv}/bin/uv run --project ${self} \
+                  ${self}/scripts/gen-pkg-table.py "$@"
               ''
             );
           };
@@ -122,7 +126,8 @@
             program = toString (
               pkgs.writeShellScript "status" ''
                 export EUPKGS_REPO_ROOT="''${EUPKGS_REPO_ROOT:-$PWD}"
-                exec ${scriptPython}/bin/python3 ${self}/scripts/status.py "$@"
+                exec ${pkgs.uv}/bin/uv run --project ${self} \
+                  ${self}/scripts/status.py "$@"
               ''
             );
           };

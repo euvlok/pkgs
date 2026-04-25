@@ -123,13 +123,7 @@ def main(
         upstream = fetch_nixpkgs_version(shard, name)
         status = classify(pin, upstream, effective)
 
-        print(
-            f"{name:<18} "
-            f"{pin:<32} "
-            f"{upstream or '<not-in-nixpkgs>':<22} "
-            f"{effective:<22} "
-            f"{status}"
-        )
+        print(f"{name:<18} {pin:<32} {upstream or '<not-in-nixpkgs>':<22} {effective:<22} {status}")
 
 
 if __name__ == "__main__":
