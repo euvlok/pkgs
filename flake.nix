@@ -60,9 +60,67 @@
                 nix-update
                 ripgrep
                 jq
+                gh
                 sd
                 ;
+              python3 = pkgs.python3.withPackages (
+                ps:
+                (builtins.attrValues {
+                  inherit (ps)
+                    tabulate
+                    rich
+                    typer
+                    cogapp
+                    ;
+                })
+              );
             };
+          };
+        }
+      );
+
+      apps = forAllSystems (
+        system:
+        let
+          pkgs = self.legacyPackages.${system};
+          scriptPython = pkgs.python3.withPackages (
+            ps:
+            (builtins.attrValues {
+              inherit (ps)
+                tabulate
+                rich
+                typer
+                ;
+            })
+          );
+        in
+        {
+          update = {
+            type = "app";
+            meta.description = "Update packages and verify changed builds";
+            program = toString (
+              pkgs.writeShellScript "update" ''
+                exec ${scriptPython}/bin/python3 ${self}/scripts/update.py "$@"
+              ''
+            );
+          };
+          gen-pkg-table = {
+            type = "app";
+            meta.description = "Regenerate the README package table";
+            program = toString (
+              pkgs.writeShellScript "gen-pkg-table" ''
+                exec ${scriptPython}/bin/python3 ${self}/scripts/gen-pkg-table.py "$@"
+              ''
+            );
+          };
+          status = {
+            type = "app";
+            meta.description = "Report local package pin status against nixpkgs master";
+            program = toString (
+              pkgs.writeShellScript "status" ''
+                exec ${scriptPython}/bin/python3 ${self}/scripts/status.py "$@"
+              ''
+            );
           };
         }
       );
