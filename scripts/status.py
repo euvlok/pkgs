@@ -1,5 +1,5 @@
 #!/usr/bin/env nix-shell
-#!nix-shell -i python3 -p "python3.withPackages (ps: [ ps.typer ps.rich ])" gh nix
+#!nix-shell -i python3 -p "python3.withPackages (ps: [ ps.typer ps.rich ])" nix
 """Report how local package pins compare to nixpkgs master.
 
 For every package under pkgs/by-name, compares its `upstreamVersion` pin to the
@@ -9,89 +9,93 @@ Read-only.
 
 from __future__ import annotations
 
-import base64
 import json
-import re
 from pathlib import Path
+from typing import Any
 
 import typer
+from rich.console import Console
+from rich.table import Table
 
-from _common import REPO_ROOT, nix_eval, run
+from _common import REPO_ROOT, nix_eval, nix_string_attr, run
 
 BY_NAME = REPO_ROOT / "pkgs" / "by-name"
-UPSTREAM_VERSION_RE = re.compile(r'^\s*upstreamVersion\s*=\s*"([^"]+)"\s*;', re.M)
-VERSION_RE = re.compile(r'^\s*version\s*=\s*"([^"]+)"\s*;', re.M)
+NIXPKGS_MASTER = "github:NixOS/nixpkgs/master"
+
+console = Console()
 
 app = typer.Typer(add_completion=False, help=__doc__)
 
 
-def github_content(path: str) -> str:
+def nix_eval_json(expr: str) -> Any:
     r = run(
-        ["gh", "api", f"repos/NixOS/nixpkgs/contents/{path}", "--jq", ".content"],
-        capture=True,
-    )
-    if r.returncode != 0:
-        return ""
-
-    payload = r.stdout.strip()
-    if not payload or payload == "null":
-        return ""
-
-    try:
-        return base64.b64decode(payload).decode()
-    except ValueError:
-        return ""
-
-
-def fetch_nixpkgs_version(shard: str, name: str) -> str:
-    package_nix = github_content(f"pkgs/by-name/{shard}/{name}/package.nix")
-    if package_nix:
-        match = VERSION_RE.search(package_nix)
-        if match:
-            return match.group(1)
-
-    manifest = github_content(f"pkgs/by-name/{shard}/{name}/manifest.json")
-    if manifest:
-        try:
-            return str(json.loads(manifest).get("version") or "")
-        except json.JSONDecodeError:
-            return ""
-
-    return ""
-
-
-def upstream_pin(nix_file: Path) -> str:
-    match = UPSTREAM_VERSION_RE.search(nix_file.read_text())
-    return match.group(1) if match else "<none>"
-
-
-def compare_versions(a: str, b: str) -> int:
-    expr = f"toString (builtins.compareVersions {json.dumps(a)} {json.dumps(b)})"
-    value = nix_eval(expr, check=True)
-    return int(value)
-
-
-def effective_version(system: str, name: str) -> str:
-    value = run(
-        ["nix", "eval", "--impure", "--raw", f".#legacyPackages.{system}.{name}.version"],
+        ["nix", "eval", "--impure", "--json", "--expr", expr],
         cwd=REPO_ROOT,
         capture=True,
         env_extra={"NIXPKGS_ALLOW_UNFREE": "1"},
+        check=True,
     )
-    return value.stdout.strip() if value.returncode == 0 else "?"
+    return json.loads(r.stdout)
 
 
-def classify(pin: str, upstream: str, effective: str) -> str:
+def flake_versions(flake_ref: str, system: str, names: list[str]) -> dict[str, str]:
+    expr = f"""
+      let
+        flake = builtins.getFlake {json.dumps(flake_ref)};
+        pkgs = builtins.getAttr {json.dumps(system)} flake.legacyPackages;
+        names = builtins.fromJSON {json.dumps(json.dumps(names))};
+        versionFor = name:
+          if builtins.hasAttr name pkgs then
+            let result = builtins.tryEval (toString ((builtins.getAttr name pkgs).version or ""));
+            in if result.success then result.value else "?"
+          else
+            "";
+      in
+        builtins.listToAttrs (map (name: {{ inherit name; value = versionFor name; }}) names)
+    """
+    return {name: str(version) for name, version in nix_eval_json(expr).items()}
+
+
+def upstream_pin(nix_file: Path) -> str:
+    return nix_string_attr(nix_file, "upstreamVersion") or "<none>"
+
+
+def compare_pins(rows: list[tuple[str, str, str]]) -> dict[str, int]:
+    pairs = [
+        {"name": name, "pin": pin, "upstream": upstream}
+        for name, pin, upstream in rows
+        if pin != "<none>" and upstream and upstream != "?"
+    ]
+    if not pairs:
+        return {}
+
+    expr = f"""
+      let
+        pairs = builtins.fromJSON {json.dumps(json.dumps(pairs))};
+      in
+        builtins.listToAttrs (map (p: {{
+          name = p.name;
+          value = builtins.compareVersions p.pin p.upstream;
+        }}) pairs)
+    """
+    return {name: int(value) for name, value in nix_eval_json(expr).items()}
+
+
+def classify(pin: str, upstream: str, effective: str, comparison: int | None) -> str:
     if pin == "<none>":
         return "no-pin"
+    if upstream == "?":
+        return "unknown"
     if not upstream:
         return "fork-only"
+    if comparison is None:
+        return "unknown"
 
     status = {
         1: "leading",
         0: "synced",
         -1: "behind",
-    }[compare_versions(pin, upstream)]
+    }[comparison]
 
     if effective != pin and effective != "?":
         status += " (dormant)"
@@ -110,20 +114,52 @@ def main(
 ) -> None:
     """Print package pin status."""
     system = system or nix_eval("builtins.currentSystem", check=True)
+    pkg_files = sorted(by_name.glob("*/*/package.nix"))
+    package_names = [pkg_file.parent.name for pkg_file in pkg_files]
 
-    print(f"{'PACKAGE':<18} {'PIN':<32} {'NIXPKGS MASTER':<22} {'FLAKE EFFECTIVE':<22} STATUS")
-    print(f"{'-------':<18} {'---':<32} {'--------------':<22} {'---------------':<22} ------")
+    with console.status("Evaluating package versions..."):
+        upstream_versions = flake_versions(NIXPKGS_MASTER, system, package_names)
+        effective_versions = flake_versions(f"path:{REPO_ROOT}", system, package_names)
 
-    for pkg_file in sorted(by_name.glob("*/*/package.nix")):
-        pkg_dir = pkg_file.parent
-        name = pkg_dir.name
-        shard = pkg_dir.parent.name
+    comparison_rows = []
+    for pkg_file in pkg_files:
+        name = pkg_file.parent.name
         pin = upstream_pin(pkg_file)
-        effective = effective_version(system, name)
-        upstream = fetch_nixpkgs_version(shard, name)
-        status = classify(pin, upstream, effective)
+        upstream = upstream_versions.get(name, "")
+        comparison_rows.append((name, pin, upstream))
 
-        print(f"{name:<18} {pin:<32} {upstream or '<not-in-nixpkgs>':<22} {effective:<22} {status}")
+    comparisons = compare_pins(comparison_rows)
+
+    table = Table(title=f"Package Pin Status ({system})")
+    table.add_column("Package", style="bold", no_wrap=True)
+    table.add_column("Pin")
+    table.add_column("Nixpkgs Master")
+    table.add_column("Flake Effective")
+    table.add_column("Status", no_wrap=True)
+
+    status_styles = {
+        "behind": "red",
+        "fork-only": "yellow",
+        "leading": "cyan",
+        "no-pin": "dim",
+        "synced": "green",
+        "unknown": "magenta",
+    }
+
+    for name, pin, upstream in comparison_rows:
+        effective = effective_versions.get(name, "?") or "?"
+        status = classify(pin, upstream, effective, comparisons.get(name))
+        base_status = status.removesuffix(" (dormant)")
+
+        table.add_row(
+            name,
+            pin,
+            upstream or "<not-in-nixpkgs>",
+            effective,
+            f"[{status_styles.get(base_status, '')}]{status}[/]",
+        )
+
+    console.print(table)
 
 
 if __name__ == "__main__":
