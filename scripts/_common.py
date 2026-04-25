@@ -2,22 +2,34 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
 import tempfile
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
+from functools import cache
 from pathlib import Path
+from typing import Any
 
 REPO_ROOT = Path(os.environ.get("EUPKGS_REPO_ROOT", Path(__file__).resolve().parent.parent))
+BY_NAME = REPO_ROOT / "pkgs" / "by-name"
 FORMAL_ARG_RE = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_'-]*)")
 TOP_LEVEL_ARGS_RE = re.compile(r"\A\s*\{(?P<body>.*?)\}\s*:", re.DOTALL)
 
 
+def _gha_escape_data(value: str) -> str:
+    return value.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+
+def _gha_escape_property(value: str) -> str:
+    return _gha_escape_data(value).replace(":", "%3A").replace(",", "%2C")
+
+
 def gha(kind: str, msg: str, file: str | None = None) -> None:
-    attrs = f" file={file}" if file else ""
-    print(f"::{kind}{attrs}::{msg}", flush=True)
+    attrs = f" file={_gha_escape_property(file)}" if file else ""
+    print(f"::{kind}{attrs}::{_gha_escape_data(msg)}", flush=True)
 
 
 @contextmanager
@@ -77,6 +89,22 @@ def nix_eval(expr: str, check: bool = False) -> str:
     return r.stdout.strip() if r.returncode == 0 else ""
 
 
+def nix_eval_json(expr: str) -> Any:
+    r = run(
+        ["nix", "eval", "--impure", "--json", "--expr", expr],
+        cwd=REPO_ROOT,
+        capture=True,
+        env_extra={"NIXPKGS_ALLOW_UNFREE": "1"},
+        check=True,
+    )
+    return json.loads(r.stdout)
+
+
+@cache
+def nix_current_system() -> str:
+    return nix_eval("builtins.currentSystem", check=True)
+
+
 def nix_flake_attr(pkg: str, attr: str, system: str) -> str:
     """Evaluate a package attribute from this flake. Empty string on failure."""
     r = run(
@@ -85,6 +113,14 @@ def nix_flake_attr(pkg: str, attr: str, system: str) -> str:
         capture=True,
     )
     return r.stdout.strip() if r.returncode == 0 else ""
+
+
+def package_files(by_name: Path = BY_NAME) -> list[Path]:
+    return sorted(by_name.glob("*/*/package.nix"))
+
+
+def package_names(by_name: Path = BY_NAME) -> list[str]:
+    return [pkg_file.parent.name for pkg_file in package_files(by_name)]
 
 
 def nix_string_attr(nix_file: Path, key: str) -> str:

@@ -11,31 +11,25 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
 
 import typer
 from rich.console import Console
 from rich.table import Table
 
-from _common import REPO_ROOT, nix_eval, nix_string_attr, run
+from _common import (
+    BY_NAME,
+    REPO_ROOT,
+    nix_current_system,
+    nix_eval_json,
+    nix_string_attr,
+    package_files,
+)
 
-BY_NAME = REPO_ROOT / "pkgs" / "by-name"
 NIXPKGS_MASTER = "github:NixOS/nixpkgs/master"
 
 console = Console()
 
 app = typer.Typer(add_completion=False, help=__doc__)
-
-
-def nix_eval_json(expr: str) -> Any:
-    r = run(
-        ["nix", "eval", "--impure", "--json", "--expr", expr],
-        cwd=REPO_ROOT,
-        capture=True,
-        env_extra={"NIXPKGS_ALLOW_UNFREE": "1"},
-        check=True,
-    )
-    return json.loads(r.stdout)
 
 
 def flake_versions(flake_ref: str, system: str, names: list[str]) -> dict[str, str]:
@@ -113,8 +107,8 @@ def main(
     ),
 ) -> None:
     """Print package pin status."""
-    system = system or nix_eval("builtins.currentSystem", check=True)
-    pkg_files = sorted(by_name.glob("*/*/package.nix"))
+    system = system or nix_current_system()
+    pkg_files = package_files(by_name)
     package_names = [pkg_file.parent.name for pkg_file in pkg_files]
 
     with console.status("Evaluating package versions..."):

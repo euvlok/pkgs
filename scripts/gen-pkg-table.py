@@ -12,19 +12,18 @@ from rich.console import Console
 from rich.progress import track
 from tabulate import tabulate
 
+from _common import BY_NAME, nix_current_system, nix_flake_attr, nix_string_attr, package_files
 from _common import REPO_ROOT as ROOT
-from _common import nix_eval, nix_flake_attr, nix_string_attr
 
 _err = Console(stderr=True)
 
-BY_NAME = ROOT / "pkgs" / "by-name"
-SYSTEM = nix_eval("builtins.currentSystem", check=True)
+SYSTEM = nix_current_system()
 
 
 def rows() -> list[list[str]]:
     out = []
     for f in track(
-        sorted(BY_NAME.glob("*/*/package.nix")),
+        package_files(BY_NAME),
         description="Evaluating packages",
         console=_err,
     ):

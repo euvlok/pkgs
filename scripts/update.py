@@ -30,7 +30,9 @@ from _common import (
     gha_group,
     gha_output,
     gha_summary,
+    nix_current_system,
     nix_eval,
+    package_files,
     pkg_wrapper,
     run,
 )
@@ -230,7 +232,7 @@ def update_one(
 
 def is_fetchable_derivation(pkg_path: Path) -> bool:
     name = pkg_path.parent.name
-    system = nix_eval("builtins.currentSystem", check=True)
+    system = nix_current_system()
     r = run(
         [
             "nix",
@@ -263,7 +265,7 @@ def is_fetchable_derivation(pkg_path: Path) -> bool:
 
 def build_pkg(pkg_path: Path) -> bool:
     name = pkg_path.parent.name
-    system = nix_eval("builtins.currentSystem", check=True)
+    system = nix_current_system()
     return (
         run(
             [
@@ -338,7 +340,7 @@ def cmd_all(
         gha("error", "nix and git must be on PATH")
         raise typer.Exit(1)
 
-    pkg_files = sorted(by_name.rglob("package.nix"))
+    pkg_files = package_files(by_name)
     updated: list[str] = []
 
     for nixfile in pkg_files:

@@ -20,7 +20,7 @@ from pathlib import Path
 
 import typer
 
-from _common import REPO_ROOT, gha_output, nix_top_level_formal_args, run
+from _common import REPO_ROOT, gha_output, nix_top_level_formal_args, package_files, run
 
 INFRA_FILES = {
     "flake.nix",
@@ -32,7 +32,6 @@ INFRA_FILES = {
 }
 INFRA_PREFIXES = (".github/actions/setup-nix/",)
 
-BY_NAME = Path("pkgs/by-name")
 ZERO_SHA = "0" * 40
 
 app = typer.Typer(add_completion=False, help=__doc__)
@@ -52,7 +51,7 @@ def resolve_base(base: str, head: str) -> str:
 
 
 def all_packages() -> list[str]:
-    return sorted(p.parent.name for p in (REPO_ROOT / BY_NAME).glob("*/*/package.nix"))
+    return sorted(p.parent.name for p in package_files())
 
 
 def is_infra_file(path: str) -> bool:
@@ -60,7 +59,7 @@ def is_infra_file(path: str) -> bool:
 
 
 def package_nix_files() -> dict[str, Path]:
-    return {p.parent.name: p for p in (REPO_ROOT / BY_NAME).glob("*/*/package.nix")}
+    return {p.parent.name: p for p in package_files()}
 
 
 def existing_packages(pkgs: set[str]) -> list[str]:
