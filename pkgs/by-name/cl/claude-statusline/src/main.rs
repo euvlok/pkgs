@@ -35,7 +35,7 @@ fn main() {
     let icons: &'static Icons = match cli.separator.as_deref() {
         Some(sep) => {
             let mut owned = base_icons.clone();
-            owned.sep = Box::leak(sep.to_string().into_boxed_str());
+            owned.sep = sep.to_string().leak();
             Box::leak(Box::new(owned))
         }
         None => base_icons,

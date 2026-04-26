@@ -31,14 +31,8 @@ pub fn collect(vcs_dir: &str, icons: &Icons, pal: &Palette) -> Option<Segment> {
 /// Walk parent directories looking for a `.jj` directory and return the
 /// directory that contains it (the workspace root).
 fn find_jj_root(start: &Path) -> Option<PathBuf> {
-    let mut cur: &Path = start;
-    loop {
-        if cur.join(".jj").is_dir() {
-            return Some(cur.to_path_buf());
-        }
-        match cur.parent() {
-            Some(p) if p != cur => cur = p,
-            _ => return None,
-        }
-    }
+    start
+        .ancestors()
+        .find(|p| p.join(".jj").is_dir())
+        .map(Path::to_path_buf)
 }
