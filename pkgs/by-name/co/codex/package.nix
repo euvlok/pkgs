@@ -9,12 +9,12 @@
   unzip,
 }:
 let
-  upstreamVersion = "0.125.0";
+  upstreamVersion = "rust-v0.126.0-alpha.3-unstable-2026-04-26";
   upstreamSrc = fetchFromGitHub {
     owner = "openai";
     repo = "codex";
     rev = "rust-v${upstreamVersion}";
-    hash = "sha256-q175gmBw+edb5+w8TM36yUeFsyIdB1/IwWzbxBbBmoA=";
+    hash = "sha256-FdtV+CIqTInnegcXrXBxw4aE0JnNDh4GdYKwUDjSk9Y=";
   };
   webrtcTag = "webrtc-24f6822-2";
   macosWebrtcTriple =
@@ -59,7 +59,7 @@ codex.overrideAttrs (
         name = "codex-${upstreamVersion}-vendor";
         src = upstreamSrc;
         sourceRoot = "${upstreamSrc.name}/codex-rs";
-        hash = "sha256-fDVlj7zAZnwP9YBaYaSQZXYYWrBm5IEyLT9zoorvzFg=";
+        hash = "sha256-7rexlmc79eUkwcqTa8rN3GFDy1dWs+0h/SUllZqAcpM=";
       };
     };
   in
