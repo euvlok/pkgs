@@ -135,17 +135,19 @@ pub struct Cli {
     )]
     pub color: ColorChoice,
 
-    /// Icon set [auto-detected from terminal font when unset]
+    /// Icon set (default: emoji)
     #[arg(
         short = 'i',
         long,
         value_enum,
         env = "CLAUDE_STATUSLINE_ICONS",
         value_name = "SET",
+        default_value_t = IconSet::default(),
         help_heading = "Display",
-        hide_env = true
+        hide_env = true,
+        hide_default_value = true,
     )]
-    pub icons: Option<IconSet>,
+    pub icons: IconSet,
 
     /// Override the column separator glyph (default: ` │ `)
     #[arg(
@@ -227,16 +229,19 @@ pub struct Cli {
     )]
     pub completions: Option<Shell>,
 
-    /// Wrap the dir segment in an OSC 8 hyperlink (clickable in
-    /// supported terminals). Auto-detected by default.
+    /// Wrap the dir segment in an OSC 8 hyperlink (`auto` = on if stdout
+    /// is a tty)
     #[arg(
         long,
+        value_enum,
         env = "CLAUDE_STATUSLINE_HYPERLINKS",
+        value_name = "MODE",
+        default_value_t = HyperlinksMode::default(),
         help_heading = "Display",
         hide_env = true,
-        action = clap::ArgAction::SetTrue,
+        hide_default_value = true,
     )]
-    pub hyperlinks: bool,
+    pub hyperlinks: HyperlinksMode,
 
     /// Terminal theme for color adaptation [auto-detected when unset]
     #[arg(
@@ -267,7 +272,7 @@ pub struct Cli {
     )]
     pub input_json: Option<String>,
 
-    /// Pace segment glyph set [auto-detected from terminal font]
+    /// Pace segment glyph set (default: emoji)
     #[arg(
         long = "pace-glyphs",
         value_enum,
@@ -355,12 +360,12 @@ impl Cli {
     }
 
     pub fn to_settings(&self) -> Settings {
-        // Auto-detect hyperlink support when the user hasn't explicitly
-        // opted in via `--hyperlinks` or the env var. Codex captures status
-        // command stdout through a pipe, so only auto-enable OSC 8 when stdout
-        // is an actual terminal.
-        let hyperlinks =
-            self.hyperlinks || supports_hyperlinks::on(supports_hyperlinks::Stream::Stdout);
+        use std::io::IsTerminal as _;
+        let hyperlinks = match self.hyperlinks {
+            HyperlinksMode::Always => true,
+            HyperlinksMode::Never => false,
+            HyperlinksMode::Auto => std::io::stdout().is_terminal(),
+        };
         Settings {
             flash: !self.no_flash,
             flash_ttl_secs: self.flash_ttl,
@@ -371,6 +376,18 @@ impl Cli {
             hyperlinks,
         }
     }
+}
+
+#[derive(Copy, Clone, Debug, ValueEnum, Default, Eq, PartialEq)]
+#[value(rename_all = "lower")]
+pub enum HyperlinksMode {
+    /// On when stdout is a tty.
+    #[default]
+    Auto,
+    /// Never emit OSC 8.
+    Never,
+    /// Always emit OSC 8.
+    Always,
 }
 
 #[derive(Copy, Clone, Debug, ValueEnum)]

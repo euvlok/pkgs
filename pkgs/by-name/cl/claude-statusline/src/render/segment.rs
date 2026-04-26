@@ -66,16 +66,15 @@ impl Cell {
 
     pub fn write_to(&self, out: &mut String) {
         use std::fmt::Write as _;
-        if let Some(url) = &self.link {
-            let _ = write!(out, "\x1b]8;;{url}\x1b\\");
-        }
+        let link = self
+            .link
+            .as_deref()
+            .map(anstyle_hyperlink::Hyperlink::with_url)
+            .unwrap_or_default();
         if self.style == Style::new() {
-            out.push_str(&self.text);
+            let _ = write!(out, "{link}{}{link:#}", self.text);
         } else {
-            let _ = write!(out, "{}{}{}", self.style, self.text, Reset);
-        }
-        if self.link.is_some() {
-            out.push_str("\x1b]8;;\x1b\\");
+            let _ = write!(out, "{link}{}{}{Reset}{link:#}", self.style, self.text);
         }
     }
 }

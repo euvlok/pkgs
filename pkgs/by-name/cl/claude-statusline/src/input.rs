@@ -7,8 +7,6 @@
 
 use serde::Deserialize;
 use serde::Deserializer;
-use serde::de;
-use serde_json::Value;
 
 #[derive(Debug, Default)]
 pub struct Input {
@@ -35,8 +33,29 @@ impl<'de> Deserialize<'de> for Input {
     where
         D: Deserializer<'de>,
     {
-        let value = Value::deserialize(deserializer)?;
-        Self::from_json_value(value).map_err(de::Error::custom)
+        Ok(RawInput::deserialize(deserializer)?.into())
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum RawInput {
+    // CodexHookInput requires a known `hook_event_name`, so it only matches
+    // Codex hook payloads.
+    CodexHook(CodexHookInput),
+    // CodexNotifyInput requires `type: "agent-turn-complete"`.
+    CodexNotify(CodexNotifyInput),
+    // Fallback: Claude Code's rich status payload (all fields optional).
+    Claude(ClaudeInput),
+}
+
+impl From<RawInput> for Input {
+    fn from(raw: RawInput) -> Self {
+        match raw {
+            RawInput::CodexHook(v) => v.into(),
+            RawInput::CodexNotify(v) => v.into(),
+            RawInput::Claude(v) => v.into(),
+        }
     }
 }
 
@@ -119,23 +138,6 @@ pub struct Cost {
 }
 
 impl Input {
-    fn from_json_value(value: Value) -> Result<Self, serde_json::Error> {
-        if let Some(hook_event_name) = value.get("hook_event_name").and_then(Value::as_str) {
-            return match hook_event_name {
-                "SessionStart" | "PostToolUse" | "UserPromptSubmit" | "Stop" => {
-                    Ok(CodexHookInput::from_value(value)?.into_input())
-                }
-                _ => Ok(ClaudeInput::from_value(value)?.into_input()),
-            };
-        }
-
-        if value.get("type").and_then(Value::as_str) == Some("agent-turn-complete") {
-            return Ok(CodexNotifyInput::from_value(value)?.into_input());
-        }
-
-        Ok(ClaudeInput::from_value(value)?.into_input())
-    }
-
     /// First non-empty path field, ignoring `Some("")` which Claude Code
     /// occasionally emits during early hook events. Codex hook payloads are
     /// normalized into the same fields so they follow the same fallback path.
@@ -236,81 +238,93 @@ struct ClaudeInput {
     cost: Cost,
 }
 
-impl ClaudeInput {
-    fn from_value(value: Value) -> Result<Self, serde_json::Error> {
-        serde_json::from_value(value)
-    }
-
-    fn into_input(self) -> Input {
-        Input {
+impl From<ClaudeInput> for Input {
+    fn from(v: ClaudeInput) -> Self {
+        Self {
             source: InputSource::Claude,
-            workspace: self.workspace,
-            cwd: self.cwd,
-            transcript_path: self.transcript_path,
-            session_id: self.session_id,
-            model: self.model,
-            context_window: self.context_window,
-            rate_limits: self.rate_limits,
-            cost: self.cost,
+            workspace: v.workspace,
+            cwd: v.cwd,
+            transcript_path: v.transcript_path,
+            session_id: v.session_id,
+            model: v.model,
+            context_window: v.context_window,
+            rate_limits: v.rate_limits,
+            cost: v.cost,
         }
     }
 }
 
-#[derive(Debug, Default, Deserialize)]
-#[serde(default)]
+#[derive(Deserialize)]
+#[allow(dead_code)] // variants used as untagged tag values
+enum CodexHookEvent {
+    SessionStart,
+    PostToolUse,
+    UserPromptSubmit,
+    Stop,
+}
+
+#[derive(Deserialize)]
 struct CodexHookInput {
+    // Required so untagged dispatch only matches recognized Codex hooks.
+    #[serde(rename = "hook_event_name")]
+    _hook_event_name: CodexHookEvent,
+    #[serde(default)]
     session_id: Option<String>,
+    #[serde(default)]
     transcript_path: Option<String>,
+    #[serde(default)]
     cwd: Option<String>,
+    #[serde(default)]
     model: Option<String>,
 }
 
-impl CodexHookInput {
-    fn from_value(value: Value) -> Result<Self, serde_json::Error> {
-        serde_json::from_value(value)
-    }
-
-    fn into_input(self) -> Input {
-        let cwd = self.cwd.and_then(nonempty_owned);
-        Input {
+impl From<CodexHookInput> for Input {
+    fn from(v: CodexHookInput) -> Self {
+        let cwd = v.cwd.and_then(nonempty_owned);
+        Self {
             source: InputSource::Codex,
             workspace: Workspace {
                 current_dir: cwd.clone(),
             },
             cwd,
-            transcript_path: self.transcript_path.and_then(nonempty_owned),
-            session_id: self.session_id.and_then(nonempty_owned),
+            transcript_path: v.transcript_path.and_then(nonempty_owned),
+            session_id: v.session_id.and_then(nonempty_owned),
             model: Model {
-                display_name: self.model.and_then(nonempty_owned),
+                display_name: v.model.and_then(nonempty_owned),
             },
-            ..Input::default()
+            ..Self::default()
         }
     }
 }
 
-#[derive(Debug, Default, Deserialize)]
-#[serde(default)]
+#[derive(Deserialize)]
+#[allow(dead_code)]
+enum CodexNotifyKind {
+    #[serde(rename = "agent-turn-complete")]
+    AgentTurnComplete,
+}
+
+#[derive(Deserialize)]
 struct CodexNotifyInput {
+    #[serde(rename = "type")]
+    _kind: CodexNotifyKind,
+    #[serde(default)]
     cwd: Option<String>,
-    #[serde(rename = "thread-id")]
+    #[serde(default, rename = "thread-id")]
     thread_id: Option<String>,
 }
 
-impl CodexNotifyInput {
-    fn from_value(value: Value) -> Result<Self, serde_json::Error> {
-        serde_json::from_value(value)
-    }
-
-    fn into_input(self) -> Input {
-        let cwd = self.cwd.and_then(nonempty_owned);
-        Input {
+impl From<CodexNotifyInput> for Input {
+    fn from(v: CodexNotifyInput) -> Self {
+        let cwd = v.cwd.and_then(nonempty_owned);
+        Self {
             source: InputSource::Codex,
             workspace: Workspace {
                 current_dir: cwd.clone(),
             },
             cwd,
-            session_id: self.thread_id.and_then(nonempty_owned),
-            ..Input::default()
+            session_id: v.thread_id.and_then(nonempty_owned),
+            ..Self::default()
         }
     }
 }

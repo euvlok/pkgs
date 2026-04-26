@@ -1,7 +1,6 @@
-//! Benchmarks for formatting helpers, layout parsing, font detection,
-//! palette construction, and segment operations.
+//! Benchmarks for formatting helpers, layout parsing, palette construction,
+//! and segment operations.
 
-use claude_statusline::font_detect::contains_nerd_font;
 use claude_statusline::render::colors::Palette;
 use claude_statusline::render::format::{humanize_duration, humanize_tokens, shorten_model};
 use claude_statusline::render::layout::Layout;
@@ -61,18 +60,6 @@ fn fmt_humanize_duration(secs: i64) -> String {
 ])]
 fn fmt_shorten_model(name: &str) -> &str {
     shorten_model(divan::black_box(name))
-}
-
-#[divan::bench(args = [
-    "font-family = TX02 Nerd Font",
-    "font_family JetBrainsMono Nerd Font Mono",
-    "font_family Hack NF",
-    "font-family = Menlo",
-    "font_family = SF Mono",
-    "# infinite scrollback",
-])]
-fn font_contains_nerd(text: &str) -> bool {
-    contains_nerd_font(divan::black_box(text))
 }
 
 #[divan::bench(args = [0_u32, 49, 50, 74, 75, 100])]

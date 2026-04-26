@@ -56,7 +56,7 @@ impl Default for PaceSettings {
             cool_below: 0.9,
             hot_above: 1.2,
             warmup_mins: 10,
-            glyphs: PaceGlyphs::Auto,
+            glyphs: PaceGlyphs::Emoji,
             debug: false,
         }
     }

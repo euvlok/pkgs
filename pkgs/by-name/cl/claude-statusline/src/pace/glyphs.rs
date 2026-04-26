@@ -6,23 +6,18 @@
 
 use clap::ValueEnum;
 
-use crate::font_detect;
-use crate::render::icons::IconSet;
-
 /// Which glyph family to draw.
 #[derive(Copy, Clone, Debug, ValueEnum, Default, Eq, PartialEq)]
 #[value(rename_all = "lower")]
 pub enum PaceGlyphs {
-    /// Auto-select based on the same font detection as the main icon set.
-    #[default]
-    Auto,
     /// Material Design Icons (Nerd Font PUA).
     Mdi,
     /// Font Awesome (Nerd Font PUA).
     Fa,
     /// Octicons (Nerd Font PUA).
     Oct,
-    /// Broadly supported color emoji.
+    /// Broadly supported color emoji (default).
+    #[default]
     Emoji,
     /// ASCII / BMP-only fallback.
     Text,
@@ -89,23 +84,14 @@ pub const TEXT: GlyphSet = GlyphSet {
 };
 
 impl PaceGlyphs {
-    /// Resolve `Auto` into a concrete set based on font detection.
     #[must_use]
-    pub fn resolve(self) -> &'static GlyphSet {
+    pub const fn resolve(self) -> &'static GlyphSet {
         match self {
             Self::Mdi => &MDI,
             Self::Fa => &FA,
             Self::Oct => &OCT,
             Self::Emoji => &EMOJI,
             Self::Text => &TEXT,
-            // Prefer Nerd Font (the crisp PUA glyphs), fall back to
-            // emoji if the terminal font isn't patched. Text is the last
-            // resort — `font_detect::auto_select` never returns Emoji,
-            // so we only reach EMOJI when Nerd isn't available.
-            Self::Auto => match font_detect::auto_select() {
-                IconSet::Nerd => &MDI,
-                IconSet::Emoji | IconSet::Text => &EMOJI,
-            },
         }
     }
 }

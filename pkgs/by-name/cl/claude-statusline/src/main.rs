@@ -16,12 +16,12 @@ use clap_complete::Shell as ClapShell;
 use claude_statusline::cli::{Cli, HELP_AFTER_EXAMPLES, HELP_LAYOUT_SHAPES, Shell};
 use claude_statusline::input::{Input, InputSource};
 use claude_statusline::render::colors::Palette;
-use claude_statusline::render::icons::Icons;
+use claude_statusline::render::icons::{IconSet, Icons};
 use claude_statusline::render::layout::Layout;
 use claude_statusline::render::preview::{preview, preview_with};
 use claude_statusline::render::render_with_pace;
 use claude_statusline::settings::Settings;
-use claude_statusline::{config, font_detect, theme};
+use claude_statusline::{config, theme};
 
 fn main() {
     let cli = parse_cli();
@@ -31,7 +31,7 @@ fn main() {
         return;
     }
 
-    let base_icons = cli.icons.unwrap_or_else(font_detect::auto_select).icons();
+    let base_icons = cli.icons.icons();
     let icons: &'static Icons = match cli.separator.as_deref() {
         Some(sep) => {
             let mut owned = base_icons.clone();
@@ -105,7 +105,7 @@ fn parse_cli() -> Cli {
 fn dynamic_after_help() -> String {
     const PREVIEW_WIDTH: usize = 100;
 
-    let icons = font_detect::auto_select().icons();
+    let icons = IconSet::default().icons();
     let settings = Settings::default();
     let palette = Palette::dark();
     let mut out = String::from("Layout shapes (rendered with sample data):\n\n");

@@ -146,14 +146,11 @@ impl LiteLLMEntry {
 /// `input_cost_per_token` and `output_cost_per_token` (which is what
 /// `LiteLLM`'s `sample_spec` row looks like).
 ///
-/// Uses [`simd_json`] rather than [`serde_json`]: `LiteLLM`'s blob is
-/// ~1.5 MB and parsed once per cold start, which is well above the 4–16 KB
-/// crossover where SIMD JSON's structural-index pass starts paying back.
-/// Serde-derive compatibility means we reuse [`LiteLLMEntry`] unchanged.
-/// Takes `&mut [u8]` because simd-json mutates the input in place while
-/// unescaping strings; callers must own the buffer.
-pub fn parse_table(bytes: &mut [u8]) -> simd_json::Result<HashMap<String, Pricing>> {
-    let raw: HashMap<String, LiteLLMEntry> = simd_json::serde::from_slice(bytes)?;
+/// Parsed once per cold start. Takes `&mut [u8]` to keep the call-site
+/// signature stable for callers that historically owned a mutable buffer
+/// (the simd-json era mutated in place while unescaping).
+pub fn parse_table(bytes: &mut [u8]) -> serde_json::Result<HashMap<String, Pricing>> {
+    let raw: HashMap<String, LiteLLMEntry> = serde_json::from_slice(bytes)?;
     Ok(raw
         .into_iter()
         .filter(|(k, _)| is_claude_key(k))

@@ -3,30 +3,22 @@
 //! Detection strategy (in priority order):
 //!
 //! 1. **CLI override** (`--theme dark` / `--theme light`) – instant, no I/O.
-//! 2. **Config-file parsing** – read the terminal's own config file and extract
-//!    the background color. Microseconds, no terminal round-trip, works inside
-//!    tmux. Covers Ghostty, Kitty, and Alacritty.
-//! 3. **OSC 11 query** via `terminal-colorsaurus` – send an escape sequence to
-//!    the terminal and parse its response. Works for any terminal that supports
-//!    the xterm `OSC 11` protocol. Adds ~5-50 ms of latency.
-//! 4. **Default** – dark (the most common terminal setup).
-//!
-//! Stylix / base16 users get correct detection for free: Stylix generates
-//! terminal-native config files with its palette, so reading the config
-//! automatically picks up Stylix-assigned colors.
+//! 2. **`$COLORFGBG`** – cheap env-var hint set by some terminals.
+//! 3. **OSC 11 query** via `terminal-colorsaurus` – query the terminal and
+//!    parse its response. Adds ~5–50 ms of latency; works in any terminal
+//!    that speaks the protocol (including modern Windows Terminal, with an
+//!    SSH-aware timeout).
+//! 4. **Default** – dark.
 
-use std::path::Path;
 use std::time::Duration;
 
 use clap::ValueEnum;
-
-use crate::font_detect::{self, Terminal};
 
 /// Dark or light terminal background.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum, Default)]
 #[value(rename_all = "lower")]
 pub enum ThemeMode {
-    /// Auto-detect from terminal config or OSC 11 query.
+    /// Auto-detect via `$COLORFGBG` then OSC 11.
     #[default]
     Auto,
     /// Force dark palette.
@@ -45,177 +37,26 @@ pub fn detect(cli_override: ThemeMode) -> ThemeMode {
 }
 
 fn detect_auto() -> ThemeMode {
-    // Fast path: parse the terminal's config file.
-    if let Some(mode) = detect_from_config() {
+    if let Some(mode) = detect_from_colorfgbg() {
         return mode;
     }
-    // Slow path: OSC 11 query to the terminal.
     if let Some(mode) = detect_from_osc() {
         return mode;
     }
     ThemeMode::Dark
 }
 
-// ---------------------------------------------------------------------------
-// Config-file-based detection
-// ---------------------------------------------------------------------------
-
-fn detect_from_config() -> Option<ThemeMode> {
-    let terminal = font_detect::detect_terminal();
-    let path = font_detect::config_path_for(terminal)?;
-    let text = std::fs::read_to_string(&path).ok()?;
-
-    match terminal {
-        Terminal::Ghostty => detect_ghostty(&text, &path),
-        Terminal::Kitty => detect_kitty(&text, &path),
-        Terminal::Alacritty => detect_alacritty(&text),
-        _ => None,
-    }
+/// `COLORFGBG=<fg>;<bg>`: classify by the background ANSI palette index.
+/// Indices 0–6 and 8 are dark; 7 and 9–15 are light.
+fn detect_from_colorfgbg() -> Option<ThemeMode> {
+    let value = std::env::var("COLORFGBG").ok()?;
+    let bg_str = value.split(';').nth(1)?.trim();
+    let bg: u8 = bg_str.parse().ok()?;
+    Some(match bg {
+        0..=6 | 8 => ThemeMode::Dark,
+        _ => ThemeMode::Light,
+    })
 }
-
-/// Ghostty: prefer an explicit `background = #RRGGBB`; otherwise infer from
-/// `theme = SomeName` or unambiguous `theme = light:X,dark:Y` entries.
-fn detect_ghostty(text: &str, _config_path: &Path) -> Option<ThemeMode> {
-    let mut theme_mode = None;
-    for line in text.lines() {
-        let line = line.trim();
-        if line.starts_with('#') {
-            continue;
-        }
-        // `background = #RRGGBB` or `background = RRGGBB`
-        if let Some(val) = strip_config_key(line, "background")
-            && let Some(mode) = mode_from_hex(val)
-        {
-            return Some(mode);
-        }
-        // `theme = light:Foo,dark:Bar` or just `theme = SomeName`
-        if let Some(val) = strip_config_key(line, "theme") {
-            theme_mode = mode_from_ghostty_theme(val);
-        }
-    }
-    theme_mode
-}
-
-fn mode_from_ghostty_theme(val: &str) -> Option<ThemeMode> {
-    let entries: Vec<&str> = val.split(',').collect();
-    if entries.len() > 1 || entries.iter().any(|entry| entry.contains(':')) {
-        let mut inferred = None;
-        for entry in entries {
-            let entry = entry.trim();
-            if entry.is_empty() {
-                continue;
-            }
-            let (prefix, name) = entry
-                .split_once(':')
-                .map_or(("", entry), |(prefix, name)| (prefix.trim(), name.trim()));
-            let mode = mode_from_theme_name(name).or_else(|| match prefix {
-                "light" => Some(ThemeMode::Light),
-                "dark" => Some(ThemeMode::Dark),
-                _ => None,
-            })?;
-
-            match inferred {
-                Some(existing) if existing != mode => return None,
-                Some(_) => {}
-                None => inferred = Some(mode),
-            }
-        }
-        return inferred;
-    }
-
-    mode_from_theme_name(val)
-}
-
-fn mode_from_theme_name(name: &str) -> Option<ThemeMode> {
-    let lower = name.to_ascii_lowercase();
-    if lower.contains("light") || lower.contains("latte") || lower.contains("dawn") {
-        return Some(ThemeMode::Light);
-    }
-    if lower.contains("dark") || lower.contains("mocha") || lower.contains("night") {
-        return Some(ThemeMode::Dark);
-    }
-    None
-}
-
-/// Kitty: parse `background #RRGGBB` from the main config and any
-/// included `current-theme.conf`.
-fn detect_kitty(text: &str, config_path: &Path) -> Option<ThemeMode> {
-    // Check includes first (theme overrides tend to live there).
-    let config_dir = config_path.parent()?;
-    for line in text.lines() {
-        let line = line.trim();
-        if let Some(inc) = line.strip_prefix("include") {
-            let inc = inc.trim();
-            let inc_path = config_dir.join(inc);
-            if let Ok(inc_text) = std::fs::read_to_string(&inc_path)
-                && let Some(mode) = kitty_bg_from_text(&inc_text)
-            {
-                return Some(mode);
-            }
-        }
-    }
-    kitty_bg_from_text(text)
-}
-
-fn kitty_bg_from_text(text: &str) -> Option<ThemeMode> {
-    for line in text.lines() {
-        let line = line.trim();
-        if line.starts_with('#') {
-            continue;
-        }
-        // Kitty uses space-separated `key value`, e.g. `background #1e1e2e`
-        if let Some(rest) = line.strip_prefix("background") {
-            let val = rest.trim();
-            if val.is_empty() {
-                continue;
-            }
-            return mode_from_hex(val);
-        }
-    }
-    None
-}
-
-/// Alacritty: extract `colors.primary.background` from TOML.
-fn detect_alacritty(text: &str) -> Option<ThemeMode> {
-    let table: toml::Table = toml::from_str(text).ok()?;
-
-    if let Some(bg) = table
-        .get("colors")
-        .and_then(|v| v.get("primary"))
-        .and_then(|v| v.get("background"))
-        .and_then(toml::Value::as_str)
-    {
-        return mode_from_hex(bg);
-    }
-
-    // Alacritty `import` array: check imported theme files.
-    let imports = table
-        .get("import")
-        .or_else(|| table.get("general").and_then(|g| g.get("import")))
-        .and_then(toml::Value::as_array)?;
-
-    for entry in imports {
-        let Some(path_str) = entry.as_str() else {
-            continue;
-        };
-        let candidate = shellexpand_tilde(path_str);
-        let ext = Path::new(&candidate)
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("");
-        if (ext.eq_ignore_ascii_case("toml") || ext.eq_ignore_ascii_case("yml"))
-            && let Ok(inc_text) = std::fs::read_to_string(&candidate)
-            && let Some(mode) = detect_alacritty(&inc_text)
-        {
-            return Some(mode);
-        }
-    }
-    None
-}
-
-// ---------------------------------------------------------------------------
-// OSC 11 fallback
-// ---------------------------------------------------------------------------
 
 fn detect_from_osc() -> Option<ThemeMode> {
     let mut opts = terminal_colorsaurus::QueryOptions::default();
@@ -227,209 +68,13 @@ fn detect_from_osc() -> Option<ThemeMode> {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/// Strip a `key = value` or `key value` prefix and return the trimmed value.
-fn strip_config_key<'a>(line: &'a str, key: &str) -> Option<&'a str> {
-    let rest = line.strip_prefix(key)?;
-    // Must be followed by whitespace or `=`, not a longer key name.
-    let first = rest.chars().next()?;
-    if first != '=' && !first.is_ascii_whitespace() {
-        return None;
-    }
-    Some(rest.trim_start_matches(|c: char| c == '=' || c.is_ascii_whitespace()))
-}
-
-/// Normalize terminal config color strings into a [`csscolorparser::Color`].
-/// Handles `#RRGGBB`, bare `RRGGBB`, and the `0xRRGGBB` form some configs use.
-fn parse_color(s: &str) -> Option<csscolorparser::Color> {
-    let s = s.trim();
-    // csscolorparser handles `#RRGGBB` natively; normalize the other forms.
-    if let Some(hex) = s.strip_prefix("0x") {
-        return format!("#{hex}").parse().ok();
-    }
-    if !s.starts_with('#') && s.len() == 6 && s.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return format!("#{s}").parse().ok();
-    }
-    s.parse().ok()
-}
-
-/// Parse a color string and classify by sRGB relative luminance.
-fn mode_from_hex(s: &str) -> Option<ThemeMode> {
-    let c = parse_color(s)?;
-    // sRGB relative luminance (simplified gamma with exponent 2.2).
-    // `c.r`, `c.g`, `c.b` are `f32` in [0.0, 1.0]; widen to `f64`
-    // for the luminance arithmetic.
-    let (r, g, b) = (f64::from(c.r), f64::from(c.g), f64::from(c.b));
-    let lum = 0.0722f64.mul_add(
-        b.powf(2.2),
-        0.2126f64.mul_add(r.powf(2.2), 0.7152 * g.powf(2.2)),
-    );
-    Some(if lum >= 0.5 {
-        ThemeMode::Light
-    } else {
-        ThemeMode::Dark
-    })
-}
-
-/// Expand a leading `~` to `$HOME`. Bare-minimum tilde expansion for
-/// config import paths — we don't need full shell expansion here.
-fn shellexpand_tilde(s: &str) -> String {
-    if let Some(rest) = s.strip_prefix("~/")
-        && let Some(home) = dirs::home_dir()
-    {
-        return home.join(rest).to_string_lossy().into_owned();
-    }
-    s.to_string()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn parse_color_variants() {
-        let to_rgb = |c: csscolorparser::Color| {
-            (
-                (c.r * 255.0).round() as u8,
-                (c.g * 255.0).round() as u8,
-                (c.b * 255.0).round() as u8,
-            )
-        };
-        assert_eq!(to_rgb(parse_color("#1e1e2e").unwrap()), (0x1e, 0x1e, 0x2e));
-        assert_eq!(to_rgb(parse_color("1e1e2e").unwrap()), (0x1e, 0x1e, 0x2e));
-        assert_eq!(to_rgb(parse_color("0x1e1e2e").unwrap()), (0x1e, 0x1e, 0x2e));
-        assert_eq!(to_rgb(parse_color("#FFFFFF").unwrap()), (255, 255, 255));
-        // Short hex is now accepted via csscolorparser.
-        assert!(parse_color("#fff").is_some());
-    }
-
-    #[test]
-    fn parse_color_rejects_invalid() {
-        assert!(parse_color("").is_none());
-        assert!(parse_color("not-a-color").is_none());
-    }
-
-    #[test]
-    fn luminance_extremes() {
-        assert_eq!(mode_from_hex("#000000"), Some(ThemeMode::Dark));
-        assert_eq!(mode_from_hex("#ffffff"), Some(ThemeMode::Light));
-    }
-
-    #[test]
-    fn mode_from_dark_bg() {
-        // Catppuccin Mocha base
-        assert_eq!(mode_from_hex("#1e1e2e"), Some(ThemeMode::Dark));
-        // Gruvbox dark
-        assert_eq!(mode_from_hex("#282828"), Some(ThemeMode::Dark));
-    }
-
-    #[test]
-    fn mode_from_light_bg() {
-        // Catppuccin Latte base
-        assert_eq!(mode_from_hex("#eff1f5"), Some(ThemeMode::Light));
-        // Solarized light
-        assert_eq!(mode_from_hex("#fdf6e3"), Some(ThemeMode::Light));
-        // White
-        assert_eq!(mode_from_hex("#ffffff"), Some(ThemeMode::Light));
-    }
-
-    #[test]
-    fn strip_key_equals() {
-        assert_eq!(
-            strip_config_key("background = #1e1e2e", "background"),
-            Some("#1e1e2e")
-        );
-        assert_eq!(
-            strip_config_key("background=#1e1e2e", "background"),
-            Some("#1e1e2e")
-        );
-    }
-
-    #[test]
-    fn strip_key_space() {
-        assert_eq!(
-            strip_config_key("background #1e1e2e", "background"),
-            Some("#1e1e2e")
-        );
-    }
-
-    #[test]
-    fn strip_key_no_match() {
-        // "background-color" should NOT match "background"
-        assert_eq!(
-            strip_config_key("background-color = red", "background"),
-            None
-        );
-    }
-
-    #[test]
-    fn ghostty_theme_auto_switch_is_ambiguous() {
-        let config = "theme = light:Catppuccin Latte,dark:Catppuccin Mocha\n";
-        assert_eq!(detect_ghostty(config, Path::new("")), None);
-
-        let config = "theme = dark:Gruvbox,light:Gruvbox Light\n";
-        assert_eq!(detect_ghostty(config, Path::new("")), None);
-    }
-
-    #[test]
-    fn ghostty_theme_auto_switch_same_theme_name() {
-        let config = "theme = light:Catppuccin Mocha,dark:Catppuccin Mocha\n";
-        assert_eq!(detect_ghostty(config, Path::new("")), Some(ThemeMode::Dark));
-    }
-
-    #[test]
-    fn ghostty_theme_name_heuristic() {
-        let config = "theme = Catppuccin Latte\n";
-        assert_eq!(
-            detect_ghostty(config, Path::new("")),
-            Some(ThemeMode::Light)
-        );
-
-        let config = "theme = Rose Pine Dawn\n";
-        assert_eq!(
-            detect_ghostty(config, Path::new("")),
-            Some(ThemeMode::Light)
-        );
-
-        let config = "theme = Catppuccin Mocha\n";
-        assert_eq!(detect_ghostty(config, Path::new("")), Some(ThemeMode::Dark));
-    }
-
-    #[test]
-    fn ghostty_background_color() {
-        let config = "background = #eff1f5\n";
-        assert_eq!(
-            detect_ghostty(config, Path::new("")),
-            Some(ThemeMode::Light)
-        );
-    }
-
-    #[test]
-    fn kitty_background() {
-        let config = "font_family JetBrainsMono Nerd Font\nbackground #1e1e2e\n";
-        assert_eq!(kitty_bg_from_text(config), Some(ThemeMode::Dark));
-
-        let config = "background #eff1f5\n";
-        assert_eq!(kitty_bg_from_text(config), Some(ThemeMode::Light));
-    }
-
-    #[test]
-    fn alacritty_colors_primary() {
-        let config = r##"
-[colors.primary]
-background = "#1e1e2e"
-foreground = "#cdd6f4"
-"##;
-        assert_eq!(detect_alacritty(config), Some(ThemeMode::Dark));
-
-        let config = r##"
-[colors.primary]
-background = "#eff1f5"
-foreground = "#4c4f69"
-"##;
-        assert_eq!(detect_alacritty(config), Some(ThemeMode::Light));
+    fn cli_override_short_circuits() {
+        assert_eq!(detect(ThemeMode::Dark), ThemeMode::Dark);
+        assert_eq!(detect(ThemeMode::Light), ThemeMode::Light);
     }
 }

@@ -80,31 +80,25 @@ impl RateEstimate {
             return Self::empty();
         }
 
-        // Fit y = a + b·t via ordinary least squares. Work in seconds
-        // relative to the earliest sample to keep the numbers small.
-        let t0 = window[0].ts_unix as i128;
-        let n = window.len() as f64;
-        let mut sum_t = 0.0f64;
-        let mut sum_y = 0.0f64;
-        for s in window {
-            sum_t += (s.ts_unix as i128 - t0) as f64;
-            sum_y += s.used_pct;
-        }
-        let mean_t = sum_t / n;
-        let mean_y = sum_y / n;
-        let mut cov = 0.0f64;
-        let mut var_t = 0.0f64;
-        for s in window {
-            let dt = (s.ts_unix as i128 - t0) as f64 - mean_t;
-            let dy = s.used_pct - mean_y;
-            cov += dt * dy;
-            var_t += dt * dt;
-        }
-        let span_secs = (window.last().unwrap().ts_unix - window.first().unwrap().ts_unix) as f64;
-        if var_t == 0.0 || span_secs < 60.0 {
+        // Fit y = a + b·t via ordinary least squares (delegated to
+        // `linreg`). Work in seconds relative to the earliest sample to
+        // keep the numbers small.
+        let (Some(first), Some(last)) = (window.first(), window.last()) else {
+            return Self::empty();
+        };
+        let span_secs = (last.ts_unix - first.ts_unix) as f64;
+        if span_secs < 60.0 {
             return Self::empty();
         }
-        let slope_per_sec = cov / var_t;
+        let t0 = first.ts_unix as i128;
+        let pairs: Vec<(f64, f64)> = window
+            .iter()
+            .map(|s| ((s.ts_unix as i128 - t0) as f64, s.used_pct))
+            .collect();
+        let Ok((slope_per_sec, _intercept)) = linreg::linear_regression_of::<f64, f64, f64>(&pairs)
+        else {
+            return Self::empty();
+        };
         let rate_per_min = (slope_per_sec * 60.0).max(0.0);
 
         Self {

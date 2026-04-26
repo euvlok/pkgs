@@ -10,7 +10,6 @@
 pub mod cli;
 pub mod config;
 pub mod currency;
-pub mod font_detect;
 pub mod input;
 pub mod pace;
 pub mod pricing;

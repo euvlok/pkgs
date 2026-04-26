@@ -5,8 +5,7 @@
 //! that work in any terminal). Selection happens via `--icons` or the
 //! `CLAUDE_STATUSLINE_ICONS` env var.
 //!
-//! Default is `text` because Claude Code's embedded terminal does not always
-//! resolve a Nerd Font, so PUA codepoints render as `􀄦`-style placeholders.
+//! Default is `emoji` — universally available and requires no font setup.
 
 use clap::ValueEnum;
 use nerd_font_symbols::{
@@ -25,10 +24,10 @@ use nerd_font_symbols::{
 pub enum IconSet {
     /// Nerd Font glyphs (requires a patched font)
     Nerd,
-    /// Color emoji
-    Emoji,
-    /// ASCII / BMP fallback (default)
+    /// Color emoji (default)
     #[default]
+    Emoji,
+    /// ASCII / BMP fallback
     Text,
 }
 
@@ -80,8 +79,8 @@ pub const EMOJI: Icons = Icons {
     sep: "│",
     git: "🌿",
     jj: "🌱",
-    ahead: "⬆",
-    behind: "⬇",
+    ahead: "⬆️",
+    behind: "⬇️",
     staged: "➕",
     dirty: "📝",
     clean: "✅",
@@ -90,10 +89,10 @@ pub const EMOJI: Icons = Icons {
     merge: "🔀",
     rebase: "🔁",
     cherry_pick: "🍒",
-    revert: "↩",
+    revert: "⏪",
     bisect: "🔍",
-    conflict: "⚠",
-    clock: "⏱",
+    conflict: "⚠️",
+    clock: "⌛",
 };
 
 pub const TEXT: Icons = Icons {
