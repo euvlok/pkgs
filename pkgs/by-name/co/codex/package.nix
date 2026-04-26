@@ -14,7 +14,7 @@ let
     owner = "openai";
     repo = "codex";
     rev = "rust-v${upstreamVersion}";
-    hash = "sha256-FdtV+CIqTInnegcXrXBxw4aE0JnNDh4GdYKwUDjSk9Y=";
+    hash = "sha256-m/g+5wdehyaHDw6i5vik4HXiisY/iWFtPX0gKjCFPNY=";
   };
   webrtcTag = "webrtc-24f6822-2";
   macosWebrtcTriple =
@@ -59,7 +59,7 @@ codex.overrideAttrs (
         name = "codex-${upstreamVersion}-vendor";
         src = upstreamSrc;
         sourceRoot = "${upstreamSrc.name}/codex-rs";
-        hash = "sha256-7rexlmc79eUkwcqTa8rN3GFDy1dWs+0h/SUllZqAcpM=";
+        hash = "sha256-fuT8vPb9/7fZam129nR6y+r+3j46WBhlf73Htkcjpzc=";
       };
     };
   in
