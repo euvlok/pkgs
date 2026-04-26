@@ -135,6 +135,15 @@ fn emit_debug(window: &Window, projection: &Projection) {
         projection.projected_pct_at_reset,
         projection.state,
     );
+    let fmt_secs = |d: Option<std::time::Duration>| {
+        d.map_or_else(|| "—".to_string(), |d| format!("{}s", d.as_secs()))
+    };
+    let _ = writeln!(
+        buf,
+        "pace: cap_eta={} rest_to_safe={}",
+        fmt_secs(projection.cap_eta),
+        fmt_secs(projection.rest_to_safe),
+    );
     eprint!("{buf}");
 
     if let Ok(val) = std::env::var("CLAUDE_STATUSLINE_PACE_DEBUG")
