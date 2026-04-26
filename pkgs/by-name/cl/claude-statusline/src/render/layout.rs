@@ -88,17 +88,23 @@ impl SegmentName {
             Self::Cost => builders::cost(ctx.input, ctx.cost_usd, &ctx.deltas, ctx.settings, pal),
             Self::Diff => builders::diff(ctx.input, &ctx.deltas, ctx.settings, pal),
             Self::Context => builders::context(ctx.input, &ctx.deltas, ctx.settings, pal),
-            Self::RateLimits => builders::rate_limits(ctx.input, ctx.icons, ctx.settings, pal),
+            Self::RateLimits => {
+                builders::rate_limits(ctx.input, ctx.icons, ctx.settings, pal, ctx.now_unix)
+            }
             Self::Clock => builders::clock(ctx.input, ctx.icons, pal),
             Self::Speed => builders::speed(ctx.input, pal),
             Self::Cache => builders::cache(ctx.input, pal),
-            Self::Pace => builders::pace(ctx.input, ctx.pace_settings, pal),
+            Self::Pace => builders::pace(ctx.input, ctx.pace_settings, pal, ctx.now_unix),
         }
     }
 }
 
-/// Bundle passed to every segment builder. `vcs` and `cost_usd` are
-/// precomputed in a scoped thread; `deltas` carries flash state.
+/// Bundle passed to every segment builder.
+///
+/// `vcs` and `cost_usd` are precomputed in a scoped thread; `deltas`
+/// carries flash state; `now_unix` is the single wall-clock sample
+/// shared by every segment in this render so countdowns and projections
+/// agree.
 #[derive(Debug)]
 pub struct BuildCtx<'a> {
     pub input: &'a Input,
@@ -109,6 +115,7 @@ pub struct BuildCtx<'a> {
     pub deltas: Deltas,
     pub settings: &'a Settings,
     pub pace_settings: &'a PaceSettings,
+    pub now_unix: u64,
 }
 
 #[derive(Debug, Clone)]

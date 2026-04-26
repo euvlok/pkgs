@@ -278,5 +278,8 @@ fn builder_rate_limits(bencher: divan::Bencher<'_, '_>) {
     let icons = IconSet::Text.icons();
     let settings = Settings::default();
     let pal = Palette::dark();
-    bencher.bench(|| builders::rate_limits(divan::black_box(&input), icons, &settings, &pal));
+    let now = claude_statusline::pace::now_unix();
+    bencher.bench(|| {
+        builders::rate_limits(divan::black_box(&input), icons, &settings, &pal, now)
+    });
 }

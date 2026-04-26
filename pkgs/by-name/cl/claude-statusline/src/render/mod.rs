@@ -120,6 +120,7 @@ pub fn render_with_pace(
         deltas,
         settings,
         pace_settings,
+        now_unix: crate::pace::now_unix(),
     };
     render_lines(&ctx, layout, None)
 }
@@ -151,15 +152,10 @@ pub(crate) fn render_lines(
         })
         .collect();
 
-    if settings.align {
-        fit_with_alignment(&mut lines, separator.width, max_cols);
+    let col_widths: Vec<usize> = if settings.align {
+        fit_with_alignment(&mut lines, separator.width, max_cols)
     } else {
         fit_unaligned(&mut lines, separator.width, max_cols);
-    }
-
-    let col_widths: Vec<usize> = if settings.align {
-        column_widths(&lines)
-    } else {
         Vec::new()
     };
 
@@ -217,20 +213,7 @@ mod tests {
     }
 
     fn strip_ansi(s: &str) -> String {
-        let mut out = String::with_capacity(s.len());
-        let mut chars = s.chars();
-        while let Some(c) = chars.next() {
-            if c == '\x1b' {
-                for nc in chars.by_ref() {
-                    if nc == 'm' {
-                        break;
-                    }
-                }
-                continue;
-            }
-            out.push(c);
-        }
-        out
+        anstream::adapter::strip_str(s).to_string()
     }
 
     #[test]
@@ -301,11 +284,7 @@ mod tests {
 
     #[test]
     fn rate_limits_segment_includes_countdown() {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs() as i64;
+        let now = crate::pace::now_unix() as i64;
         let input = Input {
             rate_limits: RateLimits {
                 five_hour: RateLimit {
@@ -359,12 +338,8 @@ mod tests {
     fn pace_segment_shows_projection() {
         use crate::input::{RateLimit, RateLimits};
         use crate::pace::{self, PaceSettings, PctSample, Window};
-        use std::time::{SystemTime, UNIX_EPOCH};
 
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
+        let now = pace::now_unix();
 
         // Seed the ring with samples that establish a steady burn.
         let window = Window {

@@ -7,8 +7,9 @@
 pub fn humanize_tokens(n: u64) -> String {
     match n {
         0 => String::new(),
-        1_000_000.. => {
-            // ((n + 50_000) / 100_000) gives tenths of millions, rounded.
+        // 950_000+ rounds up to "1.0M", not "950k": picking the bucket
+        // *after* rounding keeps the boundary visually consistent.
+        950_000.. => {
             let tenths = (n + 50_000) / 100_000;
             format!("{}.{}M", tenths / 10, tenths % 10)
         }
@@ -82,6 +83,8 @@ mod tests {
         assert_eq!(humanize_tokens(0), "");
         assert_eq!(humanize_tokens(123), "123");
         assert_eq!(humanize_tokens(34_500), "34k");
+        assert_eq!(humanize_tokens(949_999), "949k");
+        assert_eq!(humanize_tokens(950_000), "1.0M");
         assert_eq!(humanize_tokens(1_234_567), "1.2M");
         assert_eq!(humanize_tokens(1_500_000), "1.5M");
     }

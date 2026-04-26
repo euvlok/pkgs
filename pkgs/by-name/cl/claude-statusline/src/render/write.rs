@@ -4,6 +4,8 @@
 //! [`Segment`]s, a separator, and column widths, it writes the padded,
 //! styled output into a `String`.
 
+use std::fmt::Write as _;
+
 use crate::render::colors::Palette;
 use crate::render::segment::{Cell, Segment};
 
@@ -36,9 +38,7 @@ pub(super) fn write_line(out: &mut String, segments: &[Segment], sep: &Sep, col_
             .copied()
             .unwrap_or(0)
             .saturating_sub(seg.width());
-        for _ in 0..pad {
-            out.push(' ');
-        }
+        let _ = write!(out, "{:pad$}", "");
         for cell in &sep.cells {
             cell.write_to(out);
         }

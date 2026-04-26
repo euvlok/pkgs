@@ -10,12 +10,10 @@
 //! user invokes it from, and a user without `gix`/`jj-lib` data still
 //! sees the segment in the output.
 
-use std::time::{SystemTime, UNIX_EPOCH};
-
 use crate::input::{
     ContextUsage, ContextWindow, Cost, Input, Model, RateLimit, RateLimits, Workspace,
 };
-use crate::pace::PaceSettings;
+use crate::pace::{self, PaceSettings};
 use crate::render::colors::Palette;
 use crate::render::icons::Icons;
 use crate::render::layout::{BuildCtx, Layout};
@@ -53,6 +51,7 @@ pub fn preview_with(
         deltas,
         settings,
         pace_settings: &pace_settings,
+        now_unix: pace::now_unix(),
     };
     super::render_lines(&ctx, layout, max_cols)
 }
@@ -86,11 +85,11 @@ fn sample_input() -> Input {
         rate_limits: RateLimits {
             five_hour: RateLimit {
                 used_percentage: Some(13.0),
-                resets_at: now_plus_secs(4 * 3600 + 3 * 60),
+                resets_at: Some(now_plus_secs(4 * 3600 + 3 * 60)),
             },
             seven_day: RateLimit {
                 used_percentage: Some(85.0),
-                resets_at: now_plus_secs(6 * 86400),
+                resets_at: Some(now_plus_secs(6 * 86400)),
             },
         },
         cost: Cost {
@@ -104,10 +103,10 @@ fn sample_input() -> Input {
     }
 }
 
-fn now_plus_secs(secs: i64) -> Option<i64> {
+fn now_plus_secs(secs: i64) -> i64 {
     #[expect(clippy::cast_possible_wrap)]
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_secs() as i64;
-    Some(now + secs)
+    let now = pace::now_unix() as i64;
+    now.saturating_add(secs)
 }
 
 fn sample_vcs(icons: &Icons, pal: &Palette) -> Segment {

@@ -229,8 +229,8 @@ impl<'a> RateLimitRow<'a> {
     }
 }
 
-pub fn pace(input: &Input, settings: &PaceSettings, pal: &Palette) -> Option<Segment> {
-    pace::pace(input, settings, pal, pace::now_unix())
+pub fn pace(input: &Input, settings: &PaceSettings, pal: &Palette, now_unix: u64) -> Option<Segment> {
+    pace::pace(input, settings, pal, now_unix)
 }
 
 pub fn rate_limits(
@@ -238,13 +238,10 @@ pub fn rate_limits(
     icons: &Icons,
     settings: &Settings,
     pal: &Palette,
+    now_unix: u64,
 ) -> Option<Segment> {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).ok().map(|d| {
-        #[expect(clippy::cast_possible_wrap)]
-        let secs = d.as_secs() as i64;
-        secs
-    });
+    #[expect(clippy::cast_possible_wrap)]
+    let now = Some(now_unix as i64);
 
     let rows = [
         RateLimitRow {

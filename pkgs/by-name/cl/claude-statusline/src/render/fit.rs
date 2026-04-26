@@ -11,7 +11,16 @@
 
 use crate::render::segment::{Segment, SegmentKind};
 
-/// Drop segments across all lines until every line fits in `max_cols`.
+/// Index of the rightmost droppable segment in `line`, or `None` if the
+/// line has nothing left to give up. Anchors are skipped by construction.
+fn rightmost_droppable(line: &[Segment]) -> Option<usize> {
+    line.iter()
+        .rposition(|s| s.kind == SegmentKind::Droppable)
+}
+
+/// Drop segments across all lines until every line fits in `max_cols`,
+/// returning the final per-column widths so callers don't have to
+/// recompute them.
 ///
 /// Accounts for the padding alignment will add. Each iteration finds
 /// the worst-overflowing line, drops one droppable segment from its
@@ -19,9 +28,13 @@ use crate::render::segment::{Segment, SegmentKind};
 /// shrink a column and rescue line B too. Anchor segments (the first
 /// of each line) are never dropped; if the worst line has nothing left
 /// to drop we bail to avoid an infinite loop.
-pub fn fit_with_alignment(lines: &mut [Vec<Segment>], sep_width: usize, max_cols: Option<usize>) {
+pub fn fit_with_alignment(
+    lines: &mut [Vec<Segment>],
+    sep_width: usize,
+    max_cols: Option<usize>,
+) -> Vec<usize> {
     let Some(max) = max_cols else {
-        return;
+        return column_widths(lines);
     };
     loop {
         let widths = column_widths(lines);
@@ -32,19 +45,13 @@ pub fn fit_with_alignment(lines: &mut [Vec<Segment>], sep_width: usize, max_cols
             .filter(|(_, w)| *w > max)
             .max_by_key(|(_, w)| *w);
         let Some((i, _)) = worst else {
-            return;
+            return widths;
         };
-        let drop_idx = lines[i]
-            .iter()
-            .enumerate()
-            .rev()
-            .find(|(_, s)| s.kind == SegmentKind::Droppable)
-            .map(|(j, _)| j);
-        match drop_idx {
+        match rightmost_droppable(&lines[i]) {
             Some(j) => {
                 lines[i].remove(j);
             }
-            None => return,
+            None => return widths,
         }
     }
 }
@@ -65,15 +72,7 @@ pub fn fit_unaligned(lines: &mut [Vec<Segment>], sep_width: usize, max_cols: Opt
             if raw <= max {
                 break;
             }
-            // Walk from the right and drop the first droppable segment.
-            // Anchors stay put, matching the aligned path's contract.
-            let drop_idx = line
-                .iter()
-                .enumerate()
-                .rev()
-                .find(|(_, s)| s.kind == SegmentKind::Droppable)
-                .map(|(j, _)| j);
-            match drop_idx {
+            match rightmost_droppable(line) {
                 Some(j) => {
                     line.remove(j);
                 }

@@ -19,9 +19,10 @@
 
 use std::fs;
 use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
+
+use crate::pace::now_unix;
 
 /// Default wall-clock window during which a recorded delta stays
 /// visible.
@@ -136,13 +137,6 @@ fn save(key: &str, state: &SessionState) {
     if fs::write(tmp.path(), json).is_ok() {
         let _ = tmp.persist(&path);
     }
-}
-
-fn now_unix() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
 }
 
 /// Current-render metric values passed to [`update`]. `None` for any

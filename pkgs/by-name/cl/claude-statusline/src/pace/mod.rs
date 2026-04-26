@@ -106,9 +106,8 @@ pub(crate) fn compute(
     projection::classify(window, current_pct, &estimate, settings, now)
 }
 
-/// Wall-clock "now" in unix seconds. Mirrors the helper in `session.rs`
-/// but lives here so the pace hot path has no dependency on session
-/// state.
+/// Wall-clock "now" in unix seconds. The canonical helper for the
+/// crate — `session` and the render builders also call into this.
 #[must_use]
 pub fn now_unix() -> u64 {
     SystemTime::now()
