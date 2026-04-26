@@ -1,75 +1,38 @@
 {
   codex,
   fetchFromGitHub,
-  fetchurl,
   lib,
-  runCommand,
   rustPlatform,
-  stdenv,
-  unzip,
 }:
 let
-  upstreamVersion = "rust-v0.126.0-alpha.3-unstable-2026-04-26";
+  sources = lib.importJSON ./sources.json;
   upstreamSrc = fetchFromGitHub {
     owner = "openai";
     repo = "codex";
-    rev = "rust-v${upstreamVersion}";
-    hash = "sha256-m/g+5wdehyaHDw6i5vik4HXiisY/iWFtPX0gKjCFPNY=";
+    rev = sources.rev;
+    hash = sources.srcHash;
   };
-  webrtcTag = "webrtc-24f6822-2";
-  macosWebrtcTriple =
-    if stdenv.hostPlatform.isAarch64 then
-      "mac-arm64-release"
-    else if stdenv.hostPlatform.isx86_64 then
-      "mac-x64-release"
-    else
-      throw "Unsupported Darwin architecture for Codex WebRTC prebuilt";
-  macosWebrtcZipHash =
-    if stdenv.hostPlatform.isAarch64 then
-      "sha256-eb5cwV5uBjPEOA4z4XLX6/Gm3Og+ngmXYdYQPw1+tsE="
-    else if stdenv.hostPlatform.isx86_64 then
-      "sha256-COQh7Wa0KEmM1qUTMMldmP7WncRKPBNJ7RaiRowUyV8="
-    else
-      null;
-  macosWebrtcPrebuilt =
-    if stdenv.hostPlatform.isDarwin then
-      runCommand "codex-${upstreamVersion}-${macosWebrtcTriple}"
-        {
-          nativeBuildInputs = [ unzip ];
-          src = fetchurl {
-            url = "https://github.com/livekit/rust-sdks/releases/download/${webrtcTag}/webrtc-${macosWebrtcTriple}.zip";
-            hash = macosWebrtcZipHash;
-          };
-        }
-        ''
-          mkdir -p "$out"
-          unzip -q "$src" -d "$out"
-        ''
-    else
-      null;
 in
 codex.overrideAttrs (
   prevAttrs:
   let
-    versionBump = lib.optionalAttrs (lib.versionOlder prevAttrs.version upstreamVersion) {
-      version = upstreamVersion;
+    versionBump = lib.optionalAttrs (lib.versionOlder prevAttrs.version sources.version) {
+      version = sources.version;
       src = upstreamSrc;
       sourceRoot = "${upstreamSrc.name}/codex-rs";
       cargoDeps = rustPlatform.fetchCargoVendor {
-        name = "codex-${upstreamVersion}-vendor";
+        name = "codex-${sources.version}-vendor";
         src = upstreamSrc;
         sourceRoot = "${upstreamSrc.name}/codex-rs";
-        hash = "sha256-fuT8vPb9/7fZam129nR6y+r+3j46WBhlf73Htkcjpzc=";
+        hash = sources.cargoHash;
       };
     };
   in
   versionBump
   // {
-    env =
-      (prevAttrs.env or { })
-      // lib.optionalAttrs stdenv.hostPlatform.isDarwin {
-        LK_CUSTOM_WEBRTC = "${macosWebrtcPrebuilt}/${macosWebrtcTriple}";
-      };
+    passthru = (prevAttrs.passthru or { }) // {
+      updateScript = ./update.sh;
+    };
 
     patches = (prevAttrs.patches or [ ]) ++ [
       ./0001-add-external-tui-status-line-command-support.patch
