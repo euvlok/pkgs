@@ -14,8 +14,8 @@ fn main() {
 #[divan::bench(args = [
     "dir",
     "dir, vcs, model",
-    "dir, vcs, model | cost, diff, context, rate_limits",
-    "dir, vcs, model, cost | diff, context | rate_limits, dir, vcs, model",
+    "dir, vcs, model | clock, diff, context, rate_limits",
+    "dir, vcs, model, clock | diff, context | rate_limits, pace, cache",
 ])]
 fn layout_parse(spec: &str) -> Layout {
     Layout::parse(divan::black_box(spec)).unwrap()

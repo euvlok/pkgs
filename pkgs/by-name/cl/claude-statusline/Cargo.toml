@@ -110,3 +110,11 @@ harness = false
 [[bench]]
 name = "format"
 harness = false
+
+[[bench]]
+name = "pace"
+harness = false
+
+[[bench]]
+name = "input"
+harness = false

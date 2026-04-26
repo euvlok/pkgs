@@ -4,12 +4,16 @@
 use claude_statusline::input::{
     ContextUsage, ContextWindow, Cost, Input, InputSource, Model, RateLimit, RateLimits, Workspace,
 };
+use claude_statusline::pace::PaceSettings;
 use claude_statusline::render::builders;
 use claude_statusline::render::colors::Palette;
 use claude_statusline::render::icons::IconSet;
 use claude_statusline::render::layout::Layout;
+use claude_statusline::render::preview::preview_with;
 use claude_statusline::render::segment::Segment;
-use claude_statusline::render::{column_widths, fit_with_alignment, render, render_with};
+use claude_statusline::render::{
+    column_widths, fit_with_alignment, render, render_with, render_with_pace,
+};
 use claude_statusline::settings::Settings;
 
 fn main() {
@@ -20,7 +24,7 @@ fn rich_input() -> Input {
     Input {
         source: InputSource::Claude,
         workspace: Workspace {
-            current_dir: Some("/Users/flame/Developer/nix-dotfiles/pkgs/claude-statusline".into()),
+            current_dir: Some("/tmp/example/projects/claude-statusline".into()),
         },
         cwd: None,
         transcript_path: None,
@@ -201,5 +205,76 @@ fn builder_rate_limits(bencher: divan::Bencher<'_, '_>) {
     let now = claude_statusline::pace::now_unix();
     bencher.bench(|| {
         builders::rate_limits(divan::black_box(&input), icons, &settings, &pal, now)
+    });
+}
+
+#[divan::bench]
+fn builder_clock(bencher: divan::Bencher<'_, '_>) {
+    let input = rich_input();
+    let icons = IconSet::Text.icons();
+    let pal = Palette::dark();
+    bencher.bench(|| builders::clock(divan::black_box(&input), icons, &pal));
+}
+
+#[divan::bench]
+fn builder_speed(bencher: divan::Bencher<'_, '_>) {
+    let input = rich_input();
+    let pal = Palette::dark();
+    bencher.bench(|| builders::speed(divan::black_box(&input), &pal));
+}
+
+#[divan::bench]
+fn builder_cache(bencher: divan::Bencher<'_, '_>) {
+    let input = rich_input();
+    let pal = Palette::dark();
+    bencher.bench(|| builders::cache(divan::black_box(&input), &pal));
+}
+
+#[divan::bench]
+fn builder_pace(bencher: divan::Bencher<'_, '_>) {
+    let input = rich_input();
+    let settings = PaceSettings {
+        warmup_mins: 0,
+        ..PaceSettings::default()
+    };
+    let pal = Palette::dark();
+    let now = claude_statusline::pace::now_unix();
+    bencher.bench(|| builders::pace(divan::black_box(&input), &settings, &pal, now));
+}
+
+#[divan::bench]
+fn render_with_pace_two_line(bencher: divan::Bencher<'_, '_>) {
+    let input = rich_input();
+    let icons = IconSet::Text.icons();
+    let layout = Layout::two_line();
+    let settings = Settings::default();
+    let pace_settings = PaceSettings::default();
+    let pal = Palette::dark();
+    bencher.bench(|| {
+        render_with_pace(
+            divan::black_box(&input),
+            icons,
+            divan::black_box(&layout),
+            &settings,
+            &pace_settings,
+            &pal,
+        )
+    });
+}
+
+#[divan::bench]
+fn preview_two_line(bencher: divan::Bencher<'_, '_>) {
+    let icons = IconSet::Text.icons();
+    let layout = Layout::two_line();
+    let settings = Settings::default();
+    let pal = Palette::dark();
+    bencher.bench(|| {
+        preview_with(
+            icons,
+            divan::black_box(&layout),
+            &settings,
+            &pal,
+            Some(120),
+        )
     });
 }
