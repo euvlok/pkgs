@@ -95,12 +95,18 @@ pub(crate) fn compute(
     now: u64,
 ) -> Projection {
     let mut samples = ring::load_ring();
+    let pre_len = samples.len();
     samples.retain(|s| s.ts_unix >= window.started_at && s.ts_unix < now);
-    samples.push(PctSample {
+    let new_sample = PctSample {
         ts_unix: now,
         used_pct: current_pct,
-    });
-    ring::persist_ring(&samples);
+    };
+    let trimmed = samples.len() != pre_len;
+    let needs_persist = trimmed || ring::should_persist_append(samples.last(), &new_sample);
+    samples.push(new_sample);
+    if needs_persist {
+        ring::persist_ring(&samples);
+    }
 
     let estimate = rate::RateEstimate::from_samples(&samples, settings.lookback_mins, now);
     projection::classify(window, current_pct, &estimate, settings, now)

@@ -2,12 +2,15 @@
 //!
 //! The pace segment's entire persistent state: a small postcard-encoded
 //! file in the platform cache directory, capped at a single 5h window's
-//! worth of samples. Rewritten atomically (via `tempfile.persist`) on
-//! every render. On format-version mismatch we treat the file as missing.
+//! worth of samples. Rewritten via plain `fs::write` only when the new
+//! sample materially differs from the last persisted one (see
+//! [`should_persist_append`]). Tight render loops collapse to zero I/O.
+//! Torn writes / format-version mismatch / decode failure all collapse
+//! to "start fresh".
 
 use std::fs;
-use std::io::Write as _;
 use std::path::PathBuf;
+use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
 
@@ -20,6 +23,25 @@ const VERSION: u32 = 2;
 /// but we cap to keep the file bounded when the user is running renders
 /// in a tight loop.
 pub const MAX_SAMPLES: usize = 256;
+
+/// Skip the ring rewrite if the last persisted sample is within ε of the
+/// new one in pct AND closer than this many seconds in time. Tight render
+/// loops (`--watch`, status hooks firing on every keystroke) collapse to
+/// no I/O; the next render with movement or after the gap re-persists.
+const PERSIST_DEDUP_SECS: u64 = 15;
+const PCT_EPS: f64 = 1e-9;
+
+/// Heuristic: should we bother rewriting the ring after appending `new`
+/// onto a list whose last element is `last`? `None` last means "ring was
+/// empty or just got trimmed" — always persist in that case.
+#[must_use]
+pub fn should_persist_append(last: Option<&PctSample>, new: &PctSample) -> bool {
+    let Some(last) = last else { return true };
+    if (last.used_pct - new.used_pct).abs() > PCT_EPS {
+        return true;
+    }
+    new.ts_unix.saturating_sub(last.ts_unix) > PERSIST_DEDUP_SECS
+}
 
 /// A single observation.
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -35,14 +57,20 @@ struct RingFile {
 }
 
 /// Resolve the cache file path. `None` when the platform cache dir is
-/// unavailable (e.g. $HOME missing in some CI sandboxes).
+/// unavailable (e.g. $HOME missing in some CI sandboxes). Memoized — the
+/// path is stable for the life of the process.
 fn ring_path() -> Option<PathBuf> {
-    Some(
-        dirs::cache_dir()?
-            .join("claude-statusline")
-            .join("pace")
-            .join("samples.bin"),
-    )
+    static CACHED: OnceLock<Option<PathBuf>> = OnceLock::new();
+    CACHED
+        .get_or_init(|| {
+            Some(
+                dirs::cache_dir()?
+                    .join("claude-statusline")
+                    .join("pace")
+                    .join("samples.bin"),
+            )
+        })
+        .clone()
 }
 
 /// Load the ring, returning an empty vector on any failure (missing
@@ -65,15 +93,14 @@ pub fn load_ring() -> Vec<PctSample> {
     file.samples
 }
 
-/// Atomically replace the cache file with the given samples. Silent on
-/// I/O failure — the pace segment degrades gracefully to a warmup state
-/// next render.
+/// Replace the cache file with the given samples. Silent on I/O failure
+/// — the pace segment degrades gracefully (a corrupt or missing file
+/// just resets to warmup next render). Plain `fs::write` instead of an
+/// atomic-rename dance: a torn write costs us at most one warmup cycle,
+/// and the syscall savings show up in every render.
 pub fn persist_ring(samples: &[PctSample]) {
     let Some(path) = ring_path() else { return };
     let Some(parent) = path.parent() else { return };
-    if fs::create_dir_all(parent).is_err() {
-        return;
-    }
     let count = samples.len().min(MAX_SAMPLES);
     let start = samples.len().saturating_sub(count);
     let file = RingFile {
@@ -83,13 +110,15 @@ pub fn persist_ring(samples: &[PctSample]) {
     let Ok(bytes) = postcard::to_allocvec(&file) else {
         return;
     };
-    let Ok(mut tmp) = tempfile::NamedTempFile::new_in(parent) else {
-        return;
-    };
-    if tmp.write_all(&bytes).is_err() {
+    if fs::write(&path, &bytes).is_ok() {
         return;
     }
-    let _ = tmp.persist(&path);
+    // First write of the session: parent dir may not exist yet. Create
+    // it and try once more. Avoids the create_dir_all syscall on every
+    // subsequent render.
+    if fs::create_dir_all(parent).is_ok() {
+        let _ = fs::write(&path, &bytes);
+    }
 }
 
 #[cfg(test)]
