@@ -22,7 +22,7 @@ use crate::pace::PaceSettings;
 use crate::pricing::cost::session_cost;
 use crate::render::colors::Palette;
 use crate::render::icons::Icons;
-use crate::render::layout::{BuildCtx, Layout, SegmentName};
+use crate::render::layout::{BuildCtx, Layout};
 use crate::render::segment::Segment;
 use crate::session;
 use crate::settings::Settings;
@@ -59,35 +59,21 @@ pub fn render_with_pace(
     pace_settings: &PaceSettings,
     pal: &Palette,
 ) -> String {
-    let want_vcs = layout.contains(SegmentName::Vcs);
-    let want_cost = layout.contains(SegmentName::Cost);
-    let needs_transcript_walk =
-        want_cost && input.cost.total_cost_usd.is_none() && input.transcript_path.is_some();
-
-    let (vcs_seg, cost_usd) = if want_vcs && needs_transcript_walk {
-        std::thread::scope(|s| {
-            let vcs_handle = s.spawn(|| vcs::collect(&input.vcs_dir(), icons, pal));
-            let cost_handle = s.spawn(|| {
-                session_cost(input.transcript_path.as_deref(), input.cost.total_cost_usd)
-            });
-            (
-                vcs_handle.join().unwrap_or(None),
-                cost_handle.join().unwrap_or(None),
-            )
-        })
-    } else {
-        let vcs_seg = if want_vcs {
-            vcs::collect(&input.vcs_dir(), icons, pal)
-        } else {
-            None
-        };
-        let cost_usd = if want_cost {
-            session_cost(input.transcript_path.as_deref(), input.cost.total_cost_usd)
-        } else {
-            None
-        };
-        (vcs_seg, cost_usd)
-    };
+    // Run vcs lookup and (potential) transcript walk concurrently when
+    // both are needed; either side returns `None` cheaply if its
+    // segment isn't in the layout, so we don't bother branching on the
+    // cross-product.
+    let want_vcs = layout.needs_vcs();
+    let want_cost = layout.needs_cost();
+    let (vcs_seg, cost_usd) = std::thread::scope(|s| {
+        let vcs = s.spawn(|| want_vcs.then(|| vcs::collect(&input.vcs_dir(), icons, pal)).flatten());
+        let cost = s.spawn(|| {
+            want_cost
+                .then(|| session_cost(input.transcript_path.as_deref(), input.cost.total_cost_usd))
+                .flatten()
+        });
+        (vcs.join().unwrap_or(None), cost.join().unwrap_or(None))
+    });
 
     let out_tokens = input.context_window.current_usage.output_tokens;
     let snap = session::SessionSnapshot {

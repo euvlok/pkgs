@@ -90,10 +90,16 @@ pub enum SegmentKind {
 }
 
 /// A statusline chunk (one logical thing: dir, vcs info, cost, …).
+///
+/// `compact` is an optional shorter rendering. The fit pass prefers
+/// swapping a segment to its compact form before dropping it entirely,
+/// borrowing the i3bar `short_text` pattern: narrow terminals lose
+/// detail, not whole segments.
 #[derive(Debug, Clone)]
 pub struct Segment {
     pub cells: Vec<Cell>,
     pub kind: SegmentKind,
+    pub compact: Option<Vec<Cell>>,
 }
 
 impl Segment {
@@ -102,6 +108,7 @@ impl Segment {
         Self {
             cells: Vec::new(),
             kind: SegmentKind::Anchor,
+            compact: None,
         }
     }
 
@@ -110,7 +117,40 @@ impl Segment {
         Self {
             cells: Vec::new(),
             kind: SegmentKind::Droppable,
+            compact: None,
         }
+    }
+
+    /// Snapshot the current cells as the segment's compact form. Call
+    /// after pushing only the essentials, before pushing the optional
+    /// tail; the fit pass will fall back to this snapshot before
+    /// dropping the segment entirely.
+    pub fn mark_compact(&mut self) {
+        self.compact = Some(self.cells.clone());
+    }
+
+    /// Set an explicit compact form. Use when the full form interleaves
+    /// essential and optional cells, so a prefix snapshot via
+    /// [`Self::mark_compact`] won't capture the right thing.
+    pub fn set_compact(&mut self, cells: Vec<Cell>) {
+        self.compact = Some(cells);
+    }
+
+    /// Replace cells with the compact form. No-op if no compact form
+    /// was recorded. Returns whether a swap happened.
+    pub fn apply_compact(&mut self) -> bool {
+        match self.compact.take() {
+            Some(cells) => {
+                self.cells = cells;
+                true
+            }
+            None => false,
+        }
+    }
+
+    #[must_use]
+    pub const fn has_compact(&self) -> bool {
+        self.compact.is_some()
     }
 
     pub fn push_plain(&mut self, text: impl Into<CompactString>) -> &mut Self {

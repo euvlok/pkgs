@@ -18,6 +18,14 @@ fn rightmost_droppable(line: &[Segment]) -> Option<usize> {
         .rposition(|s| s.kind == SegmentKind::Droppable)
 }
 
+/// Index of the rightmost segment that still has a compact form to fall
+/// back to. Anchors with a compact form are eligible too — they're not
+/// dropped, but they can shrink. Borrowed from the i3bar `short_text`
+/// pattern: prefer losing detail over losing the whole segment.
+fn rightmost_compactable(line: &[Segment]) -> Option<usize> {
+    line.iter().rposition(Segment::has_compact)
+}
+
 /// Drop segments across all lines until every line fits in `max_cols`,
 /// returning the final per-column widths so callers don't have to
 /// recompute them.
@@ -47,6 +55,10 @@ pub fn fit_with_alignment(
         let Some((i, _)) = worst else {
             return widths;
         };
+        if let Some(j) = rightmost_compactable(&lines[i]) {
+            lines[i][j].apply_compact();
+            continue;
+        }
         match rightmost_droppable(&lines[i]) {
             Some(j) => {
                 lines[i].remove(j);
@@ -71,6 +83,10 @@ pub fn fit_unaligned(lines: &mut [Vec<Segment>], sep_width: usize, max_cols: Opt
                 + sep_width * line.len().saturating_sub(1);
             if raw <= max {
                 break;
+            }
+            if let Some(j) = rightmost_compactable(line) {
+                line[j].apply_compact();
+                continue;
             }
             match rightmost_droppable(line) {
                 Some(j) => {
@@ -123,4 +139,48 @@ pub fn column_widths(lines: &[Vec<Segment>]) -> Vec<usize> {
                 .unwrap_or(0)
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::render::segment::Segment;
+
+    fn anchor(text: &str) -> Segment {
+        let mut s = Segment::anchor();
+        s.push_plain(text.to_string());
+        s
+    }
+
+    fn droppable_with_compact(full: &str, compact: &str) -> Segment {
+        use crate::render::segment::Cell;
+        let mut s = Segment::droppable();
+        s.push_plain(full.to_string());
+        s.set_compact(vec![Cell::plain(compact.to_string())]);
+        s
+    }
+
+    #[test]
+    fn compact_swap_runs_before_drop() {
+        // Anchor (4) + sep (3) + full (10) = 17. Budget 12 forces fit;
+        // compact form is 4 wide, total becomes 11 — fits without
+        // dropping.
+        let mut lines = vec![vec![anchor("home"), droppable_with_compact("longvalue!", "v=1")]];
+        fit_unaligned(&mut lines, 3, Some(12));
+        assert_eq!(lines[0].len(), 2, "compact should fit, not be dropped");
+        assert_eq!(lines[0][1].width(), 3);
+        assert!(!lines[0][1].has_compact(), "compact consumed");
+    }
+
+    #[test]
+    fn drop_when_compact_still_too_wide() {
+        // Even compact (8) plus anchor (4) plus sep (3) = 15; budget 10
+        // forces a drop after the compact swap.
+        let mut lines = vec![vec![
+            anchor("home"),
+            droppable_with_compact("really-long-value", "stillbig"),
+        ]];
+        fit_unaligned(&mut lines, 3, Some(10));
+        assert_eq!(lines[0].len(), 1, "no fit even after compact → drop");
+    }
 }

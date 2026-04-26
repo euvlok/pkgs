@@ -144,13 +144,22 @@ impl fmt::Display for Layout {
 }
 
 impl Layout {
-    /// Does this layout reference the given segment anywhere? Used by
-    /// `render()` to skip precomputing data for segments that won't be
-    /// displayed (e.g. don't walk the transcript if `Cost` isn't in the
-    /// layout, don't open a git repo if `Vcs` isn't in the layout).
+    /// Does any line in the layout contain `name`? Drives precompute
+    /// gating: don't open a git repo unless `Vcs` is rendered, don't
+    /// walk the transcript unless `Cost` is rendered.
     #[must_use]
-    pub fn contains(&self, name: SegmentName) -> bool {
-        self.lines.iter().any(|line| line.contains(&name))
+    pub fn has(&self, name: SegmentName) -> bool {
+        self.lines.iter().flatten().any(|n| *n == name)
+    }
+
+    #[must_use]
+    pub fn needs_vcs(&self) -> bool {
+        self.has(SegmentName::Vcs)
+    }
+
+    #[must_use]
+    pub fn needs_cost(&self) -> bool {
+        self.has(SegmentName::Cost)
     }
 
     /// Default layout. The actionable info - context and rate limits —

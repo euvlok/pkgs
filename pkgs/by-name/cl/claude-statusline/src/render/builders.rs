@@ -8,7 +8,7 @@ use crate::pricing::cost::format_usd;
 use crate::render::colors::Palette;
 use crate::render::format::{humanize_duration, humanize_tokens, shorten_model};
 use crate::render::icons::Icons;
-use crate::render::segment::Segment;
+use crate::render::segment::{Cell, Segment};
 use crate::session::Deltas;
 use crate::settings::{ContextFormat, DirStyle, Settings};
 
@@ -122,6 +122,10 @@ pub fn context(
     }
     let out_tokens = input.context_window.current_usage.output_tokens;
     if out_tokens > 0 {
+        // Snapshot the essentials before tacking on the `(N out)` tail,
+        // so the fit pass can fall back to the compact form on narrow
+        // terminals instead of dropping the segment outright.
+        s.mark_compact();
         s.push_styled(format!(" ({} out", humanize_tokens(out_tokens)), pal.dim);
         if settings.flash && deltas.is_output() {
             s.push_styled(
@@ -155,6 +159,7 @@ pub fn clock(input: &Input, icons: &Icons, pal: &Palette) -> Option<Segment> {
         #[expect(clippy::cast_possible_wrap)]
         let wait = humanize_duration((api_ms / 1000) as i64);
         if !wait.is_empty() && wait != dur {
+            s.mark_compact();
             s.push_styled(format!(" (chat {wait})"), pal.dim);
         }
     }
@@ -194,43 +199,20 @@ pub fn cache(input: &Input, pal: &Palette) -> Option<Segment> {
     Some(s)
 }
 
-struct RateLimitRow<'a> {
-    label: &'static str,
-    slot: &'a RateLimit,
-    visibility_floor: Option<u32>,
-    show_countdown: bool,
-}
-
-struct VisibleRow<'a> {
-    label: &'static str,
-    pct: u32,
-    slot: &'a RateLimit,
-    show_countdown: bool,
-}
-
-impl<'a> RateLimitRow<'a> {
-    fn resolve(&self) -> Option<VisibleRow<'a>> {
-        let raw = self.slot.used_percentage?.round();
-        if raw < 0.0 {
-            return None;
-        }
-        let pct = raw as u32;
-        if let Some(min) = self.visibility_floor
-            && pct < min
-        {
-            return None;
-        }
-        Some(VisibleRow {
-            label: self.label,
-            pct,
-            slot: self.slot,
-            show_countdown: self.show_countdown,
-        })
-    }
-}
-
 pub fn pace(input: &Input, settings: &PaceSettings, pal: &Palette, now_unix: u64) -> Option<Segment> {
     pace::pace(input, settings, pal, now_unix)
+}
+
+/// Resolve a rate-limit slot to `(pct, reset_unix)` if its used % is
+/// non-negative and meets `floor`. Centralises the i64-cast / threshold
+/// dance so `rate_limits` can stay flat.
+fn visible_pct(slot: &RateLimit, floor: u32) -> Option<u32> {
+    let pct = slot.used_percentage?.round();
+    if pct < 0.0 {
+        return None;
+    }
+    let pct = pct as u32;
+    (pct >= floor).then_some(pct)
 }
 
 pub fn rate_limits(
@@ -243,47 +225,48 @@ pub fn rate_limits(
     #[expect(clippy::cast_possible_wrap)]
     let now = Some(now_unix as i64);
 
-    let rows = [
-        RateLimitRow {
-            label: "5h",
-            slot: &input.rate_limits.five_hour,
-            visibility_floor: None,
-            show_countdown: true,
-        },
-        RateLimitRow {
-            label: "7d",
-            slot: &input.rate_limits.seven_day,
-            visibility_floor: Some(settings.seven_day_threshold),
-            show_countdown: false,
-        },
-    ];
-
-    let visible: Vec<VisibleRow<'_>> = rows.iter().filter_map(RateLimitRow::resolve).collect();
+    let rl = &input.rate_limits;
+    // (label, slot, pct, show_countdown). 7d is suppressed below the
+    // configured threshold; 5h always shows.
+    let visible: Vec<(&'static str, &RateLimit, u32, bool)> = [
+        ("5h", &rl.five_hour, visible_pct(&rl.five_hour, 0), true),
+        ("7d", &rl.seven_day, visible_pct(&rl.seven_day, settings.seven_day_threshold), false),
+    ]
+    .into_iter()
+    .filter_map(|(l, s, pct, c)| pct.map(|p| (l, s, p, c)))
+    .collect();
     if visible.is_empty() {
         return None;
     }
 
     let mut s = Segment::droppable();
+    let mut compact: Vec<Cell> = Vec::new();
+    let mut any_countdown = false;
+    let mut both = |s: &mut Segment, cell: Cell| {
+        compact.push(cell.clone());
+        s.cells.push(cell);
+    };
     if !icons.clock.is_empty() {
-        s.push_plain(format!("{} ", icons.clock));
+        both(&mut s, Cell::plain(format!("{} ", icons.clock)));
     }
-    for (i, row) in visible.iter().enumerate() {
+    for (i, (label, slot, pct, show_countdown)) in visible.iter().enumerate() {
         if i > 0 {
-            s.push_plain("  ");
+            both(&mut s, Cell::plain("  "));
         }
-        s.push_styled(row.label, pal.dim);
-        s.push_plain(" ");
-        s.push_styled(format!("{}%", row.pct), pal.color_for_pct(row.pct, 50, 100));
-
-        if row.show_countdown
-            && let (Some(now), Some(reset)) = (now, row.slot.resets_at)
+        both(&mut s, Cell::new(*label, pal.dim));
+        both(&mut s, Cell::plain(" "));
+        both(&mut s, Cell::new(format!("{pct}%"), pal.color_for_pct(*pct, 50, 100)));
+        if *show_countdown
+            && let (Some(now), Some(reset)) = (now, slot.resets_at)
+            && reset - now > 0
         {
-            let remaining = reset - now;
-            if remaining > 0 {
-                s.push_plain(" ");
-                s.push_styled(humanize_duration(remaining), pal.dim);
-            }
+            s.push_plain(" ");
+            s.push_styled(humanize_duration(reset - now), pal.dim);
+            any_countdown = true;
         }
+    }
+    if any_countdown {
+        s.set_compact(compact);
     }
     Some(s)
 }
