@@ -18,12 +18,11 @@ use crate::render::colors::Palette;
 use crate::render::icons::Icons;
 use crate::render::layout::{BuildCtx, Layout};
 use crate::render::segment::Segment;
-use crate::session::Deltas;
 use crate::settings::Settings;
 
-/// Build a fake input + fake VCS segment + fake deltas, then route them
-/// through the same `render_lines` pipeline that real renders use.
-/// Returned string is multi-line, ANSI-colored, ready to print.
+/// Build a fake input + fake VCS segment, then route them through the
+/// same `render_lines` pipeline that real renders use. Returned string
+/// is multi-line, ANSI-colored, ready to print.
 pub fn preview(icons: &Icons, layout: &Layout, settings: &Settings, pal: &Palette) -> String {
     preview_with(icons, layout, settings, pal, None)
 }
@@ -39,7 +38,6 @@ pub fn preview_with(
 ) -> String {
     let input = sample_input();
     let vcs = Some(sample_vcs(icons, pal));
-    let deltas = sample_deltas(settings);
 
     let pace_settings = PaceSettings::default();
     let ctx = BuildCtx {
@@ -47,8 +45,6 @@ pub fn preview_with(
         icons,
         palette: pal,
         vcs,
-        cost_usd: input.cost.total_cost_usd,
-        deltas,
         settings,
         pace_settings: &pace_settings,
         now_unix: pace::now_unix(),
@@ -93,7 +89,6 @@ fn sample_input() -> Input {
             },
         },
         cost: Cost {
-            total_cost_usd: Some(9.47),
             total_duration_ms: Some(2_340_000),
             total_api_duration_ms: Some(1_260_000),
             total_lines_added: Some(1062),
@@ -118,17 +113,4 @@ fn sample_vcs(icons: &Icons, pal: &Palette) -> Segment {
     s.push_plain(" ");
     s.push_styled(icons.dirty.to_string(), pal.yellow);
     s
-}
-
-fn sample_deltas(settings: &Settings) -> Deltas {
-    if !settings.flash {
-        return Deltas::default();
-    }
-    Deltas {
-        cost_usd: 0.08,
-        lines_added: 14,
-        lines_removed: 3,
-        context_tokens: 25_000,
-        output_tokens: 3_000,
-    }
 }

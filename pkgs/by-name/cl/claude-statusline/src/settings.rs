@@ -34,12 +34,6 @@ pub enum ContextFormat {
 /// Resolved values handed to every builder. Cheap to copy.
 #[derive(Copy, Clone, Debug)]
 pub struct Settings {
-    /// Render delta highlights for cost/diff/context. False kills the
-    /// `(+$0.08)` / `(+25k)` flashes entirely.
-    pub flash: bool,
-    /// How long a recorded delta keeps flashing across renders, in
-    /// wall-clock seconds.
-    pub flash_ttl_secs: u64,
     /// Pad each line's columns so separators line up across lines. False
     /// produces compact, ragged-right output (smaller for narrow terminals).
     pub align: bool,
@@ -57,8 +51,6 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            flash: true,
-            flash_ttl_secs: 30,
             align: true,
             dir_style: DirStyle::Basename,
             context_format: ContextFormat::Auto,

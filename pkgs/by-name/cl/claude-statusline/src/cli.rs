@@ -22,7 +22,6 @@ Segments:
   dir          working directory basename (anchor)
   vcs          git/jj branch + status            (alias: git, jj)
   model        agent model display name
-  cost         session $ + cumulative model time
   diff         lines added / removed             (alias: lines)
   context      context-window usage              (alias: ctx)
   rate_limits  5h / 7d quota                     (alias: rates)
@@ -45,13 +44,13 @@ Layout DSL:
 /// (rather than inline in `main`) means the cli module owns the
 /// user-facing strings end-to-end.
 pub const HELP_LAYOUT_SHAPES: &[(&str, &str)] = &[
-    ("one line", "dir,vcs,rates,context,cost,model"),
+    ("one line", "dir,vcs,rates,context,model"),
     (
         "two line (default)",
-        "dir,vcs,rates,context | model,diff,cost,clock,cache",
+        "dir,vcs,rates,context | model,diff,clock,cache",
     ),
-    ("three line", "dir,vcs | rates,context | cost,diff,model"),
-    ("stacked", "dir | vcs | cost | context"),
+    ("three line", "dir,vcs | rates,context | diff,model"),
+    ("stacked", "dir | vcs | context"),
 ];
 
 /// Trailer appended after the rendered shape examples in `--help`.
@@ -59,11 +58,11 @@ pub const HELP_LAYOUT_SHAPES: &[(&str, &str)] = &[
 /// `main.rs`.
 pub const HELP_AFTER_EXAMPLES: &str = "\
 Other examples:
-  claude-statusline --exclude cost,rates < payload.json
+  claude-statusline --exclude rates < payload.json
   claude-statusline --input-json '{\"hook_event_name\":\"SessionStart\",\"cwd\":\"/tmp\",\"model\":\"gpt-5-codex\"}'
   claude-statusline --separator ' • ' --no-align
   claude-statusline --dir home --context-format percent
-  claude-statusline --preview --layout 'dir,vcs,model | cost,context'
+  claude-statusline --preview --layout 'dir,vcs,model | diff,context'
   claude-statusline --completions zsh > _claude-statusline
 
 Config file (same DSL, `#` comments allowed):
@@ -79,7 +78,7 @@ Config file (same DSL, `#` comments allowed):
     max_term_width = 100,
 )]
 pub struct Cli {
-    /// Layout DSL: `dir,vcs,model | cost,context,rates`
+    /// Layout DSL: `dir,vcs,model | diff,context,rates`
     #[arg(
         short = 'l',
         long,
@@ -197,28 +196,6 @@ pub struct Cli {
         hide_default_value = true
     )]
     pub seven_day_threshold: u32,
-
-    /// Disable the delta highlight on cost / diff / context
-    #[arg(
-        long = "no-flash",
-        env = "CLAUDE_STATUSLINE_NO_FLASH",
-        help_heading = "Flash",
-        hide_env = true,
-        action = clap::ArgAction::SetTrue,
-    )]
-    pub no_flash: bool,
-
-    /// How long a delta keeps flashing across renders, in seconds
-    #[arg(
-        long = "flash-ttl",
-        env = "CLAUDE_STATUSLINE_FLASH_TTL",
-        value_name = "SECS",
-        default_value_t = 30,
-        help_heading = "Flash",
-        hide_env = true,
-        hide_default_value = true
-    )]
-    pub flash_ttl: u64,
 
     /// Print shell completions to stdout and exit
     #[arg(
@@ -367,8 +344,6 @@ impl Cli {
             HyperlinksMode::Auto => std::io::stdout().is_terminal(),
         };
         Settings {
-            flash: !self.no_flash,
-            flash_ttl_secs: self.flash_ttl,
             align: !self.no_align,
             dir_style: self.dir,
             context_format: self.context_format,

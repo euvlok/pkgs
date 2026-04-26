@@ -19,12 +19,10 @@ mod write;
 
 use crate::input::Input;
 use crate::pace::PaceSettings;
-use crate::pricing::cost::session_cost;
 use crate::render::colors::Palette;
 use crate::render::icons::Icons;
 use crate::render::layout::{BuildCtx, Layout};
 use crate::render::segment::Segment;
-use crate::session;
 use crate::settings::Settings;
 use crate::vcs;
 
@@ -59,51 +57,16 @@ pub fn render_with_pace(
     pace_settings: &PaceSettings,
     pal: &Palette,
 ) -> String {
-    // Run vcs lookup and (potential) transcript walk concurrently when
-    // both are needed; either side returns `None` cheaply if its
-    // segment isn't in the layout, so we don't bother branching on the
-    // cross-product.
-    let want_vcs = layout.needs_vcs();
-    let want_cost = layout.needs_cost();
-    let (vcs_seg, cost_usd) = std::thread::scope(|s| {
-        let vcs = s.spawn(|| want_vcs.then(|| vcs::collect(&input.vcs_dir(), icons, pal)).flatten());
-        let cost = s.spawn(|| {
-            want_cost
-                .then(|| session_cost(input.transcript_path.as_deref(), input.cost.total_cost_usd))
-                .flatten()
-        });
-        (vcs.join().unwrap_or(None), cost.join().unwrap_or(None))
-    });
-
-    let out_tokens = input.context_window.current_usage.output_tokens;
-    let snap = session::SessionSnapshot {
-        cost_usd,
-        lines_added: input.cost.total_lines_added,
-        lines_removed: input.cost.total_lines_removed,
-        context_tokens: Some(input.context_window.current_usage.total()),
-        output_tokens: (out_tokens > 0).then_some(out_tokens),
-    };
-    let deltas = session::update(
-        session::session_key(
-            input.transcript_path.as_deref(),
-            input.session_id.as_deref(),
-        )
-        .as_deref(),
-        &snap,
-        if settings.flash {
-            settings.flash_ttl_secs
-        } else {
-            0
-        },
-    );
+    let vcs_seg = layout
+        .needs_vcs()
+        .then(|| vcs::collect(&input.vcs_dir(), icons, pal))
+        .flatten();
 
     let ctx = BuildCtx {
         input,
         icons,
         palette: pal,
         vcs: vcs_seg,
-        cost_usd,
-        deltas,
         settings,
         pace_settings,
         now_unix: crate::pace::now_unix(),
@@ -179,7 +142,7 @@ mod tests {
                 current_dir: Some("/tmp/foo".into()),
             },
             cost: Cost {
-                total_cost_usd: Some(0.42),
+                total_lines_added: Some(5),
                 ..Default::default()
             },
             ..Default::default()
@@ -211,7 +174,7 @@ mod tests {
         let mut a2 = Segment::anchor();
         a2.push_plain("Opus");
         let mut b1 = Segment::anchor();
-        b1.push_plain("$0.22");
+        b1.push_plain("here");
         let mut b2 = Segment::anchor();
         b2.push_plain("5h 7%");
         let lines = vec![vec![a1, a2], vec![b1, b2]];
@@ -288,23 +251,6 @@ mod tests {
     }
 
     #[test]
-    fn cost_segment_shows_amount_only() {
-        let input = Input {
-            cost: Cost {
-                total_cost_usd: Some(0.42),
-                total_api_duration_ms: Some(750_000),
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        let layout = Layout::parse("cost").unwrap();
-        let out = render(&input, icons(), &layout);
-        assert!(out.contains("$0.42"), "got: {out}");
-        // "wait" moved to clock segment
-        assert!(!out.contains("wait"), "got: {out}");
-    }
-
-    #[test]
     fn clock_segment_includes_wait_time() {
         let input = Input {
             cost: Cost {
@@ -364,9 +310,6 @@ mod tests {
             &pace_settings,
             &pal(),
         );
-        // Compact format: glyph + projected-% at reset. The seeded ring
-        // gives a steady 1%/min burn, current_pct=20%, ~270min remain,
-        // so the projection is well above 100% (clamped display cap).
         let plain = strip_ansi(&out);
         assert!(
             plain.contains("→") || plain.contains("at cap") || plain.contains("warming"),

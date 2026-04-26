@@ -148,9 +148,9 @@ mod tests {
     #[test]
     fn excludes_strip_segments_from_resolved_layout() {
         let l = load(
-            Some("dir,vcs,model | cost,diff,context,rate_limits"),
+            Some("dir,vcs,model | diff,context,rate_limits"),
             None,
-            &["cost".to_string(), "rates".to_string()],
+            &["rates".to_string()],
         );
         assert_eq!(l.lines.len(), 2);
         assert_eq!(l.lines[1], vec![SegmentName::Diff, SegmentName::Context]);

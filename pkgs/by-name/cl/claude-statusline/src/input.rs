@@ -123,14 +123,9 @@ pub struct RateLimit {
     pub resets_at: Option<i64>,
 }
 
-/// Claude Code optionally pre-computes the session's API-equivalent cost.
-///
-/// Passed down on stdin. When present, mirroring ccusage's "auto" mode,
-/// we prefer this number over walking the transcript ourselves.
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub struct Cost {
-    pub total_cost_usd: Option<f64>,
     pub total_duration_ms: Option<u64>,
     pub total_api_duration_ms: Option<u64>,
     pub total_lines_added: Option<u64>,

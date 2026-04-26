@@ -4,12 +4,10 @@
 
 use crate::input::{Input, RateLimit};
 use crate::pace::{self, PaceSettings};
-use crate::pricing::cost::format_usd;
 use crate::render::colors::Palette;
 use crate::render::format::{humanize_duration, humanize_tokens, shorten_model};
 use crate::render::icons::Icons;
 use crate::render::segment::{Cell, Segment};
-use crate::session::Deltas;
 use crate::settings::{ContextFormat, DirStyle, Settings};
 
 pub fn dir(input: &Input, settings: &Settings) -> Segment {
@@ -42,27 +40,7 @@ pub fn model(input: &Input, _icons: &Icons, pal: &Palette) -> Option<Segment> {
     Some(s)
 }
 
-pub fn cost(
-    _input: &Input,
-    cost_usd: Option<f64>,
-    deltas: &Deltas,
-    settings: &Settings,
-    pal: &Palette,
-) -> Option<Segment> {
-    let cost = cost_usd?;
-    if cost <= 0.0 {
-        return None;
-    }
-    let mut s = Segment::droppable();
-    s.push_styled(format_usd(cost), pal.green);
-    if settings.flash && deltas.is_cost() {
-        s.push_plain(" ");
-        s.push_styled(format!("+{}", format_usd(deltas.cost_usd)), pal.bold_green);
-    }
-    Some(s)
-}
-
-pub fn diff(input: &Input, deltas: &Deltas, settings: &Settings, pal: &Palette) -> Option<Segment> {
+pub fn diff(input: &Input, pal: &Palette) -> Option<Segment> {
     let added = input.cost.total_lines_added.unwrap_or(0);
     let removed = input.cost.total_lines_removed.unwrap_or(0);
     if added == 0 && removed == 0 {
@@ -70,23 +48,12 @@ pub fn diff(input: &Input, deltas: &Deltas, settings: &Settings, pal: &Palette) 
     }
     let mut s = Segment::droppable();
     s.push_styled(format!("+{added}"), pal.green);
-    if settings.flash && deltas.lines_added > 0 {
-        s.push_styled(format!(" (+{})", deltas.lines_added), pal.bold_green);
-    }
     s.push_plain(" ");
     s.push_styled(format!("-{removed}"), pal.red);
-    if settings.flash && deltas.lines_removed > 0 {
-        s.push_styled(format!(" (-{})", deltas.lines_removed), pal.bold_red);
-    }
     Some(s)
 }
 
-pub fn context(
-    input: &Input,
-    deltas: &Deltas,
-    settings: &Settings,
-    pal: &Palette,
-) -> Option<Segment> {
+pub fn context(input: &Input, settings: &Settings, pal: &Palette) -> Option<Segment> {
     let used = input.context_window.used_percentage?;
     let pct = used.round() as i64;
     if pct < 0 {
@@ -114,26 +81,13 @@ pub fn context(
     };
     let mut s = Segment::droppable();
     s.push_styled(text, style);
-    if settings.flash && deltas.is_context() {
-        s.push_styled(
-            format!(" (+{})", humanize_tokens(deltas.context_tokens)),
-            pal.bold_cyan,
-        );
-    }
     let out_tokens = input.context_window.current_usage.output_tokens;
     if out_tokens > 0 {
         // Snapshot the essentials before tacking on the `(N out)` tail,
         // so the fit pass can fall back to the compact form on narrow
         // terminals instead of dropping the segment outright.
         s.mark_compact();
-        s.push_styled(format!(" ({} out", humanize_tokens(out_tokens)), pal.dim);
-        if settings.flash && deltas.is_output() {
-            s.push_styled(
-                format!(" +{}", humanize_tokens(deltas.output_tokens)),
-                pal.bold_cyan,
-            );
-        }
-        s.push_styled(")", pal.dim);
+        s.push_styled(format!(" ({} out)", humanize_tokens(out_tokens)), pal.dim);
     }
     Some(s)
 }

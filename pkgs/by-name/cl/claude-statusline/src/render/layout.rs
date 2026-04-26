@@ -27,7 +27,6 @@ use crate::pace::PaceSettings;
 use crate::render::builders;
 use crate::render::colors::Palette;
 use crate::render::segment::Segment;
-use crate::session::Deltas;
 use crate::settings::Settings;
 
 /// Names of every renderable segment. Add a variant here, wire it in
@@ -45,8 +44,6 @@ pub enum SegmentName {
     Vcs,
     #[strum(to_string = "model")]
     Model,
-    #[strum(to_string = "cost")]
-    Cost,
     #[strum(to_string = "diff", serialize = "lines")]
     Diff,
     #[strum(to_string = "context", serialize = "ctx")]
@@ -85,9 +82,8 @@ impl SegmentName {
             Self::Dir => Some(builders::dir(ctx.input, ctx.settings)),
             Self::Vcs => ctx.vcs.clone(),
             Self::Model => builders::model(ctx.input, ctx.icons, pal),
-            Self::Cost => builders::cost(ctx.input, ctx.cost_usd, &ctx.deltas, ctx.settings, pal),
-            Self::Diff => builders::diff(ctx.input, &ctx.deltas, ctx.settings, pal),
-            Self::Context => builders::context(ctx.input, &ctx.deltas, ctx.settings, pal),
+            Self::Diff => builders::diff(ctx.input, pal),
+            Self::Context => builders::context(ctx.input, ctx.settings, pal),
             Self::RateLimits => {
                 builders::rate_limits(ctx.input, ctx.icons, ctx.settings, pal, ctx.now_unix)
             }
@@ -101,18 +97,15 @@ impl SegmentName {
 
 /// Bundle passed to every segment builder.
 ///
-/// `vcs` and `cost_usd` are precomputed in a scoped thread; `deltas`
-/// carries flash state; `now_unix` is the single wall-clock sample
-/// shared by every segment in this render so countdowns and projections
-/// agree.
+/// `vcs` is precomputed in a scoped thread; `now_unix` is the single
+/// wall-clock sample shared by every segment in this render so
+/// countdowns and projections agree.
 #[derive(Debug)]
 pub struct BuildCtx<'a> {
     pub input: &'a Input,
     pub icons: &'a crate::render::icons::Icons,
     pub palette: &'a Palette,
     pub vcs: Option<Segment>,
-    pub cost_usd: Option<f64>,
-    pub deltas: Deltas,
     pub settings: &'a Settings,
     pub pace_settings: &'a PaceSettings,
     pub now_unix: u64,
@@ -157,23 +150,16 @@ impl Layout {
         self.has(SegmentName::Vcs)
     }
 
-    #[must_use]
-    pub fn needs_cost(&self) -> bool {
-        self.has(SegmentName::Cost)
-    }
-
     /// Default layout. The actionable info - context and rate limits —
-    /// rides on the top line where it's hardest to miss; the cumulative
-    /// figures (cost, diff) and the model name sit below. Earlier
-    /// versions kept the model name on top, which buried the rate-limit
-    /// countdown that users actually need to see at a glance.
+    /// rides on the top line where it's hardest to miss; the model name
+    /// and cumulative figures sit below.
     #[must_use]
     pub fn two_line() -> Self {
-        use SegmentName::{Cache, Clock, Context, Cost, Diff, Dir, Model, Pace, RateLimits, Vcs};
+        use SegmentName::{Cache, Clock, Context, Diff, Dir, Model, Pace, RateLimits, Vcs};
         Self {
             lines: vec![
                 vec![Dir, Context, RateLimits, Pace, Vcs],
-                vec![Model, Diff, Cost, Clock, Cache],
+                vec![Model, Diff, Clock, Cache],
             ],
         }
     }
@@ -181,9 +167,9 @@ impl Layout {
     /// Single-row default for hosts that only reserve one footer line.
     #[must_use]
     pub fn one_line() -> Self {
-        use SegmentName::{Context, Cost, Dir, Model, RateLimits, Vcs};
+        use SegmentName::{Context, Dir, Model, RateLimits, Vcs};
         Self {
-            lines: vec![vec![Dir, Vcs, RateLimits, Context, Cost, Model]],
+            lines: vec![vec![Dir, Vcs, RateLimits, Context, Model]],
         }
     }
 
@@ -243,7 +229,7 @@ mod tests {
 
     #[test]
     fn parses_two_line_dsl() {
-        let layout = Layout::parse("dir,vcs,model | cost,diff,context,rate_limits").unwrap();
+        let layout = Layout::parse("dir,vcs,model | diff,context,rate_limits").unwrap();
         assert_eq!(layout.lines.len(), 2);
         assert_eq!(
             layout.lines[0],
@@ -252,7 +238,6 @@ mod tests {
         assert_eq!(
             layout.lines[1],
             vec![
-                SegmentName::Cost,
                 SegmentName::Diff,
                 SegmentName::Context,
                 SegmentName::RateLimits,
@@ -262,7 +247,7 @@ mod tests {
 
     #[test]
     fn parses_newline_separated_form() {
-        let spec = "dir, vcs\ncost, context\n";
+        let spec = "dir, vcs\ndiff, context\n";
         let layout = Layout::parse(spec).unwrap();
         assert_eq!(layout.lines.len(), 2);
     }

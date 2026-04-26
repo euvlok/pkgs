@@ -54,15 +54,24 @@ pub fn humanize_duration(secs: i64) -> String {
 /// Shorten the model display name to its family: `"Opus 4.6 (1M context)"`
 /// -> `"Opus"`, `"Sonnet 4.5"` -> `"Sonnet"`, `"Haiku 4.5"` -> `"Haiku"`.
 ///
-/// Claude Code only ever ships four model variants - Opus, Sonnet
-/// (regular + 1M), and Haiku - and every display name starts with the
-/// family name. So instead of scanning bytes, stripping versions, and
-/// allocating a new `String`, we look at the first non-space character
-/// and dispatch on it. Returns the input unchanged if we don't recognize
-/// the leading letter, so a future model name still renders.
+/// For ChatGPT models, strip the `gpt` prefix and return only the
+/// leading version number: `"GPT 5.4"` -> `"5.4"`, `"gpt-5"` -> `"5"`.
 #[must_use]
 pub fn shorten_model(name: &str) -> &str {
     let trimmed = name.trim_start();
+    if trimmed.len() >= 3 && trimmed.as_bytes()[..3].eq_ignore_ascii_case(b"gpt") {
+        let rest = trimmed[3..].trim_start_matches([' ', '-', '_']);
+        let end = rest
+            .as_bytes()
+            .iter()
+            .position(|&b| !(b.is_ascii_digit() || b == b'.'))
+            .unwrap_or(rest.len());
+        let head = &rest[..end];
+        if !head.is_empty() {
+            return head;
+        }
+        return rest.trim_end();
+    }
     match trimmed.as_bytes().first() {
         Some(b'O') => "Opus",
         Some(b'S') => "Sonnet",
@@ -108,6 +117,11 @@ mod tests {
         assert_eq!(shorten_model("Sonnet 4.6 (1M context)"), "Sonnet");
         assert_eq!(shorten_model("Haiku 4.5"), "Haiku");
         assert_eq!(shorten_model("Haiku"), "Haiku");
+        // ChatGPT family: only the version number.
+        assert_eq!(shorten_model("GPT 5.4"), "5.4");
+        assert_eq!(shorten_model("gpt 5.5"), "5.5");
+        assert_eq!(shorten_model("gpt-5"), "5");
+        assert_eq!(shorten_model("gpt-5-codex"), "5");
         // Unknown family: hand the (trimmed) name back unchanged.
         assert_eq!(shorten_model("Mystery 9.0"), "Mystery 9.0");
     }

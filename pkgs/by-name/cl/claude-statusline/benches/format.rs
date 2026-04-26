@@ -30,7 +30,7 @@ fn layout_two_line() -> Layout {
 fn layout_contains_hit(bencher: divan::Bencher<'_, '_>) {
     let layout = Layout::two_line();
     bencher.bench(|| {
-        layout.contains(divan::black_box(
+        layout.has(divan::black_box(
             claude_statusline::render::layout::SegmentName::Vcs,
         ))
     });
