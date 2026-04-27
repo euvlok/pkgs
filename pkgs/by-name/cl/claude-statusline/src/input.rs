@@ -39,6 +39,7 @@ impl<'de> Deserialize<'de> for Input {
 
 #[derive(Deserialize)]
 #[serde(untagged)]
+#[allow(clippy::large_enum_variant)]
 enum RawInput {
     // CodexHookInput requires a known `hook_event_name`, so it only matches
     // Codex hook payloads.
@@ -330,6 +331,8 @@ fn nonempty_owned(value: String) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unwrap_in_result)]
+
     use super::*;
 
     #[test]

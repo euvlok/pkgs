@@ -1,3 +1,11 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::missing_const_for_fn,
+    clippy::redundant_closure
+)]
+
 //! Benchmarks for formatting helpers, layout parsing, palette construction,
 //! and segment operations.
 

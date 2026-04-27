@@ -225,6 +225,8 @@ impl FromStr for Layout {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unwrap_in_result, clippy::cast_possible_wrap, clippy::float_cmp, clippy::suboptimal_flops, clippy::uninlined_format_args, clippy::match_wildcard_for_single_variants)]
+
     use super::*;
 
     #[test]

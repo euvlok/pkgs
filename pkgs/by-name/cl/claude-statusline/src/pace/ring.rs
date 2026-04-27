@@ -93,11 +93,12 @@ pub fn load_ring() -> Vec<PctSample> {
     file.samples
 }
 
-/// Replace the cache file with the given samples. Silent on I/O failure
-/// — the pace segment degrades gracefully (a corrupt or missing file
-/// just resets to warmup next render). Plain `fs::write` instead of an
-/// atomic-rename dance: a torn write costs us at most one warmup cycle,
-/// and the syscall savings show up in every render.
+/// Replace the cache file with the given samples.
+///
+/// Silent on I/O failure — the pace segment degrades gracefully (a corrupt
+/// or missing file just resets to warmup next render). Plain `fs::write`
+/// instead of an atomic-rename dance: a torn write costs us at most one
+/// warmup cycle, and the syscall savings show up in every render.
 pub fn persist_ring(samples: &[PctSample]) {
     let Some(path) = ring_path() else { return };
     let Some(parent) = path.parent() else { return };
@@ -123,6 +124,8 @@ pub fn persist_ring(samples: &[PctSample]) {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unwrap_in_result)]
+
     use super::*;
 
     fn encode(samples: &[PctSample]) -> Vec<u8> {

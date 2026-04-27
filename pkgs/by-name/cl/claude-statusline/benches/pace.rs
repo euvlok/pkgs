@@ -1,3 +1,11 @@
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::cast_possible_wrap,
+    clippy::missing_const_for_fn
+)]
+
 //! Benchmarks for the pace pipeline: rate estimation (Theil-Sen weighted
 //! median is O(n²) in the dedup'd sample count, so worth pinning), window
 //! math, projection classification, and the format → segment step.

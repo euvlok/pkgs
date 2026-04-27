@@ -100,6 +100,14 @@ similar_names = "allow"
 [dev-dependencies]
 divan = "0.1.21"
 
+# Cold start matters: Claude Code re-execs this binary on every statusline
+# refresh. `panic = "abort"` would be the biggest single win but main.rs
+# uses catch_unwind for the never-blank fallback, so it stays unwind.
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+
 # divan provides its own harness, so the default libtest harness must be
 # disabled for the bench target. There is no `cargo` subcommand to register
 # bench targets, so this block is hand-edited.

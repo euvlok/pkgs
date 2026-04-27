@@ -54,7 +54,7 @@ pub fn humanize_duration(secs: i64) -> String {
 /// Shorten the model display name to its family: `"Opus 4.6 (1M context)"`
 /// -> `"Opus"`, `"Sonnet 4.5"` -> `"Sonnet"`, `"Haiku 4.5"` -> `"Haiku"`.
 ///
-/// For ChatGPT models, strip the `gpt` prefix and return only the
+/// For `ChatGPT` models, strip the `gpt` prefix and return only the
 /// leading version number: `"GPT 5.4"` -> `"5.4"`, `"gpt-5"` -> `"5"`.
 #[must_use]
 pub fn shorten_model(name: &str) -> &str {

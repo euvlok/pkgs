@@ -13,7 +13,7 @@ use anstream::AutoStream;
 use clap::{CommandFactory, FromArgMatches};
 use clap_complete::Shell as ClapShell;
 
-use claude_statusline::cli::{Cli, HELP_AFTER_EXAMPLES, HELP_LAYOUT_SHAPES, Shell};
+use claude_statusline::cli::{Cli, ColorChoice, HELP_AFTER_EXAMPLES, HELP_LAYOUT_SHAPES, Shell};
 use claude_statusline::input::{Input, InputSource};
 use claude_statusline::render::colors::Palette;
 use claude_statusline::render::icons::{IconSet, Icons};
@@ -21,6 +21,7 @@ use claude_statusline::render::layout::Layout;
 use claude_statusline::render::preview::{preview, preview_with};
 use claude_statusline::render::render_with_pace;
 use claude_statusline::settings::Settings;
+use claude_statusline::theme::ThemeMode;
 use claude_statusline::{config, theme};
 
 fn main() {
@@ -45,7 +46,14 @@ fn main() {
     let pace_settings = cli.to_pace_settings();
 
     // Detect terminal theme (dark/light) and build the color palette.
-    let theme_mode = theme::detect(cli.theme);
+    // Skip OSC 11 entirely when colors are off — colorsaurus can otherwise
+    // wait up to 100ms on terminals that don't reply, and the palette is
+    // discarded by AutoStream anyway.
+    let theme_mode = if matches!(cli.color, ColorChoice::Never) {
+        ThemeMode::Dark
+    } else {
+        theme::detect(cli.theme)
+    };
     let palette = Palette::for_theme(theme_mode);
 
     if cli.preview {
@@ -60,7 +68,6 @@ fn main() {
 
     std::panic::set_hook(Box::new(|_| {}));
 
-    #[expect(clippy::significant_drop_tightening)]
     let result = std::panic::catch_unwind(|| {
         let input: Input = if let Some(json) = cli.input_json.as_deref() {
             serde_json::from_str(json).unwrap_or_default()
@@ -88,15 +95,21 @@ fn main() {
 }
 
 fn parse_cli() -> Cli {
-    let args: Vec<String> = std::env::args().collect();
-    let wants_help = args.iter().any(|a| a == "-h" || a == "--help");
+    // Scan args_os without allocating per-arg Strings. The dynamic
+    // after_help block is expensive (renders preview shapes), so we only
+    // build it when --help is actually present.
+    let wants_help = std::env::args_os()
+        .skip(1)
+        .any(|a| a == "-h" || a == "--help");
 
     let mut cmd = Cli::command();
     if wants_help {
         cmd = cmd.after_help(dynamic_after_help());
     }
 
-    match cmd.try_get_matches_from(args) {
+    // try_get_matches() reads std::env::args_os() internally — no need
+    // to materialize a Vec<String> ourselves.
+    match cmd.try_get_matches() {
         Ok(matches) => Cli::from_arg_matches(&matches).unwrap_or_else(|e| e.exit()),
         Err(e) => e.exit(),
     }

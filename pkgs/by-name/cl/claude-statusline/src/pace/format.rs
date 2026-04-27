@@ -58,7 +58,7 @@ fn push_glyph(s: &mut Segment, glyph: &str, style: anstyle::Style) {
 /// Body text. `at cap` when already saturated. For `TooHot` we append
 /// `· cap Xm` (time until 100%) and `· rest Ym` (pause to land safely)
 /// when finite — those are the "you should rest" advisory the user
-/// asked for. Cool / OnPace stay compact.
+/// asked for. Cool / `OnPace` stay compact.
 fn body_text(proj: &Projection) -> String {
     if proj.current_pct >= 100.0 {
         return "at cap".to_string();
@@ -76,7 +76,7 @@ fn append_advisory(s: &mut String, label: &str, d: Option<Duration>) {
         s.push_str(" · ");
         s.push_str(label);
         s.push(' ');
-        s.push_str(&humanize_duration(d.as_secs() as i64));
+        s.push_str(&humanize_duration(d.as_secs().cast_signed()));
     }
 }
 

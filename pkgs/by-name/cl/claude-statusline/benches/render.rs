@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 //! Benchmarks for end-to-end rendering, alignment/fit, and individual
 //! segment builders.
 

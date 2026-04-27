@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 //! Benchmarks for stdin payload deserialization. The renderer runs once
 //! per Claude Code event, so parse cost shows up on every render.
 
