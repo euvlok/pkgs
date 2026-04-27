@@ -1,371 +1,132 @@
-//! User-configurable layout: which segments appear, on which line, in
-//! which order. The layout is a `Vec<Vec<SegmentName>>` (lines of named
-//! segments), parsed from a tiny DSL or loaded from a config file.
-//!
-//! DSL syntax:
-//!
-//! ```text
-//! dir,vcs,model | cost,diff,context,rate_limits
-//! ```
-//!
-//! - `|` separates lines (use `\n` in config files for readability).
-//! - `,` separates segments inside a line.
-//! - Whitespace is ignored.
-//! - Unknown segment names are an error so typos surface immediately.
-//!
-//! The first segment of each line is the line's *anchor*: it is never
-//! dropped, even when the terminal is too narrow. Every other segment
-//! is droppable from the right.
+//! Resolved statusline layout and segment dispatch.
 
-use std::fmt;
-use std::str::FromStr;
-
+use crate::config::ResolvedSegment;
+use crate::config::schema::{
+    ContextFormat, DirStyle, PaceGlyphsConfig, SegmentConfig, ThemeModeConfig,
+};
 use crate::input::Input;
-use crate::pace::PaceSettings;
+use crate::pace::{PaceGlyphs, PaceSettings};
 use crate::render::builders;
 use crate::render::colors::Palette;
 use crate::render::segment::Segment;
 use crate::settings::Settings;
 
-#[derive(Debug, Copy, Clone)]
-pub struct SegmentSpec {
-    pub name: &'static str,
-    pub aliases: &'static [&'static str],
-    pub help: &'static str,
-}
-
-macro_rules! segment_registry {
-    (
-        $(
-            $variant:ident {
-                name: $name:literal,
-                aliases: [$($alias:literal),* $(,)?],
-                help: $help:literal,
-                build: |$ctx:ident| $build:expr $(,)?
-            }
-        ),+ $(,)?
-    ) => {
-        /// Names of every renderable segment.
-        ///
-        /// Add a new entry to the registry below and it becomes available to the
-        /// layout DSL, `--help`, default layouts, and the renderer.
-        #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, strum::Display, strum::EnumString)]
-        pub enum SegmentName {
-            $(
-                #[strum(to_string = $name $(, serialize = $alias)*)]
-                $variant,
-            )+
-        }
-
-        impl SegmentName {
-            pub const ALL: &'static [Self] = &[$(Self::$variant),+];
-
-            pub const fn spec(self) -> SegmentSpec {
-                match self {
-                    $(
-                        Self::$variant => SegmentSpec {
-                            name: $name,
-                            aliases: &[$($alias),*],
-                            help: $help,
-                        },
-                    )+
-                }
-            }
-
-            /// Parse a segment name from user input (trimmed). Returns `None`
-            /// for unrecognised names.
-            #[must_use]
-            pub fn parse(s: &str) -> Option<Self> {
-                Self::from_str(s.trim()).ok()
-            }
-
-            /// Build the styled [`Segment`] for this name. Returns `None` when
-            /// the underlying data is missing - the renderer drops the line
-            /// position cleanly.
-            pub fn build(self, ctx: &BuildCtx<'_>) -> Option<Segment> {
-                match self {
-                    $(
-                        Self::$variant => {
-                            let $ctx = ctx;
-                            $build
-                        },
-                    )+
-                }
-            }
-        }
-    };
-}
-
-segment_registry! {
-    Dir {
-        name: "dir",
-        aliases: [],
-        help: "working directory basename (anchor)",
-        build: |ctx| Some(builders::dir(ctx.input, ctx.settings)),
-    },
-    Vcs {
-        name: "vcs",
-        aliases: ["git", "jj"],
-        help: "git/jj branch + status",
-        build: |ctx| ctx.vcs.clone(),
-    },
-    Model {
-        name: "model",
-        aliases: [],
-        help: "agent model display name",
-        build: |ctx| builders::model(ctx.input, ctx.icons, ctx.palette),
-    },
-    Diff {
-        name: "diff",
-        aliases: ["lines"],
-        help: "lines added / removed",
-        build: |ctx| builders::diff(ctx.input, ctx.palette),
-    },
-    Context {
-        name: "context",
-        aliases: ["ctx"],
-        help: "context-window usage",
-        build: |ctx| builders::context(ctx.input, ctx.settings, ctx.palette),
-    },
-    RateLimits {
-        name: "rate_limits",
-        aliases: ["rate-limits", "rates", "limits"],
-        help: "5h / 7d quota",
-        build: |ctx| builders::rate_limits(
-            ctx.input,
-            ctx.icons,
-            ctx.settings,
-            ctx.palette,
-            ctx.now_unix,
-        ),
-    },
-    Clock {
-        name: "clock",
-        aliases: ["time", "elapsed"],
-        help: "session elapsed time",
-        build: |ctx| builders::clock(ctx.input, ctx.icons, ctx.palette),
-    },
-    Speed {
-        name: "speed",
-        aliases: ["tps", "throughput"],
-        help: "token throughput (tok/s)",
-        build: |ctx| builders::speed(ctx.input, ctx.palette),
-    },
-    Cache {
-        name: "cache",
-        aliases: [],
-        help: "prompt cache hit ratio",
-        build: |ctx| builders::cache(ctx.input, ctx.palette),
-    },
-    Pace {
-        name: "pace",
-        aliases: ["burn"],
-        help: "5h burn-rate projection",
-        build: |ctx| builders::pace(ctx.input, ctx.pace_settings, ctx.palette, ctx.now_unix),
-    },
-}
-
-/// Bundle passed to every segment builder.
-///
-/// `vcs` is precomputed once per render when the layout needs it;
-/// `now_unix` is the single wall-clock sample shared by every segment so
-/// countdowns and projections agree.
 #[derive(Debug)]
 pub struct BuildCtx<'a> {
     pub input: &'a Input,
     pub icons: &'a crate::render::icons::Icons,
     pub palette: &'a Palette,
     pub vcs: Option<Segment>,
-    pub settings: &'a Settings,
-    pub pace_settings: &'a PaceSettings,
+    pub display: &'a crate::config::ResolvedDisplay,
     pub now_unix: u64,
 }
 
 #[derive(Debug, Clone)]
 pub struct Layout {
-    pub lines: Vec<Vec<SegmentName>>,
-}
-
-impl fmt::Display for Layout {
-    /// Render the layout back into DSL form. Lines are joined with
-    /// ` | ` and segments inside a line with `,`. Round-trips through
-    /// [`Layout::parse`].
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for (i, line) in self.lines.iter().enumerate() {
-            if i > 0 {
-                f.write_str(" | ")?;
-            }
-            for (j, name) in line.iter().enumerate() {
-                if j > 0 {
-                    f.write_str(",")?;
-                }
-                write!(f, "{name}")?;
-            }
-        }
-        Ok(())
-    }
+    pub lines: Vec<Vec<ResolvedSegment>>,
 }
 
 impl Layout {
-    /// Does any line in the layout contain `name`? Drives precompute
-    /// gating: don't open a git repo unless `Vcs` is rendered, don't
-    /// walk the transcript unless `Cost` is rendered.
     #[must_use]
-    pub fn has(&self, name: SegmentName) -> bool {
-        self.lines.iter().flatten().any(|n| *n == name)
+    pub const fn new(lines: Vec<Vec<ResolvedSegment>>) -> Self {
+        Self { lines }
     }
 
     #[must_use]
     pub fn needs_vcs(&self) -> bool {
-        self.has(SegmentName::Vcs)
-    }
-
-    /// Default layout. The actionable info - context and rate limits —
-    /// rides on the top line where it's hardest to miss; the model name
-    /// and cumulative figures sit below.
-    #[must_use]
-    pub fn two_line() -> Self {
-        use SegmentName::{Cache, Clock, Context, Diff, Dir, Model, Pace, RateLimits, Vcs};
-        Self {
-            lines: vec![
-                vec![Dir, Context, RateLimits, Pace, Vcs],
-                vec![Model, Diff, Clock, Cache],
-            ],
-        }
-    }
-
-    /// Single-row default for hosts that only reserve one footer line.
-    #[must_use]
-    pub fn one_line() -> Self {
-        use SegmentName::{Context, Dir, Model, RateLimits, Vcs};
-        Self {
-            lines: vec![vec![Dir, Vcs, RateLimits, Context, Model]],
-        }
-    }
-
-    /// Parse the DSL described in this module's docstring. Returns
-    /// [`ParseError`] on unknown names or empty input so misconfigured
-    /// users get a clear failure rather than a silently-empty prompt.
-    pub fn parse(spec: &str) -> Result<Self, ParseError> {
-        let mut lines: Vec<Vec<SegmentName>> = Vec::new();
-        // Accept both `|` (one-line DSL) and literal newlines (config
-        // file form) as line separators - they're never valid inside a
-        // segment name so the split is unambiguous.
-        for raw_line in spec.split(['|', '\n']) {
-            let trimmed = raw_line.trim();
-            if trimmed.is_empty() {
-                continue;
-            }
-            let mut line = Vec::new();
-            for tok in trimmed.split(',') {
-                let tok = tok.trim();
-                if tok.is_empty() {
-                    continue;
-                }
-                let name =
-                    SegmentName::parse(tok).ok_or_else(|| ParseError::Unknown(tok.to_string()))?;
-                line.push(name);
-            }
-            if !line.is_empty() {
-                lines.push(line);
-            }
-        }
-        if lines.is_empty() {
-            return Err(ParseError::Empty);
-        }
-        Ok(Self { lines })
+        self.lines
+            .iter()
+            .flatten()
+            .any(|s| matches!(s.config, SegmentConfig::Vcs(_)))
     }
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum ParseError {
-    #[error("unknown segment `{0}`")]
-    Unknown(String),
-    #[error("layout is empty")]
-    Empty,
-}
-
-impl FromStr for Layout {
-    type Err = ParseError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Self::parse(s)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::unwrap_in_result,
-        clippy::cast_possible_wrap,
-        clippy::float_cmp,
-        clippy::suboptimal_flops,
-        clippy::uninlined_format_args,
-        clippy::match_wildcard_for_single_variants
-    )]
-
-    use super::*;
-
-    #[test]
-    fn parses_two_line_dsl() {
-        let layout = Layout::parse("dir,vcs,model | diff,context,rate_limits").unwrap();
-        assert_eq!(layout.lines.len(), 2);
-        assert_eq!(
-            layout.lines[0],
-            vec![SegmentName::Dir, SegmentName::Vcs, SegmentName::Model]
-        );
-        assert_eq!(
-            layout.lines[1],
-            vec![
-                SegmentName::Diff,
-                SegmentName::Context,
-                SegmentName::RateLimits,
-            ]
-        );
-    }
-
-    #[test]
-    fn parses_newline_separated_form() {
-        let spec = "dir, vcs\ndiff, context\n";
-        let layout = Layout::parse(spec).unwrap();
-        assert_eq!(layout.lines.len(), 2);
-    }
-
-    #[test]
-    fn aliases_resolve_to_canonical_name() {
-        let layout = Layout::parse("git, ctx, rates").unwrap();
-        assert_eq!(
-            layout.lines[0],
-            vec![
-                SegmentName::Vcs,
-                SegmentName::Context,
-                SegmentName::RateLimits
-            ]
-        );
-    }
-
-    #[test]
-    fn unknown_segment_errors() {
-        let err = Layout::parse("dir, foo").unwrap_err();
-        match err {
-            ParseError::Unknown(name) => assert_eq!(name, "foo"),
-            _ => panic!("expected Unknown"),
+pub fn build_segment(ctx: &BuildCtx<'_>, spec: &ResolvedSegment) -> Option<Segment> {
+    let mut segment = match &spec.config {
+        SegmentConfig::Dir(config) => {
+            Some(builders::dir(ctx.input, &dir_settings(ctx, config.style)))
         }
-    }
+        SegmentConfig::Vcs(_) => ctx.vcs.clone(),
+        SegmentConfig::Model(config) => {
+            builders::model(ctx.input, ctx.icons, ctx.palette, config.shorten)
+        }
+        SegmentConfig::Diff(_) => builders::diff(ctx.input, ctx.palette),
+        SegmentConfig::Context(config) => builders::context_config(
+            ctx.input,
+            context_format(config.format),
+            config.show_output_tokens,
+            ctx.palette,
+        ),
+        SegmentConfig::RateLimits(config) => {
+            builders::rate_limits_config(ctx.input, ctx.icons, config, ctx.palette, ctx.now_unix)
+        }
+        SegmentConfig::Clock(config) => {
+            builders::clock_config(ctx.input, ctx.icons, ctx.palette, config.show_api_time)
+        }
+        SegmentConfig::Speed(_) => builders::speed(ctx.input, ctx.palette),
+        SegmentConfig::Cache(_) => builders::cache(ctx.input, ctx.palette),
+        SegmentConfig::Pace(config) => {
+            let settings = PaceSettings {
+                lookback_mins: config.lookback_mins,
+                cool_below: config.cool_below,
+                hot_above: config.hot_above,
+                warmup_mins: config.warmup_mins,
+                glyphs: pace_glyphs(config.glyphs),
+                debug: config.debug,
+            };
+            builders::pace(ctx.input, &settings, ctx.palette, ctx.now_unix)
+        }
+        SegmentConfig::Env(config) => builders::env(config, ctx.palette),
+        SegmentConfig::Template(config) => builders::template(config, ctx.input, ctx.palette),
+    }?;
+    segment.id.clone_from(&spec.id);
+    segment.ty = spec.config.ty().to_string();
+    Some(segment)
+}
 
-    #[test]
-    fn empty_layout_errors() {
-        assert!(matches!(Layout::parse("   "), Err(ParseError::Empty)));
-        assert!(matches!(Layout::parse("|"), Err(ParseError::Empty)));
+fn dir_settings(ctx: &BuildCtx<'_>, style: DirStyle) -> Settings {
+    Settings {
+        align: ctx.display.config.align,
+        dir_style: match style {
+            DirStyle::Basename => crate::settings::DirStyle::Basename,
+            DirStyle::Full => crate::settings::DirStyle::Full,
+            DirStyle::Home => crate::settings::DirStyle::Home,
+        },
+        context_format: crate::settings::ContextFormat::Auto,
+        seven_day_threshold: 80,
+        hyperlinks: match ctx.display.config.hyperlinks {
+            crate::config::schema::HyperlinksMode::Always => true,
+            crate::config::schema::HyperlinksMode::Never => false,
+            crate::config::schema::HyperlinksMode::Auto => {
+                use std::io::IsTerminal as _;
+                std::io::stdout().is_terminal()
+            }
+        },
     }
+}
 
-    #[test]
-    fn default_two_line_has_two_lines() {
-        let l = Layout::two_line();
-        assert_eq!(l.lines.len(), 2);
-        assert_eq!(l.lines[0][0], SegmentName::Dir);
+const fn context_format(format: ContextFormat) -> crate::settings::ContextFormat {
+    match format {
+        ContextFormat::Auto => crate::settings::ContextFormat::Auto,
+        ContextFormat::Percent => crate::settings::ContextFormat::Percent,
+        ContextFormat::Tokens => crate::settings::ContextFormat::Tokens,
+    }
+}
+
+const fn pace_glyphs(glyphs: PaceGlyphsConfig) -> PaceGlyphs {
+    match glyphs {
+        PaceGlyphsConfig::Mdi => PaceGlyphs::Mdi,
+        PaceGlyphsConfig::Fa => PaceGlyphs::Fa,
+        PaceGlyphsConfig::Oct => PaceGlyphs::Oct,
+        PaceGlyphsConfig::Emoji => PaceGlyphs::Emoji,
+        PaceGlyphsConfig::Text => PaceGlyphs::Text,
+    }
+}
+
+pub const fn theme_mode(mode: ThemeModeConfig) -> crate::theme::ThemeMode {
+    match mode {
+        ThemeModeConfig::Auto => crate::theme::ThemeMode::Auto,
+        ThemeModeConfig::Dark => crate::theme::ThemeMode::Dark,
+        ThemeModeConfig::Light => crate::theme::ThemeMode::Light,
     }
 }

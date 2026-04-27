@@ -6,12 +6,12 @@
     clippy::redundant_closure
 )]
 
-//! Benchmarks for formatting helpers, layout parsing, palette construction,
+//! Benchmarks for formatting helpers, config parsing, palette construction,
 //! and segment operations.
 
+use claude_statusline::config::{Config, ResolvedConfig, resolve};
 use claude_statusline::render::colors::Palette;
 use claude_statusline::render::format::{humanize_duration, humanize_tokens, shorten_model};
-use claude_statusline::render::layout::Layout;
 use claude_statusline::render::segment::Segment;
 use claude_statusline::theme::ThemeMode;
 
@@ -19,35 +19,43 @@ fn main() {
     divan::main();
 }
 
-#[divan::bench(args = [
-    "dir",
-    "dir, vcs, model",
-    "dir, vcs, model | clock, diff, context, rate_limits",
-    "dir, vcs, model, clock | diff, context | rate_limits, pace, cache",
-])]
-fn layout_parse(spec: &str) -> Layout {
-    Layout::parse(divan::black_box(spec)).unwrap()
+#[divan::bench]
+fn config_toml_parse() -> Config {
+    toml::from_str(divan::black_box(
+        r#"
+version = 1
+
+[statusline]
+lines = [["dir", "context", "quota"], ["model", "changes"]]
+
+[segments.dir]
+type = "dir"
+
+[segments.context]
+type = "context"
+
+[segments.quota]
+type = "rate-limits"
+
+[segments.model]
+type = "model"
+
+[segments.changes]
+type = "diff"
+"#,
+    ))
+    .unwrap()
 }
 
 #[divan::bench]
-fn layout_two_line() -> Layout {
-    Layout::two_line()
+fn config_default_resolve() -> ResolvedConfig {
+    resolve::resolve(Config::default())
 }
 
 #[divan::bench]
-fn layout_contains_hit(bencher: divan::Bencher<'_, '_>) {
-    let layout = Layout::two_line();
-    bencher.bench(|| {
-        layout.has(divan::black_box(
-            claude_statusline::render::layout::SegmentName::Vcs,
-        ))
-    });
-}
-
-#[divan::bench]
-fn layout_display(bencher: divan::Bencher<'_, '_>) {
-    let layout = Layout::two_line();
-    bencher.bench(|| format!("{}", divan::black_box(&layout)));
+fn config_toml_serialize(bencher: divan::Bencher<'_, '_>) {
+    let config = Config::default();
+    bencher.bench(|| toml::to_string(divan::black_box(&config)).unwrap());
 }
 
 #[divan::bench(args = [0_u64, 999, 34_500, 1_234_567, 999_999_999])]

@@ -4,6 +4,9 @@
 
 use std::path::Path;
 
+use crate::config::schema::{
+    EnvSegmentConfig, RateLimitWindow, RateLimitsSegmentConfig, TemplateSegmentConfig,
+};
 use crate::input::{Input, RateLimit};
 use crate::pace::{self, PaceSettings};
 use crate::render::colors::Palette;
@@ -31,9 +34,13 @@ fn file_url(path: &str) -> Option<String> {
     anstyle_hyperlink::file_to_url(None, Path::new(path))
 }
 
-pub fn model(input: &Input, _icons: &Icons, pal: &Palette) -> Option<Segment> {
+pub fn model(input: &Input, _icons: &Icons, pal: &Palette, shorten: bool) -> Option<Segment> {
     let name = input.model.display_name.as_deref()?;
-    let short = shorten_model(name);
+    let short = if shorten {
+        shorten_model(name).to_string()
+    } else {
+        name.to_string()
+    };
     if short.is_empty() {
         return None;
     }
@@ -54,7 +61,16 @@ pub fn diff(input: &Input, pal: &Palette) -> Option<Segment> {
 }
 
 pub fn context(input: &Input, settings: &Settings, pal: &Palette) -> Option<Segment> {
-    ContextView::new(input, *settings, pal).map(Into::into)
+    context_config(input, settings.context_format, true, pal)
+}
+
+pub fn context_config(
+    input: &Input,
+    format: ContextFormat,
+    show_output_tokens: bool,
+    pal: &Palette,
+) -> Option<Segment> {
+    ContextView::new(input, format, show_output_tokens, pal).map(Into::into)
 }
 
 struct ContextView {
@@ -65,7 +81,12 @@ struct ContextView {
 }
 
 impl ContextView {
-    fn new(input: &Input, settings: Settings, pal: &Palette) -> Option<Self> {
+    fn new(
+        input: &Input,
+        format: ContextFormat,
+        show_output_tokens: bool,
+        pal: &Palette,
+    ) -> Option<Self> {
         let used = input.context_window.used_percentage?;
         let pct = used.round() as i64;
         if pct < 0 {
@@ -81,7 +102,7 @@ impl ContextView {
             pal.color_for_pct(pct, 50, 75)
         };
 
-        let text = match (have_tokens, settings.context_format) {
+        let text = match (have_tokens, format) {
             (true, ContextFormat::Auto | ContextFormat::Tokens) => {
                 format!(
                     "{}/{}",
@@ -92,12 +113,14 @@ impl ContextView {
             _ => format!("{pct}%"),
         };
 
-        let output_tail = (input.context_window.current_usage.output_tokens > 0).then(|| {
-            format!(
-                " ({} out)",
-                humanize_tokens(input.context_window.current_usage.output_tokens)
-            )
-        });
+        let output_tail = (show_output_tokens
+            && input.context_window.current_usage.output_tokens > 0)
+            .then(|| {
+                format!(
+                    " ({} out)",
+                    humanize_tokens(input.context_window.current_usage.output_tokens)
+                )
+            });
 
         Some(Self {
             text,
@@ -120,6 +143,15 @@ impl From<ContextView> for Segment {
 }
 
 pub fn clock(input: &Input, icons: &Icons, pal: &Palette) -> Option<Segment> {
+    clock_config(input, icons, pal, true)
+}
+
+pub fn clock_config(
+    input: &Input,
+    icons: &Icons,
+    pal: &Palette,
+    show_api_time: bool,
+) -> Option<Segment> {
     let ms = input.cost.total_duration_ms?;
     if ms == 0 {
         return None;
@@ -132,7 +164,8 @@ pub fn clock(input: &Input, icons: &Icons, pal: &Palette) -> Option<Segment> {
     let mut s = Segment::droppable();
     s.append_icon_prefix(icons.clock);
     s.append_styled(&dur, pal.dim);
-    if let Some(api_ms) = input.cost.total_api_duration_ms
+    if show_api_time
+        && let Some(api_ms) = input.cost.total_api_duration_ms
         && api_ms > 0
     {
         #[expect(clippy::cast_possible_wrap)]
@@ -204,22 +237,38 @@ pub fn rate_limits(
     pal: &Palette,
     now_unix: u64,
 ) -> Option<Segment> {
+    let config = RateLimitsSegmentConfig {
+        show: vec![RateLimitWindow::FiveHour, RateLimitWindow::SevenDay],
+        seven_day_threshold: settings.seven_day_threshold,
+        show_countdown: true,
+    };
+    rate_limits_config(input, icons, &config, pal, now_unix)
+}
+
+pub fn rate_limits_config(
+    input: &Input,
+    icons: &Icons,
+    config: &RateLimitsSegmentConfig,
+    pal: &Palette,
+    now_unix: u64,
+) -> Option<Segment> {
     #[expect(clippy::cast_possible_wrap)]
     let now = Some(now_unix as i64);
 
     let rl = &input.rate_limits;
-    // (label, slot, pct, show_countdown). 7d is suppressed below the
-    // configured threshold; 5h always shows.
-    let visible = [
-        ("5h", &rl.five_hour, visible_pct(&rl.five_hour, 0), true),
-        (
+    let mut windows = Vec::new();
+    if config.show.contains(&RateLimitWindow::FiveHour) {
+        windows.push(("5h", &rl.five_hour, visible_pct(&rl.five_hour, 0), true));
+    }
+    if config.show.contains(&RateLimitWindow::SevenDay) {
+        windows.push((
             "7d",
             &rl.seven_day,
-            visible_pct(&rl.seven_day, settings.seven_day_threshold),
+            visible_pct(&rl.seven_day, config.seven_day_threshold),
             false,
-        ),
-    ];
-    let mut visible = visible
+        ));
+    }
+    let mut visible = windows
         .into_iter()
         .filter_map(|(l, s, pct, c)| pct.map(|p| (l, s, p, c)))
         .peekable();
@@ -246,6 +295,7 @@ pub fn rate_limits(
             Cell::new(format!("{pct}%"), pal.color_for_pct(pct, 50, 100)),
         );
         if show_countdown
+            && config.show_countdown
             && let (Some(now), Some(reset)) = (now, slot.resets_at)
             && reset - now > 0
         {
@@ -257,6 +307,52 @@ pub fn rate_limits(
         s = s.with_compact(compact);
     }
     Some(s)
+}
+
+pub fn env(config: &EnvSegmentConfig, pal: &Palette) -> Option<Segment> {
+    let value = std::env::var(&config.key).unwrap_or_default();
+    if config.hide_empty && value.trim().is_empty() {
+        return None;
+    }
+    let text = format!("{}{}", config.prefix, value);
+    styled_custom(text, config.style.as_deref(), pal)
+}
+
+pub fn template(config: &TemplateSegmentConfig, input: &Input, pal: &Palette) -> Option<Segment> {
+    let text = config
+        .template
+        .replace("{source}", source_name(input))
+        .replace("{session_id}", input.session_id.as_deref().unwrap_or(""))
+        .replace("{model}", input.model.display_name.as_deref().unwrap_or(""))
+        .replace("{cwd}", &input.dir_full());
+    if config.hide_empty && text.trim().is_empty() {
+        return None;
+    }
+    styled_custom(text, config.style.as_deref(), pal)
+}
+
+const fn source_name(input: &Input) -> &'static str {
+    match input.source {
+        crate::input::InputSource::Claude => "claude",
+        crate::input::InputSource::Codex => "codex",
+    }
+}
+
+fn styled_custom(text: String, style: Option<&str>, pal: &Palette) -> Option<Segment> {
+    if text.is_empty() {
+        return None;
+    }
+    let style = match style {
+        Some("yellow") => pal.yellow,
+        Some("green") => pal.green,
+        Some("red") => pal.red,
+        Some("blue") => pal.blue,
+        Some("cyan") => pal.cyan,
+        Some("magenta") => pal.magenta,
+        Some("dim") => pal.dim,
+        _ => anstyle::Style::new(),
+    };
+    Segment::droppable().styled(text, style).some()
 }
 
 #[cfg(test)]

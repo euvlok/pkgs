@@ -57,7 +57,7 @@ fn spawn_version() {
 #[divan::bench]
 fn spawn_empty_input() {
     let status = Command::new(BIN)
-        .args(["--input-json", "{}", "--color", "never"])
+        .args(["--input-json", "{}"])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status()
@@ -71,7 +71,7 @@ fn spawn_empty_input() {
 #[divan::bench]
 fn spawn_full_payload() {
     let status = Command::new(BIN)
-        .args(["--input-json", PAYLOAD, "--color", "never"])
+        .args(["--input-json", PAYLOAD])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status()
@@ -85,7 +85,6 @@ fn spawn_full_payload() {
 fn spawn_stdin_payload() {
     use std::io::Write as _;
     let mut child = Command::new(BIN)
-        .args(["--color", "never"])
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -99,22 +98,38 @@ fn spawn_stdin_payload() {
     assert!(status.success());
 }
 
-/// Same payload, but force a layout DSL through the parser as well — closer
-/// to a configured user invocation.
+/// Same payload, but force TOML config loading and resolution as well.
 #[divan::bench]
-fn spawn_full_payload_with_layout() {
+fn spawn_full_payload_with_config() {
+    use std::io::Write as _;
+    let mut config = tempfile::NamedTempFile::new().expect("temp config");
+    config
+        .write_all(
+            br#"
+version = 1
+
+[statusline]
+lines = [["dir", "model", "context"]]
+
+[segments.dir]
+type = "dir"
+
+[segments.model]
+type = "model"
+
+[segments.context]
+type = "context"
+"#,
+        )
+        .expect("write config");
     let status = Command::new(BIN)
-        .args([
-            "--input-json",
-            PAYLOAD,
-            "--color",
-            "never",
-            "--layout",
-            "dir vcs | model context cost",
-        ])
+        .arg("--input-json")
+        .arg(PAYLOAD)
+        .arg("--config")
+        .arg(config.path())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status()
-        .expect("spawn cs layout");
+        .expect("spawn cs config");
     assert!(status.success());
 }

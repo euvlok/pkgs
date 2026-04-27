@@ -97,6 +97,8 @@ pub enum SegmentKind {
 /// detail, not whole segments.
 #[derive(Debug, Clone)]
 pub struct Segment {
+    pub id: String,
+    pub ty: String,
     pub cells: Vec<Cell>,
     pub kind: SegmentKind,
     pub compact: Option<Vec<Cell>>,
@@ -106,6 +108,8 @@ impl Segment {
     #[must_use]
     pub const fn anchor() -> Self {
         Self {
+            id: String::new(),
+            ty: String::new(),
             cells: Vec::new(),
             kind: SegmentKind::Anchor,
             compact: None,
@@ -115,6 +119,8 @@ impl Segment {
     #[must_use]
     pub const fn droppable() -> Self {
         Self {
+            id: String::new(),
+            ty: String::new(),
             cells: Vec::new(),
             kind: SegmentKind::Droppable,
             compact: None,
@@ -214,6 +220,11 @@ impl Segment {
     #[must_use]
     pub fn width(&self) -> usize {
         self.cells.iter().map(Cell::width).sum()
+    }
+
+    #[must_use]
+    pub fn plain_text(&self) -> String {
+        self.cells.iter().map(|cell| cell.text.as_str()).collect()
     }
 
     pub const fn is_empty(&self) -> bool {

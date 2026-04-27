@@ -1,7 +1,7 @@
 //! `--preview`: render the layout against a hand-crafted sample input.
 //!
-//! Shows the user what their `--layout` choice will actually look
-//! like without having to pipe a real Claude Code payload through stdin.
+//! Shows what the resolved TOML statusline will look like without having
+//! to pipe a real Claude Code payload through stdin.
 //!
 //! The sample input is intentionally "interesting": every optional
 //! field is populated, so each segment has something to render. We also
@@ -10,46 +10,44 @@
 //! user invokes it from, and a user without `gix`/`jj-lib` data still
 //! sees the segment in the output.
 
+use crate::config::ResolvedConfig;
 use crate::input::{
     ContextUsage, ContextWindow, Cost, Input, Model, RateLimit, RateLimits, Workspace,
 };
-use crate::pace::{self, PaceSettings};
+use crate::pace;
 use crate::render::colors::Palette;
 use crate::render::icons::Icons;
 use crate::render::layout::{BuildCtx, Layout};
 use crate::render::segment::Segment;
-use crate::settings::Settings;
 
 /// Build a fake input + fake VCS segment, then route them through the
 /// same `render_lines` pipeline that real renders use. Returned string
 /// is multi-line, ANSI-colored, ready to print.
-pub fn preview(icons: &Icons, layout: &Layout, settings: &Settings, pal: &Palette) -> String {
-    preview_with(icons, layout, settings, pal, None)
+pub fn preview(icons: &Icons, resolved: &ResolvedConfig, pal: &Palette) -> String {
+    preview_with(icons, resolved, pal, None).ansi_text
 }
 
 /// Same as [`preview`] but lets the caller pin a fixed maximum width
 /// instead of using the terminal's actual width.
 pub fn preview_with(
     icons: &Icons,
-    layout: &Layout,
-    settings: &Settings,
+    resolved: &ResolvedConfig,
     pal: &Palette,
     max_cols: Option<usize>,
-) -> String {
+) -> super::RenderedStatusline {
     let input = sample_input();
     let vcs = Some(sample_vcs(icons, pal));
 
-    let pace_settings = PaceSettings::default();
     let ctx = BuildCtx {
         input: &input,
         icons,
         palette: pal,
         vcs,
-        settings,
-        pace_settings: &pace_settings,
+        display: &resolved.display,
         now_unix: pace::now_unix(),
     };
-    super::render_lines(&ctx, layout, max_cols)
+    let layout = Layout::new(resolved.lines.clone());
+    super::render_lines(&ctx, &layout, max_cols, resolved)
 }
 
 fn sample_input() -> Input {

@@ -3,6 +3,7 @@
 //! Benchmarks for end-to-end rendering, alignment/fit, and individual
 //! segment builders.
 
+use claude_statusline::config::{Config, ResolvedConfig, resolve};
 use claude_statusline::input::{
     ContextUsage, ContextWindow, Cost, Input, InputSource, Model, RateLimit, RateLimits, Workspace,
 };
@@ -10,12 +11,9 @@ use claude_statusline::pace::PaceSettings;
 use claude_statusline::render::builders;
 use claude_statusline::render::colors::Palette;
 use claude_statusline::render::icons::IconSet;
-use claude_statusline::render::layout::Layout;
 use claude_statusline::render::preview::preview_with;
 use claude_statusline::render::segment::Segment;
-use claude_statusline::render::{
-    column_widths, fit_with_alignment, render, render_with, render_with_pace,
-};
+use claude_statusline::render::{column_widths, fit_with_alignment, render_resolved};
 use claude_statusline::settings::Settings;
 
 fn main() {
@@ -69,58 +67,109 @@ fn minimal_input() -> Input {
     }
 }
 
+fn default_resolved() -> ResolvedConfig {
+    resolve::resolve(Config::default())
+}
+
+fn single_line_resolved() -> ResolvedConfig {
+    let mut config = Config::default();
+    config.statusline.lines = vec![vec![
+        "dir".to_string(),
+        "vcs".to_string(),
+        "model".to_string(),
+        "changes".to_string(),
+        "context".to_string(),
+        "quota".to_string(),
+    ]];
+    resolve::resolve(config)
+}
+
 #[divan::bench]
 fn render_minimal(bencher: divan::Bencher<'_, '_>) {
     let input = minimal_input();
     let icons = IconSet::Text.icons();
-    let layout = Layout::two_line();
-    bencher.bench(|| render(divan::black_box(&input), icons, divan::black_box(&layout)));
+    let resolved = default_resolved();
+    bencher.bench(|| {
+        render_resolved(
+            divan::black_box(&input),
+            icons,
+            divan::black_box(&resolved),
+            &Palette::dark(),
+        )
+    });
 }
 
 #[divan::bench]
 fn render_rich_two_line(bencher: divan::Bencher<'_, '_>) {
     let input = rich_input();
     let icons = IconSet::Text.icons();
-    let layout = Layout::two_line();
-    bencher.bench(|| render(divan::black_box(&input), icons, divan::black_box(&layout)));
+    let resolved = default_resolved();
+    bencher.bench(|| {
+        render_resolved(
+            divan::black_box(&input),
+            icons,
+            divan::black_box(&resolved),
+            &Palette::dark(),
+        )
+    });
 }
 
 #[divan::bench]
 fn render_rich_single_line(bencher: divan::Bencher<'_, '_>) {
     let input = rich_input();
     let icons = IconSet::Text.icons();
-    let layout = Layout::parse("dir, vcs, model, diff, context, rate_limits").unwrap();
-    bencher.bench(|| render(divan::black_box(&input), icons, divan::black_box(&layout)));
+    let resolved = single_line_resolved();
+    bencher.bench(|| {
+        render_resolved(
+            divan::black_box(&input),
+            icons,
+            divan::black_box(&resolved),
+            &Palette::dark(),
+        )
+    });
 }
 
 #[divan::bench]
 fn render_rich_nerd_icons(bencher: divan::Bencher<'_, '_>) {
     let input = rich_input();
     let icons = IconSet::Nerd.icons();
-    let layout = Layout::two_line();
-    bencher.bench(|| render(divan::black_box(&input), icons, divan::black_box(&layout)));
+    let resolved = default_resolved();
+    bencher.bench(|| {
+        render_resolved(
+            divan::black_box(&input),
+            icons,
+            divan::black_box(&resolved),
+            &Palette::dark(),
+        )
+    });
 }
 
 #[divan::bench]
 fn render_rich_emoji_icons(bencher: divan::Bencher<'_, '_>) {
     let input = rich_input();
     let icons = IconSet::Emoji.icons();
-    let layout = Layout::two_line();
-    bencher.bench(|| render(divan::black_box(&input), icons, divan::black_box(&layout)));
+    let resolved = default_resolved();
+    bencher.bench(|| {
+        render_resolved(
+            divan::black_box(&input),
+            icons,
+            divan::black_box(&resolved),
+            &Palette::dark(),
+        )
+    });
 }
 
 #[divan::bench]
 fn render_light_theme(bencher: divan::Bencher<'_, '_>) {
     let input = rich_input();
     let icons = IconSet::Text.icons();
-    let layout = Layout::two_line();
+    let resolved = default_resolved();
     let pal = Palette::light();
     bencher.bench(|| {
-        render_with(
+        render_resolved(
             divan::black_box(&input),
             icons,
-            divan::black_box(&layout),
-            &Settings::default(),
+            divan::black_box(&resolved),
             &pal,
         )
     });
@@ -179,7 +228,7 @@ fn builder_model(bencher: divan::Bencher<'_, '_>) {
     let input = rich_input();
     let icons = IconSet::Text.icons();
     let pal = Palette::dark();
-    bencher.bench(|| builders::model(divan::black_box(&input), icons, &pal));
+    bencher.bench(|| builders::model(divan::black_box(&input), icons, &pal, true));
 }
 
 #[divan::bench]
@@ -245,17 +294,13 @@ fn builder_pace(bencher: divan::Bencher<'_, '_>) {
 fn render_with_pace_two_line(bencher: divan::Bencher<'_, '_>) {
     let input = rich_input();
     let icons = IconSet::Text.icons();
-    let layout = Layout::two_line();
-    let settings = Settings::default();
-    let pace_settings = PaceSettings::default();
+    let resolved = default_resolved();
     let pal = Palette::dark();
     bencher.bench(|| {
-        render_with_pace(
+        render_resolved(
             divan::black_box(&input),
             icons,
-            divan::black_box(&layout),
-            &settings,
-            &pace_settings,
+            divan::black_box(&resolved),
             &pal,
         )
     });
@@ -264,8 +309,7 @@ fn render_with_pace_two_line(bencher: divan::Bencher<'_, '_>) {
 #[divan::bench]
 fn preview_two_line(bencher: divan::Bencher<'_, '_>) {
     let icons = IconSet::Text.icons();
-    let layout = Layout::two_line();
-    let settings = Settings::default();
+    let resolved = default_resolved();
     let pal = Palette::dark();
-    bencher.bench(|| preview_with(icons, divan::black_box(&layout), &settings, &pal, Some(120)));
+    bencher.bench(|| preview_with(icons, divan::black_box(&resolved), &pal, Some(120)));
 }

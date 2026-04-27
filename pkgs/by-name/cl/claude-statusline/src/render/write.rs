@@ -15,11 +15,7 @@ pub(super) struct Sep {
 }
 
 pub(super) fn build_separator(glyph: &str, pal: &Palette) -> Sep {
-    let cells = vec![
-        Cell::plain(" "),
-        Cell::new(glyph.to_string(), pal.dim),
-        Cell::plain(" "),
-    ];
+    let cells = vec![Cell::new(glyph.to_string(), pal.dim)];
     let width = cells.iter().map(Cell::width).sum();
     Sep { cells, width }
 }
@@ -41,4 +37,25 @@ pub(super) fn write_line(out: &mut String, segments: &[Segment], sep: &Sep, col_
             cell.write_to(out);
         }
     }
+}
+
+pub(super) fn plain_line(segments: &[Segment], sep: &Sep, col_widths: &[usize]) -> String {
+    let mut out = String::new();
+    let last = segments.len().saturating_sub(1);
+    for (i, seg) in segments.iter().enumerate() {
+        out.push_str(&seg.plain_text());
+        if i == last {
+            continue;
+        }
+        let pad = col_widths
+            .get(i)
+            .copied()
+            .unwrap_or(0)
+            .saturating_sub(seg.width());
+        out.extend(std::iter::repeat_n(' ', pad));
+        for cell in &sep.cells {
+            out.push_str(&cell.text);
+        }
+    }
+    out
 }

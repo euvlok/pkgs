@@ -13,50 +13,68 @@ pub mod fit;
 pub mod format;
 pub mod icons;
 pub mod layout;
+pub mod output;
 pub mod preview;
+pub mod registry;
 pub mod segment;
 mod write;
 
+use crate::config::ResolvedConfig;
 use crate::input::Input;
-use crate::pace::PaceSettings;
 use crate::render::colors::Palette;
 use crate::render::icons::Icons;
-use crate::render::layout::{BuildCtx, Layout};
+use crate::render::layout::{BuildCtx, Layout, build_segment};
+use crate::render::output::{RenderOutput, RenderWarning, RenderedLine, RenderedSegment};
 use crate::render::segment::{Segment, SegmentKind};
-use crate::settings::Settings;
 use crate::vcs;
 
 /// Convenience: render with the historical defaults. Used by tests
 /// (which don't care about settings) and benches.
 pub fn render(input: &Input, icons: &Icons, layout: &Layout) -> String {
-    render_with(input, icons, layout, &Settings::default(), &Palette::dark())
+    let resolved = ResolvedConfig {
+        source: crate::config::Config::default(),
+        display: crate::config::ResolvedDisplay {
+            config: crate::config::Config::default().display,
+        },
+        lines: layout.lines.clone(),
+        warnings: Vec::new(),
+    };
+    render_resolved(input, icons, &resolved, &Palette::dark())
 }
 
-pub fn render_with(
+pub fn render_resolved(
     input: &Input,
     icons: &Icons,
-    layout: &Layout,
-    settings: &Settings,
+    resolved: &ResolvedConfig,
     pal: &Palette,
 ) -> String {
-    render_with_pace(
-        input,
-        icons,
-        layout,
-        settings,
-        &PaceSettings::default(),
-        pal,
-    )
+    render_output(input, icons, resolved, pal).ansi_text
 }
 
-pub fn render_with_pace(
+#[derive(Debug)]
+pub struct RenderedStatusline {
+    pub ansi_text: String,
+    pub output: RenderOutput,
+    pub diagnostics: Vec<SegmentDiagnostic>,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct SegmentDiagnostic {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub ty: String,
+    pub rendered: bool,
+    pub plain: String,
+    pub width: usize,
+}
+
+pub fn render_output(
     input: &Input,
     icons: &Icons,
-    layout: &Layout,
-    settings: &Settings,
-    pace_settings: &PaceSettings,
+    resolved: &ResolvedConfig,
     pal: &Palette,
-) -> String {
+) -> RenderedStatusline {
+    let layout = Layout::new(resolved.lines.clone());
     let vcs_seg = layout
         .needs_vcs()
         .then(|| vcs::collect(&input.vcs_dir(), icons, pal))
@@ -67,11 +85,10 @@ pub fn render_with_pace(
         icons,
         palette: pal,
         vcs: vcs_seg,
-        settings,
-        pace_settings,
+        display: &resolved.display,
         now_unix: crate::pace::now_unix(),
     };
-    render_lines(&ctx, layout, None)
+    render_lines(&ctx, &layout, None, resolved)
 }
 
 /// Build -> fit -> write pipeline given an already-prepared [`BuildCtx`].
@@ -79,8 +96,8 @@ pub(crate) fn render_lines(
     ctx: &BuildCtx<'_>,
     layout: &Layout,
     max_cols_override: Option<usize>,
-) -> String {
-    let settings = ctx.settings;
+    resolved: &ResolvedConfig,
+) -> RenderedStatusline {
     let icons = ctx.icons;
     let pal = ctx.palette;
     let max_cols = max_cols_override.or_else(|| {
@@ -89,6 +106,7 @@ pub(crate) fn render_lines(
             .filter(|c| *c > 10)
     });
     let separator = write::build_separator(icons.sep.as_ref(), pal);
+    let mut diagnostics = Vec::new();
 
     let mut lines: Vec<Vec<Segment>> = layout
         .lines
@@ -96,8 +114,19 @@ pub(crate) fn render_lines(
         .map(|line| {
             let mut segments: Vec<Segment> = line
                 .iter()
-                .filter_map(|name| name.build(ctx))
-                .filter(|s| !s.is_empty())
+                .filter_map(|spec| {
+                    let segment = build_segment(ctx, spec).filter(|s| !s.is_empty());
+                    diagnostics.push(SegmentDiagnostic {
+                        id: spec.id.clone(),
+                        ty: spec.config.ty().to_string(),
+                        rendered: segment.is_some(),
+                        plain: segment
+                            .as_ref()
+                            .map_or_else(String::new, Segment::plain_text),
+                        width: segment.as_ref().map_or(0, Segment::width),
+                    });
+                    segment
+                })
                 .collect();
             // The layout, not the individual builder, defines the line anchor.
             // Missing data can make the named first segment disappear, so anchor
@@ -116,117 +145,79 @@ pub(crate) fn render_lines(
         })
         .collect();
 
-    let col_widths: Vec<usize> = if settings.align {
+    let col_widths: Vec<usize> = if resolved.display.config.align {
         fit_with_alignment(&mut lines, separator.width, max_cols)
     } else {
         fit_unaligned(&mut lines, separator.width, max_cols);
         Vec::new()
     };
 
-    let mut out = String::new();
+    let mut ansi_text = String::new();
+    let mut rendered_lines = Vec::new();
     for (i, segments) in lines.iter().enumerate() {
         if i > 0 {
-            out.push('\n');
+            ansi_text.push('\n');
         }
-        write::write_line(&mut out, segments, &separator, &col_widths);
+        write::write_line(&mut ansi_text, segments, &separator, &col_widths);
+        let text = write::plain_line(segments, &separator, &col_widths);
+        let rendered_segments = segments
+            .iter()
+            .map(|segment| RenderedSegment {
+                id: segment.id.clone(),
+                ty: segment.ty.clone(),
+                plain: segment.plain_text(),
+                width: segment.width(),
+                dropped: false,
+            })
+            .collect();
+        rendered_lines.push(RenderedLine {
+            text,
+            segments: rendered_segments,
+        });
     }
-    out
+    let text = rendered_lines
+        .iter()
+        .map(|line| line.text.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let warnings = resolved
+        .warnings
+        .iter()
+        .map(|warning| RenderWarning {
+            message: warning.message.clone(),
+        })
+        .collect();
+    RenderedStatusline {
+        ansi_text,
+        output: RenderOutput {
+            text,
+            lines: rendered_lines,
+            warnings,
+        },
+        diagnostics,
+    }
 }
 
 pub use fit::{aligned_width, column_widths, fit_unaligned, fit_with_alignment};
 
 #[cfg(test)]
 mod tests {
-    #![allow(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::unwrap_in_result,
-        clippy::cast_possible_wrap,
-        clippy::float_cmp,
-        clippy::suboptimal_flops,
-        clippy::uninlined_format_args,
-        clippy::match_wildcard_for_single_variants
-    )]
+    #![allow(clippy::unwrap_used, clippy::expect_used)]
 
     use super::*;
-    use crate::input::{Cost, Input, RateLimit, RateLimits};
+    use crate::config::resolve;
+    use crate::config::schema::{Config, SegmentConfig, SpeedSegmentConfig};
+    use crate::input::{Cost, Input};
     use crate::render::icons::IconSet;
-    use crate::render::layout::Layout;
 
     fn icons() -> &'static Icons {
         IconSet::Text.icons()
     }
 
-    fn pal() -> Palette {
-        Palette::dark()
-    }
-
-    #[test]
-    fn two_line_default_renders_two_lines() {
-        let input = Input {
-            workspace: crate::input::Workspace {
-                current_dir: Some("/tmp/foo".into()),
-            },
-            cost: Cost {
-                total_lines_added: Some(5),
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        let layout = Layout::two_line();
-        let out = render(&input, icons(), &layout);
-        assert_eq!(out.lines().count(), 2, "got: {out:?}");
-    }
-
-    #[test]
-    fn single_line_layout_renders_one_line() {
-        let input = Input::default();
-        let layout = Layout::parse("dir").unwrap();
-        let out = render(&input, icons(), &layout);
-        assert_eq!(out.lines().count(), 1);
-        assert!(!out.contains('\n'));
-    }
-
-    fn strip_ansi(s: &str) -> String {
-        anstream::adapter::strip_str(s).to_string()
-    }
-
-    #[test]
-    fn first_rendered_segment_is_anchor_even_when_builder_marks_droppable() {
-        let input = Input {
-            model: crate::input::Model {
-                display_name: Some("Sonnet 4.6".into()),
-            },
-            cost: Cost {
-                total_lines_added: Some(5),
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        let layout = Layout::parse("model,diff").unwrap();
-        let ctx = BuildCtx {
-            input: &input,
-            icons: icons(),
-            palette: &pal(),
-            vcs: None,
-            settings: &Settings::default(),
-            pace_settings: &PaceSettings::default(),
-            now_unix: crate::pace::now_unix(),
-        };
-        let out = render_lines(&ctx, &layout, Some(1));
-        let plain = strip_ansi(&out);
-        assert!(plain.contains("Sonnet"), "anchor was dropped: {plain:?}");
-        assert!(
-            !plain.contains("+5"),
-            "right segment should drop first: {plain:?}"
-        );
-    }
-
     #[test]
     fn columns_align_across_lines() {
         use crate::render::segment::Segment;
-        let p = pal();
+        let p = Palette::dark();
         let a1 = Segment::anchor().plain("claude-statusline");
         let a2 = Segment::anchor().plain("Opus");
         let b1 = Segment::anchor().plain("here");
@@ -241,7 +232,7 @@ mod tests {
             }
             write::write_line(&mut out, line, &sep, &widths);
         }
-        let plain = strip_ansi(&out);
+        let plain = anstream::adapter::strip_str(&out).to_string();
         let mut sep_cols: Vec<usize> = Vec::new();
         for line in plain.lines() {
             sep_cols.push(line.find('│').expect("separator missing"));
@@ -252,7 +243,7 @@ mod tests {
     #[test]
     fn last_segment_is_not_padded() {
         use crate::render::segment::Segment;
-        let p = pal();
+        let p = Palette::dark();
         let a1 = Segment::anchor().plain("aaaa");
         let a2 = Segment::anchor().plain("b");
         let c1 = Segment::anchor().plain("a");
@@ -267,129 +258,28 @@ mod tests {
             }
             write::write_line(&mut out, line, &sep, &widths);
         }
-        let plain = strip_ansi(&out);
+        let plain = anstream::adapter::strip_str(&out).to_string();
         for line in plain.lines() {
             assert_eq!(line, line.trim_end(), "trailing whitespace in {line:?}");
         }
     }
 
     #[test]
-    fn missing_segments_are_skipped_not_blank() {
-        let input = Input::default();
-        let layout = Layout::two_line();
-        let out = render(&input, icons(), &layout);
-        assert!(out.lines().next().is_some());
-    }
-
-    #[test]
-    fn rate_limits_segment_includes_countdown() {
-        let now = crate::pace::now_unix() as i64;
+    fn default_toml_config_renders_non_empty_text() {
+        let resolved = resolve::resolve(Config::default());
         let input = Input {
-            rate_limits: RateLimits {
-                five_hour: RateLimit {
-                    used_percentage: Some(72.0),
-                    resets_at: Some(now + 5000),
-                },
-                seven_day: RateLimit::default(),
+            workspace: crate::input::Workspace {
+                current_dir: Some("/tmp/foo".into()),
             },
             ..Default::default()
         };
-        let layout = Layout::parse("rate_limits").unwrap();
-        let out = render(&input, icons(), &layout);
-        assert!(out.contains("72%"), "got: {out}");
-        assert!(out.contains("1h 23m"), "got: {out}");
+        let out = render_output(&input, icons(), &resolved, &Palette::dark());
+        assert!(!out.output.text.trim().is_empty());
     }
 
     #[test]
-    fn clock_segment_includes_wait_time() {
-        let input = Input {
-            cost: Cost {
-                total_duration_ms: Some(2_340_000),
-                total_api_duration_ms: Some(750_000),
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        let layout = Layout::parse("clock").unwrap();
-        let out = render(&input, icons(), &layout);
-        assert!(out.contains("39m"), "got: {out}");
-        assert!(out.contains("chat 12m"), "got: {out}");
-    }
-
-    #[test]
-    fn pace_segment_shows_projection() {
-        use crate::input::{RateLimit, RateLimits};
-        use crate::pace::{self, PaceSettings, PctSample, Window};
-
-        let now = pace::now_unix();
-
-        // Seed the ring with samples that establish a steady burn.
-        let window = Window {
-            started_at: now - 30 * 60,
-            resets_at: now - 30 * 60 + pace::window::BLOCK_SECS,
-        };
-        let mut seeded = Vec::new();
-        for i in 0..=20 {
-            seeded.push(PctSample {
-                ts_unix: window.started_at + i * 60,
-                used_pct: i as f64,
-            });
-        }
-        pace::ring::persist_ring(&seeded);
-
-        let input = Input {
-            rate_limits: RateLimits {
-                five_hour: RateLimit {
-                    used_percentage: Some(20.0),
-                    resets_at: Some(window.resets_at as i64),
-                },
-                seven_day: RateLimit::default(),
-            },
-            ..Default::default()
-        };
-        let pace_settings = PaceSettings {
-            warmup_mins: 0,
-            ..PaceSettings::default()
-        };
-        let layout = Layout::parse("pace").unwrap();
-        let out = render_with_pace(
-            &input,
-            icons(),
-            &layout,
-            &Settings::default(),
-            &pace_settings,
-            &pal(),
-        );
-        let plain = strip_ansi(&out);
-        assert!(
-            plain.contains("→") || plain.contains("at cap") || plain.contains("warming"),
-            "got: {plain}"
-        );
-        assert!(
-            !plain.contains("by reset") && !plain.contains("%/m"),
-            "old verbose format still present: {plain}"
-        );
-    }
-
-    #[test]
-    fn pace_segment_elides_without_rate_limits() {
-        use crate::pace::PaceSettings;
-        let input = Input::default();
-        let layout = Layout::parse("dir,pace").unwrap();
-        let out = render_with_pace(
-            &input,
-            icons(),
-            &layout,
-            &Settings::default(),
-            &PaceSettings::default(),
-            &pal(),
-        );
-        assert!(!out.contains("by reset"), "got: {out}");
-        assert!(!out.contains("on track"), "got: {out}");
-    }
-
-    #[test]
-    fn diff_segment_renders_added_and_removed() {
+    fn structured_output_includes_segment_ids() {
+        let resolved = resolve::resolve(Config::default());
         let input = Input {
             cost: Cost {
                 total_lines_added: Some(342),
@@ -398,9 +288,77 @@ mod tests {
             },
             ..Default::default()
         };
-        let layout = Layout::parse("diff").unwrap();
-        let out = render(&input, icons(), &layout);
-        assert!(out.contains("+342"));
-        assert!(out.contains("-89"));
+        let out = render_output(&input, icons(), &resolved, &Palette::dark());
+        assert!(
+            out.output
+                .lines
+                .iter()
+                .flat_map(|line| &line.segments)
+                .any(|segment| segment.id == "changes" && segment.plain.contains("+342"))
+        );
+    }
+
+    #[test]
+    fn multiple_dir_instances_render() {
+        let mut config = Config::default();
+        config.statusline.lines = vec![vec!["dir".to_string(), "dir_full".to_string()]];
+        let dir = config.segments.get("dir").cloned().unwrap();
+        config.segments.insert("dir_full".to_string(), dir);
+        let resolved = resolve::resolve(config);
+        let input = Input {
+            workspace: crate::input::Workspace {
+                current_dir: Some("/tmp/foo".into()),
+            },
+            ..Default::default()
+        };
+        let out = render_output(&input, icons(), &resolved, &Palette::dark());
+        let ids = out.output.lines[0]
+            .segments
+            .iter()
+            .map(|segment| segment.id.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(ids, vec!["dir", "dir_full"]);
+    }
+
+    #[test]
+    fn unknown_segment_id_warns_and_is_skipped() {
+        let mut config = Config::default();
+        config.statusline.lines = vec![vec!["dir".to_string(), "missing".to_string()]];
+        let resolved = resolve::resolve(config);
+        assert_eq!(resolved.lines[0].len(), 1);
+        assert!(resolved.warnings[0].message.contains("missing"));
+    }
+
+    #[test]
+    fn all_invalid_layout_falls_back_to_default() {
+        let mut config = Config::default();
+        config.statusline.lines = vec![vec!["missing".to_string()]];
+        let resolved = resolve::resolve(config);
+        assert!(
+            resolved
+                .lines
+                .iter()
+                .flatten()
+                .any(|segment| segment.id == "dir")
+        );
+    }
+
+    #[test]
+    fn all_builtin_segment_types_have_capabilities() {
+        let config = Config::default();
+        for segment in config.segments.values() {
+            assert!(
+                registry::SEGMENTS
+                    .iter()
+                    .any(|spec| spec.ty == segment.ty()),
+                "missing capability for {:?}",
+                segment.ty()
+            );
+        }
+        assert!(
+            registry::SEGMENTS
+                .iter()
+                .any(|spec| spec.ty == SegmentConfig::Speed(SpeedSegmentConfig::default()).ty())
+        );
     }
 }
