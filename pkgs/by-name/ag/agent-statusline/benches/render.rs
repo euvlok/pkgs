@@ -3,18 +3,18 @@
 //! Benchmarks for end-to-end rendering, alignment/fit, and individual
 //! segment builders.
 
-use claude_statusline::config::{Config, ResolvedConfig, resolve};
-use claude_statusline::input::{
+use agent_statusline::config::{Config, ResolvedConfig, resolve};
+use agent_statusline::input::{
     ContextUsage, ContextWindow, Cost, Input, InputSource, Model, RateLimit, RateLimits, Workspace,
 };
-use claude_statusline::pace::PaceSettings;
-use claude_statusline::render::builders;
-use claude_statusline::render::colors::Palette;
-use claude_statusline::render::icons::IconSet;
-use claude_statusline::render::preview::preview_with;
-use claude_statusline::render::segment::Segment;
-use claude_statusline::render::{column_widths, fit_with_alignment, render_resolved};
-use claude_statusline::settings::Settings;
+use agent_statusline::pace::PaceSettings;
+use agent_statusline::render::builders;
+use agent_statusline::render::colors::Palette;
+use agent_statusline::render::icons::IconSet;
+use agent_statusline::render::preview::preview_with;
+use agent_statusline::render::segment::Segment;
+use agent_statusline::render::{column_widths, fit_with_alignment, render_resolved};
+use agent_statusline::settings::Settings;
 
 fn main() {
     divan::main();
@@ -24,7 +24,7 @@ fn rich_input() -> Input {
     Input {
         source: InputSource::Claude,
         workspace: Workspace {
-            current_dir: Some("/tmp/example/projects/claude-statusline".into()),
+            current_dir: Some("/tmp/example/projects/agent-statusline".into()),
         },
         cwd: None,
         transcript_path: None,
@@ -252,7 +252,7 @@ fn builder_rate_limits(bencher: divan::Bencher<'_, '_>) {
     let icons = IconSet::Text.icons();
     let settings = Settings::default();
     let pal = Palette::dark();
-    let now = claude_statusline::pace::now_unix();
+    let now = agent_statusline::pace::now_unix();
     bencher.bench(|| builders::rate_limits(divan::black_box(&input), icons, &settings, &pal, now));
 }
 
@@ -286,7 +286,7 @@ fn builder_pace(bencher: divan::Bencher<'_, '_>) {
         ..PaceSettings::default()
     };
     let pal = Palette::dark();
-    let now = claude_statusline::pace::now_unix();
+    let now = agent_statusline::pace::now_unix();
     bencher.bench(|| builders::pace(divan::black_box(&input), &settings, &pal, now));
 }
 

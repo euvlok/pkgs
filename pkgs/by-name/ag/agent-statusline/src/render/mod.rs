@@ -218,7 +218,7 @@ mod tests {
     fn columns_align_across_lines() {
         use crate::render::segment::Segment;
         let p = Palette::dark();
-        let a1 = Segment::anchor().plain("claude-statusline");
+        let a1 = Segment::anchor().plain("agent-statusline");
         let a2 = Segment::anchor().plain("Opus");
         let b1 = Segment::anchor().plain("here");
         let b2 = Segment::anchor().plain("5h 7%");

@@ -9,11 +9,11 @@
 //! Benchmarks for formatting helpers, config parsing, palette construction,
 //! and segment operations.
 
-use claude_statusline::config::{Config, ResolvedConfig, resolve};
-use claude_statusline::render::colors::Palette;
-use claude_statusline::render::format::{humanize_duration, humanize_tokens, shorten_model};
-use claude_statusline::render::segment::Segment;
-use claude_statusline::theme::ThemeMode;
+use agent_statusline::config::{Config, ResolvedConfig, resolve};
+use agent_statusline::render::colors::Palette;
+use agent_statusline::render::format::{humanize_duration, humanize_tokens, shorten_model};
+use agent_statusline::render::segment::Segment;
+use agent_statusline::theme::ThemeMode;
 
 fn main() {
     divan::main();

@@ -65,7 +65,7 @@ fn ring_path() -> Option<PathBuf> {
         .get_or_init(|| {
             Some(
                 dirs::cache_dir()?
-                    .join("claude-statusline")
+                    .join("agent-statusline")
                     .join("pace")
                     .join("samples.bin"),
             )

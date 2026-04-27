@@ -8,7 +8,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[schemars(title = "ClaudeStatuslineConfig")]
+#[schemars(title = "AgentStatuslineConfig")]
 #[serde(default, rename_all = "kebab-case")]
 pub struct Config {
     pub version: u32,

@@ -10,7 +10,7 @@
 //! is the metric that actually matters in production.
 //!
 //! Each bench shells out to the binary built by Cargo (located via
-//! `CARGO_BIN_EXE_claude-statusline`) and feeds it a fixed payload. Numbers
+//! `CARGO_BIN_EXE_agent-statusline`) and feeds it a fixed payload. Numbers
 //! include process spawn, dyld linking, clap parsing, JSON parsing, render,
 //! and stdout flush.
 
@@ -20,10 +20,10 @@ fn main() {
     divan::main();
 }
 
-const BIN: &str = env!("CARGO_BIN_EXE_claude-statusline");
+const BIN: &str = env!("CARGO_BIN_EXE_agent-statusline");
 
 const PAYLOAD: &str = r#"{
-  "workspace": {"current_dir": "/tmp/example/projects/claude-statusline"},
+  "workspace": {"current_dir": "/tmp/example/projects/agent-statusline"},
   "model": {"display_name": "Opus 4.6 (1M context)"},
   "context_window": {
     "used_percentage": 2.5,

@@ -33,7 +33,7 @@ pub struct LoadedConfig {
 pub fn default_config_path() -> Option<PathBuf> {
     Some(
         dirs::config_dir()?
-            .join("claude-statusline")
+            .join("agent-statusline")
             .join("config.toml"),
     )
 }

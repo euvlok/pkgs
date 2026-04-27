@@ -3,7 +3,7 @@
 //! Three flavors are available: `nerd` (Nerd Font private use area glyphs),
 //! `emoji` (broadly supported color emoji), and `text` (ASCII / BMP fallbacks
 //! that work in any terminal). Selection happens via `--icons` or the
-//! `CLAUDE_STATUSLINE_ICONS` env var.
+//! `AGENT_STATUSLINE_ICONS` env var.
 //!
 //! Default is `emoji` — universally available and requires no font setup.
 

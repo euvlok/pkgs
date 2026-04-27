@@ -311,7 +311,7 @@ fn disambiguate_prefix_with_refs(repo: &dyn Repo, id_sym: &str, min_len: usize) 
 /// into the filename would be either unwieldy or non-portable.
 fn cache_path(workspace_root: &Path) -> Option<PathBuf> {
     let dir = dirs::cache_dir()?
-        .join("claude-statusline")
+        .join("agent-statusline")
         .join("jj-prefix");
     let hash = blake3::hash(workspace_root.as_os_str().as_encoded_bytes());
     Some(dir.join(format!("{hash}.json")))

@@ -9,16 +9,16 @@ use crate::config::OutputFormat;
 #[derive(Parser, Debug)]
 #[command(
     version,
-    about = "Fast Claude Code / Codex statusline (gix + jj-lib)",
-    long_about = "Fast Claude Code / Codex statusline driven by TOML config and JSON introspection.",
+    about = "Fast agent statusline (gix + jj-lib)",
+    long_about = "Fast agent statusline driven by TOML config and JSON introspection.",
     max_term_width = 100
 )]
 pub struct Cli {
-    /// TOML config path (defaults to $XDG_CONFIG_HOME/claude-statusline/config.toml)
+    /// TOML config path (defaults to $XDG_CONFIG_HOME/agent-statusline/config.toml)
     #[arg(
         short = 'c',
         long,
-        env = "CLAUDE_STATUSLINE_CONFIG",
+        env = "AGENT_STATUSLINE_CONFIG",
         value_name = "PATH"
     )]
     pub config: Option<PathBuf>,

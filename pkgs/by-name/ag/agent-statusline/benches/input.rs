@@ -3,14 +3,14 @@
 //! Benchmarks for stdin payload deserialization. The renderer runs once
 //! per Claude Code event, so parse cost shows up on every render.
 
-use claude_statusline::input::Input;
+use agent_statusline::input::Input;
 
 fn main() {
     divan::main();
 }
 
 const CLAUDE_RICH: &str = r#"{
-    "workspace": {"current_dir": "/tmp/example/projects/claude-statusline"},
+    "workspace": {"current_dir": "/tmp/example/projects/agent-statusline"},
     "transcript_path": "/tmp/example/.claude/projects/foo/sess.jsonl",
     "session_id": "sess-abcdef",
     "model": {"display_name": "Opus 4.6 (1M context)"},

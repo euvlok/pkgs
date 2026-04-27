@@ -1,4 +1,4 @@
-//! Library entry point for `claude-statusline`.
+//! Library entry point for `agent-statusline`.
 //!
 //! The crate is primarily a binary (`src/main.rs`), but exposing the
 //! modules through a `lib.rs` lets external benches in `benches/` reach

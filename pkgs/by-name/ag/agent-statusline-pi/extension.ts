@@ -10,7 +10,7 @@ import { type Component, truncateToWidth } from "@mariozechner/pi-tui";
 
 const FLAG_COMMAND = "statusline-command";
 const FLAG_ARGS = "statusline-args";
-const DEFAULT_COMMAND = "claude-statusline";
+const DEFAULT_COMMAND = "agent-statusline";
 const REFRESH_DEBOUNCE_MS = 200;
 const SPAWN_TIMEOUT_MS = 3000;
 const IDLE_TICK_MS = 30_000;
@@ -78,7 +78,7 @@ function buildPayload(ctx: ExtensionContext, state: State) {
 	};
 }
 
-export default function claudeStatuslineExtension(pi: ExtensionAPI): void {
+export default function agentStatuslineExtension(pi: ExtensionAPI): void {
 	pi.registerFlag(FLAG_COMMAND, {
 		type: "string",
 		description: `Statusline command to spawn (default: ${DEFAULT_COMMAND})`,
@@ -196,7 +196,7 @@ export default function claudeStatuslineExtension(pi: ExtensionAPI): void {
 	});
 
 	pi.registerCommand("statusline-refresh", {
-		description: "Force-refresh the claude-statusline footer",
+		description: "Force-refresh the agent-statusline footer",
 		handler: async () => footer?.schedule(),
 	});
 	pi.registerCommand("statusline-default", {

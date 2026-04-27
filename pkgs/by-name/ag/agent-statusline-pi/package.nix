@@ -1,11 +1,11 @@
 {
   stdenvNoCC,
   lib,
-  claude-statusline,
+  agent-statusline,
 }:
 
 stdenvNoCC.mkDerivation (finalAttrs: {
-  pname = "claude-statusline-pi";
+  pname = "agent-statusline-pi";
   version = "0.1.0";
   src = ./.;
 
@@ -13,18 +13,18 @@ stdenvNoCC.mkDerivation (finalAttrs: {
 
   installPhase = ''
     runHook preInstall
-    install -Dm644 extension.ts "$out/share/pi/extensions/claude-statusline.ts"
+    install -Dm644 extension.ts "$out/share/pi/extensions/agent-statusline.ts"
     runHook postInstall
   '';
 
   passthru = {
     # Absolute path consumers can drop into pi-mono `settings.extensions`.
-    extensionPath = "${finalAttrs.finalPackage}/share/pi/extensions/claude-statusline.ts";
-    inherit claude-statusline;
+    extensionPath = "${finalAttrs.finalPackage}/share/pi/extensions/agent-statusline.ts";
+    inherit agent-statusline;
   };
 
   meta = {
-    description = "pi-mono extension that renders claude-statusline as the interactive footer";
+    description = "pi-mono extension that renders agent-statusline as the interactive footer";
     license = lib.licenses.mit;
     platforms = lib.platforms.unix;
   };

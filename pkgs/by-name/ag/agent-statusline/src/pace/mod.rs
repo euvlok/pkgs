@@ -152,12 +152,12 @@ fn emit_debug(window: &Window, projection: &Projection) {
     );
     eprint!("{buf}");
 
-    if let Ok(val) = std::env::var("CLAUDE_STATUSLINE_PACE_DEBUG")
+    if let Ok(val) = std::env::var("AGENT_STATUSLINE_PACE_DEBUG")
         && !val.is_empty()
         && val != "0"
         && let Some(mut path) = dirs::state_dir().or_else(dirs::cache_dir)
     {
-        path.push("claude-statusline");
+        path.push("agent-statusline");
         if std::fs::create_dir_all(&path).is_ok() {
             path.push("pace-debug.log");
             if let Ok(mut f) = std::fs::OpenOptions::new()

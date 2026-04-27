@@ -4,7 +4,7 @@ use std::io::Write as _;
 use std::process::Command;
 
 const fn bin() -> &'static str {
-    env!("CARGO_BIN_EXE_claude-statusline")
+    env!("CARGO_BIN_EXE_agent-statusline")
 }
 
 fn write_config(text: &str) -> tempfile::NamedTempFile {
@@ -22,7 +22,7 @@ fn schema_emits_valid_json() {
     let output = run(&["--schema"]);
     assert!(output.status.success());
     let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(json["title"], "ClaudeStatuslineConfig");
+    assert_eq!(json["title"], "AgentStatuslineConfig");
     assert_eq!(json["type"], "object");
 }
 

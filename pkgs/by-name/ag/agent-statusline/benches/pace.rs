@@ -12,14 +12,14 @@
 
 use std::time::Duration;
 
-use claude_statusline::input::{Input, RateLimit, RateLimits};
-use claude_statusline::pace::format::{format_projected_pct, render as pace_render};
-use claude_statusline::pace::glyphs::{EMOJI, MDI, TEXT};
-use claude_statusline::pace::projection::{PaceState, Projection, classify};
-use claude_statusline::pace::rate::RateEstimate;
-use claude_statusline::pace::window::{BLOCK_SECS, Window};
-use claude_statusline::pace::{PaceSettings, PctSample};
-use claude_statusline::render::colors::Palette;
+use agent_statusline::input::{Input, RateLimit, RateLimits};
+use agent_statusline::pace::format::{format_projected_pct, render as pace_render};
+use agent_statusline::pace::glyphs::{EMOJI, MDI, TEXT};
+use agent_statusline::pace::projection::{PaceState, Projection, classify};
+use agent_statusline::pace::rate::RateEstimate;
+use agent_statusline::pace::window::{BLOCK_SECS, Window};
+use agent_statusline::pace::{PaceSettings, PctSample};
+use agent_statusline::render::colors::Palette;
 
 fn main() {
     divan::main();
@@ -175,5 +175,5 @@ fn pace_segment_end_to_end(bencher: divan::Bencher<'_, '_>) {
         ..PaceSettings::default()
     };
     let pal = Palette::dark();
-    bencher.bench(|| claude_statusline::pace::pace(divan::black_box(&input), &settings, &pal, NOW));
+    bencher.bench(|| agent_statusline::pace::pace(divan::black_box(&input), &settings, &pal, NOW));
 }

@@ -930,7 +930,7 @@ index 94ed21600..03ef3281f 100644
 +    }
 +
 +    #[tokio::test]
-+    async fn status_line_command_payload_matches_claude_statusline_shape() {
++    async fn status_line_command_payload_matches_agent_statusline_shape() {
 +        let (mut chat, _rx, _op_rx) =
 +            crate::chatwidget::tests::make_chatwidget_manual(Some("gpt-5.4")).await;
 +        chat.thread_id = Some(ThreadId::new());

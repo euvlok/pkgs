@@ -4,14 +4,14 @@ let
   root = ../../../..;
 in
 rustPlatform.buildRustPackage {
-  pname = "claude-statusline";
+  pname = "agent-statusline";
   version = "0.1.0";
   src = lib.fileset.toSource {
     inherit root;
     fileset = lib.fileset.unions [
       (root + "/Cargo.lock")
       (root + "/Cargo.toml")
-      (root + "/pkgs/by-name/cl/claude-statusline")
+      (root + "/pkgs/by-name/ag/agent-statusline")
     ];
   };
   cargoLock.lockFile = root + "/Cargo.lock";
@@ -27,8 +27,8 @@ rustPlatform.buildRustPackage {
   doCheck = false;
 
   meta = {
-    description = "Fast Claude Code / Codex statusline using gix + jj-lib";
-    mainProgram = "claude-statusline";
+    description = "Fast agent statusline using gix + jj-lib";
+    mainProgram = "agent-statusline";
     license = lib.licenses.mit;
     platforms = lib.platforms.unix;
   };
