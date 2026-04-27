@@ -88,7 +88,7 @@ pub(crate) fn render_lines(
             .map(|(w, _)| w.0 as usize)
             .filter(|c| *c > 10)
     });
-    let separator = write::build_separator(icons.sep, pal);
+    let separator = write::build_separator(icons.sep.as_ref(), pal);
 
     let mut lines: Vec<Vec<Segment>> = layout
         .lines
@@ -227,14 +227,10 @@ mod tests {
     fn columns_align_across_lines() {
         use crate::render::segment::Segment;
         let p = pal();
-        let mut a1 = Segment::anchor();
-        a1.push_plain("claude-statusline");
-        let mut a2 = Segment::anchor();
-        a2.push_plain("Opus");
-        let mut b1 = Segment::anchor();
-        b1.push_plain("here");
-        let mut b2 = Segment::anchor();
-        b2.push_plain("5h 7%");
+        let a1 = Segment::anchor().plain("claude-statusline");
+        let a2 = Segment::anchor().plain("Opus");
+        let b1 = Segment::anchor().plain("here");
+        let b2 = Segment::anchor().plain("5h 7%");
         let lines = vec![vec![a1, a2], vec![b1, b2]];
         let sep = write::build_separator("│", &p);
         let widths = column_widths(&lines);
@@ -257,14 +253,10 @@ mod tests {
     fn last_segment_is_not_padded() {
         use crate::render::segment::Segment;
         let p = pal();
-        let mut a1 = Segment::anchor();
-        a1.push_plain("aaaa");
-        let mut a2 = Segment::anchor();
-        a2.push_plain("b");
-        let mut c1 = Segment::anchor();
-        c1.push_plain("a");
-        let mut c2 = Segment::anchor();
-        c2.push_plain("bbbbbb");
+        let a1 = Segment::anchor().plain("aaaa");
+        let a2 = Segment::anchor().plain("b");
+        let c1 = Segment::anchor().plain("a");
+        let c2 = Segment::anchor().plain("bbbbbb");
         let lines = vec![vec![a1, a2], vec![c1, c2]];
         let sep = write::build_separator("│", &p);
         let widths = column_widths(&lines);

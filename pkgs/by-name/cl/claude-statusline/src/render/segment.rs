@@ -121,21 +121,6 @@ impl Segment {
         }
     }
 
-    /// Snapshot the current cells as the segment's compact form. Call
-    /// after pushing only the essentials, before pushing the optional
-    /// tail; the fit pass will fall back to this snapshot before
-    /// dropping the segment entirely.
-    pub fn mark_compact(&mut self) {
-        self.compact = Some(self.cells.clone());
-    }
-
-    /// Set an explicit compact form. Use when the full form interleaves
-    /// essential and optional cells, so a prefix snapshot via
-    /// [`Self::mark_compact`] won't capture the right thing.
-    pub fn set_compact(&mut self, cells: Vec<Cell>) {
-        self.compact = Some(cells);
-    }
-
     /// Replace cells with the compact form. No-op if no compact form
     /// was recorded. Returns whether a swap happened.
     pub fn apply_compact(&mut self) -> bool {
@@ -153,17 +138,17 @@ impl Segment {
         self.compact.is_some()
     }
 
-    pub fn push_plain(&mut self, text: impl Into<CompactString>) -> &mut Self {
+    pub fn append_plain(&mut self, text: impl Into<CompactString>) -> &mut Self {
         self.cells.push(Cell::plain(text));
         self
     }
 
-    pub fn push_styled(&mut self, text: impl Into<CompactString>, style: Style) -> &mut Self {
+    pub fn append_styled(&mut self, text: impl Into<CompactString>, style: Style) -> &mut Self {
         self.cells.push(Cell::new(text, style));
         self
     }
 
-    pub fn push_linked(
+    pub fn append_linked(
         &mut self,
         text: impl Into<CompactString>,
         style: Style,
@@ -171,6 +156,40 @@ impl Segment {
     ) -> &mut Self {
         self.cells.push(Cell::linked(text, style, url));
         self
+    }
+
+    pub fn plain(mut self, text: impl Into<CompactString>) -> Self {
+        self.append_plain(text);
+        self
+    }
+
+    pub fn styled(mut self, text: impl Into<CompactString>, style: Style) -> Self {
+        self.append_styled(text, style);
+        self
+    }
+
+    pub fn linked(
+        mut self,
+        text: impl Into<CompactString>,
+        style: Style,
+        url: impl Into<CompactString>,
+    ) -> Self {
+        self.append_linked(text, style, url);
+        self
+    }
+
+    pub fn compact(mut self) -> Self {
+        self.compact = Some(self.cells.clone());
+        self
+    }
+
+    pub fn with_compact(mut self, cells: Vec<Cell>) -> Self {
+        self.compact = Some(cells);
+        self
+    }
+
+    pub const fn some(self) -> Option<Self> {
+        Some(self)
     }
 
     #[must_use]
@@ -218,8 +237,8 @@ mod tests {
     #[test]
     fn segment_width_sums_cells() {
         let mut s = Segment::droppable();
-        s.push_plain("ab");
-        s.push_plain("cde");
+        s.append_plain("ab");
+        s.append_plain("cde");
         assert_eq!(s.width(), 5);
     }
 }

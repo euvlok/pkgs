@@ -7,6 +7,8 @@
 //!
 //! Default is `emoji` — universally available and requires no font setup.
 
+use std::borrow::Cow;
+
 use clap::ValueEnum;
 use nerd_font_symbols::{
     dev::{DEV_GIT_COMPARE, DEV_GIT_MERGE},
@@ -33,7 +35,7 @@ pub enum IconSet {
 
 #[derive(Debug, Clone)]
 pub struct Icons {
-    pub sep: &'static str,
+    pub sep: Cow<'static, str>,
     /// Prefix glyph for the git VCS segment.
     pub git: &'static str,
     /// Prefix glyph for the jj VCS segment. Distinct from `git` so the
@@ -56,7 +58,7 @@ pub struct Icons {
 }
 
 pub const NERD: Icons = Icons {
-    sep: "│",
+    sep: Cow::Borrowed("│"),
     git: PL_BRANCH,
     jj: FA_CODE_BRANCH,
     ahead: FA_ARROW_UP,
@@ -76,7 +78,7 @@ pub const NERD: Icons = Icons {
 };
 
 pub const EMOJI: Icons = Icons {
-    sep: "│",
+    sep: Cow::Borrowed("│"),
     git: "🌿",
     jj: "🌱",
     ahead: "⬆️",
@@ -96,7 +98,7 @@ pub const EMOJI: Icons = Icons {
 };
 
 pub const TEXT: Icons = Icons {
-    sep: "│",
+    sep: Cow::Borrowed("│"),
     // Tiny letter-prefixes so jj and git are distinguishable in plain
     // text mode without leaning on color alone.
     git: "git",
@@ -136,7 +138,7 @@ mod tests {
     #[test]
     fn separators_are_single_column_in_every_icon_set() {
         for icons in [&NERD, &EMOJI, &TEXT] {
-            assert_eq!(UnicodeWidthStr::width(icons.sep), 1);
+            assert_eq!(UnicodeWidthStr::width(icons.sep.as_ref()), 1);
         }
     }
 

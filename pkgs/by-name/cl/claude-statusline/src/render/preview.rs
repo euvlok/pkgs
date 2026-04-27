@@ -105,12 +105,13 @@ fn now_plus_secs(secs: i64) -> i64 {
 }
 
 fn sample_vcs(icons: &Icons, pal: &Palette) -> Segment {
-    let mut s = Segment::droppable();
-    if !icons.git.is_empty() {
-        s.push_plain(format!("{} ", icons.git));
-    }
-    s.push_styled("main", pal.magenta);
-    s.push_plain(" ");
-    s.push_styled(icons.dirty.to_string(), pal.yellow);
-    s
+    let s = Segment::droppable();
+    let s = if icons.git.is_empty() {
+        s
+    } else {
+        s.plain(format!("{} ", icons.git))
+    };
+    s.styled("main", pal.magenta)
+        .plain(" ")
+        .styled(icons.dirty.to_string(), pal.yellow)
 }

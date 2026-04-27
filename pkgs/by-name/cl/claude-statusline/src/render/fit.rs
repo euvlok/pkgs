@@ -223,31 +223,25 @@ mod tests {
     use crate::render::segment::Segment;
 
     fn anchor(text: &str) -> Segment {
-        let mut s = Segment::anchor();
-        s.push_plain(text.to_string());
-        s
+        Segment::anchor().plain(text.to_string())
     }
 
     fn droppable(text: &str) -> Segment {
-        let mut s = Segment::droppable();
-        s.push_plain(text.to_string());
-        s
+        Segment::droppable().plain(text.to_string())
     }
 
     fn droppable_with_compact(full: &str, compact: &str) -> Segment {
         use crate::render::segment::Cell;
-        let mut s = Segment::droppable();
-        s.push_plain(full.to_string());
-        s.set_compact(vec![Cell::plain(compact.to_string())]);
-        s
+        Segment::droppable()
+            .plain(full.to_string())
+            .with_compact(vec![Cell::plain(compact.to_string())])
     }
 
     fn anchor_with_compact(full: &str, compact: &str) -> Segment {
         use crate::render::segment::Cell;
-        let mut s = Segment::anchor();
-        s.push_plain(full.to_string());
-        s.set_compact(vec![Cell::plain(compact.to_string())]);
-        s
+        Segment::anchor()
+            .plain(full.to_string())
+            .with_compact(vec![Cell::plain(compact.to_string())])
     }
 
     #[test]

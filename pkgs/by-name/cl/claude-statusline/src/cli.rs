@@ -8,27 +8,16 @@
 
 use std::path::PathBuf;
 
-use clap::{Parser, ValueEnum};
+use clap::{Args, Parser, ValueEnum};
 
 use crate::pace::{PaceGlyphs, PaceSettings};
 use crate::render::icons::IconSet;
+use crate::render::layout::SegmentName;
 use crate::settings::{ContextFormat, DirStyle, Settings};
 use crate::theme::ThemeMode;
 
 const LONG_ABOUT: &str = "\
 Fast Claude Code / Codex statusline (gix + jj-lib).
-
-Segments:
-  dir          working directory basename (anchor)
-  vcs          git/jj branch + status            (alias: git, jj)
-  model        agent model display name
-  diff         lines added / removed             (alias: lines)
-  context      context-window usage              (alias: ctx)
-  rate_limits  5h / 7d quota                     (alias: rates)
-  clock        session elapsed time              (alias: time, elapsed)
-  speed        token throughput (tok/s)          (alias: tps, throughput)
-  cache        prompt cache hit ratio
-  pace         5h burn-rate projection           (alias: burn)
 
 Layout DSL:
   Comma `,` separates segments inside a line.
@@ -68,6 +57,22 @@ Other examples:
 Config file (same DSL, `#` comments allowed):
   $XDG_CONFIG_HOME/claude-statusline/layout";
 
+pub fn segment_help() -> String {
+    use std::fmt::Write as _;
+
+    let mut out = String::from("Segments:\n");
+    for name in SegmentName::ALL {
+        let spec = name.spec();
+        let _ = write!(out, "  {:<12} {}", spec.name, spec.help);
+        if !spec.aliases.is_empty() {
+            let _ = write!(out, " (alias: {})", spec.aliases.join(", "));
+        }
+        out.push('\n');
+    }
+    out.push('\n');
+    out
+}
+
 #[derive(Parser, Debug)]
 #[command(
     version,
@@ -78,6 +83,21 @@ Config file (same DSL, `#` comments allowed):
     max_term_width = 100,
 )]
 pub struct Cli {
+    #[command(flatten)]
+    pub layout: LayoutArgs,
+
+    #[command(flatten)]
+    pub display: DisplayArgs,
+
+    #[command(flatten)]
+    pub shell: ShellArgs,
+
+    #[command(flatten)]
+    pub pace: PaceArgs,
+}
+
+#[derive(Args, Debug)]
+pub struct LayoutArgs {
     /// Layout DSL: `dir,vcs,model | diff,context,rates`
     #[arg(
         short = 'l',
@@ -122,7 +142,10 @@ pub struct Cli {
         action = clap::ArgAction::SetTrue,
     )]
     pub no_align: bool,
+}
 
+#[derive(Args, Debug)]
+pub struct DisplayArgs {
     /// When to emit ANSI color escapes
     #[arg(
         long,
@@ -197,15 +220,6 @@ pub struct Cli {
     )]
     pub seven_day_threshold: u32,
 
-    /// Print shell completions to stdout and exit
-    #[arg(
-        long,
-        value_enum,
-        value_name = "SHELL",
-        help_heading = "Shell integration"
-    )]
-    pub completions: Option<Shell>,
-
     /// Wrap the dir segment in an OSC 8 hyperlink (`auto` = on if stdout
     /// is a tty)
     #[arg(
@@ -232,6 +246,18 @@ pub struct Cli {
         hide_default_value = true,
     )]
     pub theme: ThemeMode,
+}
+
+#[derive(Args, Debug)]
+pub struct ShellArgs {
+    /// Print shell completions to stdout and exit
+    #[arg(
+        long,
+        value_enum,
+        value_name = "SHELL",
+        help_heading = "Shell integration"
+    )]
+    pub completions: Option<Shell>,
 
     /// Render the resolved layout against sample data and exit
     #[arg(
@@ -248,7 +274,10 @@ pub struct Cli {
         help_heading = "Shell integration"
     )]
     pub input_json: Option<String>,
+}
 
+#[derive(Args, Debug)]
+pub struct PaceArgs {
     /// Pace segment glyph set (default: emoji)
     #[arg(
         long = "pace-glyphs",
@@ -327,27 +356,27 @@ impl Cli {
     /// `render()` never has to know about clap.
     pub const fn to_pace_settings(&self) -> PaceSettings {
         PaceSettings {
-            lookback_mins: self.pace_lookback_mins,
-            cool_below: self.pace_cool_below,
-            hot_above: self.pace_hot_above,
-            warmup_mins: self.pace_warmup_mins,
-            glyphs: self.pace_glyphs,
-            debug: self.pace_debug,
+            lookback_mins: self.pace.pace_lookback_mins,
+            cool_below: self.pace.pace_cool_below,
+            hot_above: self.pace.pace_hot_above,
+            warmup_mins: self.pace.pace_warmup_mins,
+            glyphs: self.pace.pace_glyphs,
+            debug: self.pace.pace_debug,
         }
     }
 
     pub fn to_settings(&self) -> Settings {
         use std::io::IsTerminal as _;
-        let hyperlinks = match self.hyperlinks {
+        let hyperlinks = match self.display.hyperlinks {
             HyperlinksMode::Always => true,
             HyperlinksMode::Never => false,
             HyperlinksMode::Auto => std::io::stdout().is_terminal(),
         };
         Settings {
-            align: !self.no_align,
-            dir_style: self.dir,
-            context_format: self.context_format,
-            seven_day_threshold: self.seven_day_threshold,
+            align: !self.layout.no_align,
+            dir_style: self.display.dir,
+            context_format: self.display.context_format,
+            seven_day_threshold: self.display.seven_day_threshold,
             hyperlinks,
         }
     }

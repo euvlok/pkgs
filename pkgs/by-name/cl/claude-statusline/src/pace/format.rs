@@ -29,12 +29,8 @@ pub const MAX_DISPLAYED_PCT: u32 = 999;
 
 #[must_use]
 pub fn render(proj: &Projection, glyphs: &GlyphSet, pal: &Palette) -> Segment {
-    let mut s = Segment::droppable();
     match proj.state {
-        PaceState::ColdStart => {
-            push_glyph(&mut s, glyphs.cold_start, pal.dim);
-            s.push_styled("warming", pal.dim);
-        }
+        PaceState::ColdStart => glyph_segment(glyphs.cold_start, "warming", pal.dim),
         state => {
             let (glyph, style) = match state {
                 PaceState::Cool => (glyphs.cool, pal.cyan),
@@ -42,16 +38,21 @@ pub fn render(proj: &Projection, glyphs: &GlyphSet, pal: &Palette) -> Segment {
                 PaceState::TooHot => (glyphs.too_hot, pal.red),
                 PaceState::ColdStart => unreachable!(),
             };
-            push_glyph(&mut s, glyph, style);
-            s.push_styled(body_text(proj), style);
+            glyph_segment(glyph, body_text(proj), style)
         }
     }
-    s
 }
 
-fn push_glyph(s: &mut Segment, glyph: &str, style: anstyle::Style) {
-    if !glyph.is_empty() {
-        s.push_styled(format!("{glyph} "), style);
+fn glyph_segment(
+    glyph: &str,
+    body: impl Into<compact_str::CompactString>,
+    style: anstyle::Style,
+) -> Segment {
+    let s = Segment::droppable();
+    if glyph.is_empty() {
+        s.styled(body, style)
+    } else {
+        s.styled(format!("{glyph} "), style).styled(body, style)
     }
 }
 

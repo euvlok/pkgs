@@ -135,6 +135,27 @@ pub struct Cost {
 }
 
 impl Input {
+    fn codex(
+        cwd: Option<String>,
+        session_id: Option<String>,
+        transcript_path: Option<String>,
+        model: Option<String>,
+    ) -> Self {
+        Self {
+            source: InputSource::Codex,
+            workspace: Workspace {
+                current_dir: cwd.clone(),
+            },
+            cwd,
+            transcript_path,
+            session_id,
+            model: Model {
+                display_name: model,
+            },
+            ..Self::default()
+        }
+    }
+
     /// First non-empty path field, ignoring `Some("")` which Claude Code
     /// occasionally emits during early hook events. Codex hook payloads are
     /// normalized into the same fields so they follow the same fallback path.
@@ -153,8 +174,7 @@ impl Input {
             return p.to_string();
         }
         std::env::current_dir()
-            .map(|p| p.to_string_lossy().into_owned())
-            .unwrap_or_else(|_| ".".to_string())
+            .map_or_else(|_| ".".to_string(), |p| p.to_string_lossy().into_owned())
     }
 
     /// Display name for the directory segment (last path component).
@@ -174,8 +194,7 @@ impl Input {
             return p.to_string();
         }
         std::env::current_dir()
-            .map(|p| p.to_string_lossy().into_owned())
-            .unwrap_or_else(|_| ".".to_string())
+            .map_or_else(|_| ".".to_string(), |p| p.to_string_lossy().into_owned())
     }
 
     /// Full path with the user's home directory collapsed to `~`.
@@ -257,32 +276,19 @@ struct CodexHookInput {
     // Required so untagged dispatch only matches recognized Codex hooks.
     #[serde(rename = "hook_event_name")]
     _hook_event_name: CodexHookEvent,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "nonempty_opt")]
     session_id: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "nonempty_opt")]
     transcript_path: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "nonempty_opt")]
     cwd: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "nonempty_opt")]
     model: Option<String>,
 }
 
 impl From<CodexHookInput> for Input {
     fn from(v: CodexHookInput) -> Self {
-        let cwd = nonempty(v.cwd);
-        Self {
-            source: InputSource::Codex,
-            workspace: Workspace {
-                current_dir: cwd.clone(),
-            },
-            cwd,
-            transcript_path: nonempty(v.transcript_path),
-            session_id: nonempty(v.session_id),
-            model: Model {
-                display_name: nonempty(v.model),
-            },
-            ..Self::default()
-        }
+        Self::codex(v.cwd, v.session_id, v.transcript_path, v.model)
     }
 }
 
@@ -297,25 +303,23 @@ enum CodexNotifyKind {
 struct CodexNotifyInput {
     #[serde(rename = "type")]
     _kind: CodexNotifyKind,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "nonempty_opt")]
     cwd: Option<String>,
-    #[serde(default, rename = "thread-id")]
+    #[serde(default, rename = "thread-id", deserialize_with = "nonempty_opt")]
     thread_id: Option<String>,
 }
 
 impl From<CodexNotifyInput> for Input {
     fn from(v: CodexNotifyInput) -> Self {
-        let cwd = nonempty(v.cwd);
-        Self {
-            source: InputSource::Codex,
-            workspace: Workspace {
-                current_dir: cwd.clone(),
-            },
-            cwd,
-            session_id: nonempty(v.thread_id),
-            ..Self::default()
-        }
+        Self::codex(v.cwd, v.thread_id, None, None)
     }
+}
+
+fn nonempty_opt<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Option::<String>::deserialize(deserializer).map(nonempty)
 }
 
 fn nonempty(value: Option<String>) -> Option<String> {

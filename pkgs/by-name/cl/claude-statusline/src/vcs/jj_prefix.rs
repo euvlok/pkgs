@@ -57,50 +57,10 @@ use jj_lib::settings::UserSettings;
 use jj_lib::workspace::Workspace;
 use serde::{Deserialize, Serialize};
 
-/// Bundled jj-cli `revsets.toml` defaults. jj-lib's
-/// `StackedConfig::with_defaults` only loads jj-lib's own defaults; the alias
-/// map (`trunk()`, `immutable_heads()`, `mutable()`,
-/// `builtin_immutable_heads()`) and the default `revsets.log` value live in
-/// jj-cli's bundled `cli/src/config/revsets.toml`. Without these the
-/// `revsets.short-prefixes` fallback chain can't even parse, let alone
-/// evaluate.
-///
-/// Mirrored verbatim from upstream jj at
-/// `cli/src/config/revsets.toml`. If jj's defaults shift in a future
-/// release, the worst case is that our prefixes drift back to the
-/// "all visible heads" baseline - same as before this module existed —
-/// not a hard failure.
-const JJ_CLI_DEFAULT_REVSETS_TOML: &str = r#"
-[revsets]
-arrange = "reachable(@, mutable())"
-fix = "reachable(@, mutable())"
-simplify-parents = "reachable(@, mutable())"
-log = "present(@) | ancestors(immutable_heads().., 2) | trunk()"
-log-graph-prioritize = "present(@)"
-op-diff-changes-in = "mutable() | immutable_heads()"
-sign = "reachable(@, mutable())"
-bookmark-advance-to = "@"
-bookmark-advance-from = "heads(::to & bookmarks())"
-
-[revset-aliases]
-'trunk()' = '''
-latest(
-  remote_bookmarks(exact:"main", exact:"origin") |
-  remote_bookmarks(exact:"master", exact:"origin") |
-  remote_bookmarks(exact:"trunk", exact:"origin") |
-  remote_bookmarks(exact:"main", exact:"upstream") |
-  remote_bookmarks(exact:"master", exact:"upstream") |
-  remote_bookmarks(exact:"trunk", exact:"upstream") |
-  root()
-)
-'''
-'builtin_immutable_heads()' = 'trunk() | tags() | untracked_remote_bookmarks()'
-'immutable_heads()' = 'builtin_immutable_heads()'
-'immutable()' = '::(immutable_heads() | root())'
-'mutable()' = '~immutable()'
-'visible()' = '::visible_heads()'
-'hidden()' = '~visible()'
-"#;
+/// Bundled jj-cli `revsets.toml` defaults. jj-lib's own defaults omit
+/// jj-cli aliases such as `trunk()` and `immutable_heads()`, so we layer
+/// this file in before user and repo config.
+const JJ_CLI_DEFAULT_REVSETS_TOML: &str = include_str!("jj_default_revsets.toml");
 
 /// Top-level entry point.
 ///

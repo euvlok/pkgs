@@ -34,24 +34,24 @@ pub fn collect(dir: &Path, icons: &Icons, pal: &Palette) -> Option<Segment> {
     let short_hash = head_id.as_ref().map(|id| id.to_hex_with_len(7).to_string());
 
     if !icons.git.is_empty() {
-        s.push_plain(format!("{} ", icons.git));
+        s.append_plain(format!("{} ", icons.git));
     }
 
     match (branch_name.as_deref(), short_hash.as_deref()) {
         (Some(b), Some(h)) => {
-            s.push_styled(b, pal.magenta);
-            s.push_plain(" ");
-            s.push_styled(h, pal.dim);
+            s.append_styled(b, pal.magenta);
+            s.append_plain(" ");
+            s.append_styled(h, pal.dim);
         }
         (Some(b), None) => {
-            s.push_styled(b, pal.magenta);
-            s.push_plain(" ");
-            s.push_styled("(no commits)", pal.dim);
+            s.append_styled(b, pal.magenta);
+            s.append_plain(" ");
+            s.append_styled("(no commits)", pal.dim);
         }
         (None, Some(h)) => {
-            s.push_styled("(detached)", pal.yellow);
-            s.push_plain(" ");
-            s.push_styled(h, pal.dim);
+            s.append_styled("(detached)", pal.yellow);
+            s.append_plain(" ");
+            s.append_styled(h, pal.dim);
         }
         (None, None) => {}
     }
@@ -66,12 +66,12 @@ pub fn collect(dir: &Path, icons: &Icons, pal: &Palette) -> Option<Segment> {
     .filter(|(_, n)| *n > 0)
     .peekable();
     if arrows.peek().is_some() {
-        s.push_plain(" ");
+        s.append_plain(" ");
         for (i, (icon, n)) in arrows.enumerate() {
             if i > 0 {
-                s.push_plain(" ");
+                s.append_plain(" ");
             }
-            s.push_styled(format!("{icon}{n}"), pal.cyan);
+            s.append_styled(format!("{icon}{n}"), pal.cyan);
         }
     }
 
@@ -91,8 +91,8 @@ pub fn collect(dir: &Path, icons: &Icons, pal: &Palette) -> Option<Segment> {
             Bisect => Some(format!("{} bisect", icons.bisect)),
         };
         if let Some(l) = label {
-            s.push_plain(" ");
-            s.push_styled(l, pal.red);
+            s.append_plain(" ");
+            s.append_styled(l, pal.red);
         }
     }
 
@@ -100,32 +100,32 @@ pub fn collect(dir: &Path, icons: &Icons, pal: &Palette) -> Option<Segment> {
     match compute_status(&repo) {
         Some(status) => {
             if status.staged {
-                s.push_plain(" ");
-                s.push_styled(icons.staged, pal.green);
+                s.append_plain(" ");
+                s.append_styled(icons.staged, pal.green);
             }
             if status.unstaged {
-                s.push_plain(" ");
-                s.push_styled(icons.dirty, pal.yellow);
+                s.append_plain(" ");
+                s.append_styled(icons.dirty, pal.yellow);
             } else if !status.staged && !status.untracked {
-                s.push_plain(" ");
-                s.push_styled(icons.clean, pal.green);
+                s.append_plain(" ");
+                s.append_styled(icons.clean, pal.green);
             }
             if status.untracked {
-                s.push_plain(" ");
-                s.push_styled(icons.untracked, pal.dim);
+                s.append_plain(" ");
+                s.append_styled(icons.untracked, pal.dim);
             }
         }
         None => {
-            s.push_plain(" ");
-            s.push_styled(icons.untracked, pal.dim);
+            s.append_plain(" ");
+            s.append_styled(icons.untracked, pal.dim);
         }
     }
 
     // Stash count (read .git/logs/refs/stash).
     let stash_count = count_stash(&repo);
     if stash_count > 0 {
-        s.push_plain(" ");
-        s.push_styled(format!("{}{stash_count}", icons.stash), pal.dim);
+        s.append_plain(" ");
+        s.append_styled(format!("{}{stash_count}", icons.stash), pal.dim);
     }
 
     if s.is_empty() { None } else { Some(s) }

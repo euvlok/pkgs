@@ -65,7 +65,82 @@ pub enum SegmentName {
     Pace,
 }
 
+#[derive(Debug, Copy, Clone)]
+pub struct SegmentSpec {
+    pub name: &'static str,
+    pub aliases: &'static [&'static str],
+    pub help: &'static str,
+}
+
 impl SegmentName {
+    pub const ALL: [Self; 10] = [
+        Self::Dir,
+        Self::Vcs,
+        Self::Model,
+        Self::Diff,
+        Self::Context,
+        Self::RateLimits,
+        Self::Clock,
+        Self::Speed,
+        Self::Cache,
+        Self::Pace,
+    ];
+
+    pub const fn spec(self) -> SegmentSpec {
+        match self {
+            Self::Dir => SegmentSpec {
+                name: "dir",
+                aliases: &[],
+                help: "working directory basename (anchor)",
+            },
+            Self::Vcs => SegmentSpec {
+                name: "vcs",
+                aliases: &["git", "jj"],
+                help: "git/jj branch + status",
+            },
+            Self::Model => SegmentSpec {
+                name: "model",
+                aliases: &[],
+                help: "agent model display name",
+            },
+            Self::Diff => SegmentSpec {
+                name: "diff",
+                aliases: &["lines"],
+                help: "lines added / removed",
+            },
+            Self::Context => SegmentSpec {
+                name: "context",
+                aliases: &["ctx"],
+                help: "context-window usage",
+            },
+            Self::RateLimits => SegmentSpec {
+                name: "rate_limits",
+                aliases: &["rate-limits", "rates", "limits"],
+                help: "5h / 7d quota",
+            },
+            Self::Clock => SegmentSpec {
+                name: "clock",
+                aliases: &["time", "elapsed"],
+                help: "session elapsed time",
+            },
+            Self::Speed => SegmentSpec {
+                name: "speed",
+                aliases: &["tps", "throughput"],
+                help: "token throughput (tok/s)",
+            },
+            Self::Cache => SegmentSpec {
+                name: "cache",
+                aliases: &[],
+                help: "prompt cache hit ratio",
+            },
+            Self::Pace => SegmentSpec {
+                name: "pace",
+                aliases: &["burn"],
+                help: "5h burn-rate projection",
+            },
+        }
+    }
+
     /// Parse a segment name from user input (trimmed). Returns `None`
     /// for unrecognised names.
     #[must_use]

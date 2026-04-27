@@ -39,7 +39,7 @@ pub fn collect(dir: &Path, icons: &Icons, pal: &Palette) -> Option<Segment> {
 
     let mut s = Segment::droppable();
     if !icons.jj.is_empty() {
-        s.push_plain(format!("{} ", icons.jj));
+        s.append_plain(format!("{} ", icons.jj));
     }
 
     // Bookmark on @ takes precedence visually
@@ -56,24 +56,24 @@ pub fn collect(dir: &Path, icons: &Icons, pal: &Palette) -> Option<Segment> {
         .min(full_hex.len())
         .max(1);
     let head: String = full_hex.chars().take(prefix_len).collect();
-    s.push_styled(head, pal.cyan);
+    s.append_styled(head, pal.cyan);
 
     if let Some(b) = bookmark {
-        s.push_plain(" ");
-        s.push_styled(format!("({b})"), pal.magenta);
+        s.append_plain(" ");
+        s.append_styled(format!("({b})"), pal.magenta);
     }
 
     // Dirty indicator
-    s.push_plain(" ");
+    s.append_plain(" ");
     match working_copy_dirty(&workspace) {
-        Some(true) => s.push_styled(icons.dirty, pal.yellow),
-        Some(false) => s.push_styled(icons.clean, pal.green),
-        None => s.push_styled(icons.untracked, pal.dim),
+        Some(true) => s.append_styled(icons.dirty, pal.yellow),
+        Some(false) => s.append_styled(icons.clean, pal.green),
+        None => s.append_styled(icons.untracked, pal.dim),
     };
 
     if commit.has_conflict() {
-        s.push_plain(" ");
-        s.push_styled(format!("{} conflict", icons.conflict), pal.red);
+        s.append_plain(" ");
+        s.append_styled(format!("{} conflict", icons.conflict), pal.red);
     }
 
     Some(s)

@@ -13,7 +13,6 @@ use crate::render::segment::{Cell, Segment};
 use crate::settings::{ContextFormat, DirStyle, Settings};
 
 pub fn dir(input: &Input, settings: &Settings) -> Segment {
-    let mut s = Segment::anchor();
     let text = match settings.dir_style {
         DirStyle::Basename => input.dir_name(),
         DirStyle::Full => input.dir_full(),
@@ -21,18 +20,11 @@ pub fn dir(input: &Input, settings: &Settings) -> Segment {
     };
     match (settings.hyperlinks, input.workspace.current_dir.as_deref()) {
         (true, Some(full_path)) => match file_url(full_path) {
-            Some(url) => {
-                s.push_linked(text, anstyle::Style::new(), url);
-            }
-            None => {
-                s.push_plain(text);
-            }
+            Some(url) => Segment::anchor().linked(text, anstyle::Style::new(), url),
+            None => Segment::anchor().plain(text),
         },
-        _ => {
-            s.push_plain(text);
-        }
+        _ => Segment::anchor().plain(text),
     }
-    s
 }
 
 fn file_url(path: &str) -> Option<String> {
@@ -45,9 +37,7 @@ pub fn model(input: &Input, _icons: &Icons, pal: &Palette) -> Option<Segment> {
     if short.is_empty() {
         return None;
     }
-    let mut s = Segment::droppable();
-    s.push_styled(short, pal.blue);
-    Some(s)
+    Segment::droppable().styled(short, pal.blue).some()
 }
 
 pub fn diff(input: &Input, pal: &Palette) -> Option<Segment> {
@@ -56,50 +46,77 @@ pub fn diff(input: &Input, pal: &Palette) -> Option<Segment> {
     if added == 0 && removed == 0 {
         return None;
     }
-    let mut s = Segment::droppable();
-    s.push_styled(format!("+{added}"), pal.green);
-    s.push_plain(" ");
-    s.push_styled(format!("-{removed}"), pal.red);
-    Some(s)
+    Segment::droppable()
+        .styled(format!("+{added}"), pal.green)
+        .plain(" ")
+        .styled(format!("-{removed}"), pal.red)
+        .some()
 }
 
 pub fn context(input: &Input, settings: &Settings, pal: &Palette) -> Option<Segment> {
-    let used = input.context_window.used_percentage?;
-    let pct = used.round() as i64;
-    if pct < 0 {
-        return None;
-    }
-    let pct = pct as u32;
-    let cur_tokens = input.context_window.current_usage.total();
-    let max_tokens = input.context_window.context_window_size.unwrap_or(0);
-    let have_tokens = cur_tokens > 0 && max_tokens > 0;
-    let style = if have_tokens {
-        pal.color_for_token_count(cur_tokens)
-    } else {
-        pal.color_for_pct(pct, 50, 75)
-    };
+    ContextView::new(input, *settings, pal).map(Into::into)
+}
 
-    let text = match (have_tokens, settings.context_format) {
-        (true, ContextFormat::Auto | ContextFormat::Tokens) => {
-            format!(
-                "{}/{}",
-                humanize_tokens(cur_tokens),
-                humanize_tokens(max_tokens)
-            )
+struct ContextView {
+    text: String,
+    style: anstyle::Style,
+    output_tail: Option<String>,
+    tail_style: anstyle::Style,
+}
+
+impl ContextView {
+    fn new(input: &Input, settings: Settings, pal: &Palette) -> Option<Self> {
+        let used = input.context_window.used_percentage?;
+        let pct = used.round() as i64;
+        if pct < 0 {
+            return None;
         }
-        _ => format!("{pct}%"),
-    };
-    let mut s = Segment::droppable();
-    s.push_styled(text, style);
-    let out_tokens = input.context_window.current_usage.output_tokens;
-    if out_tokens > 0 {
-        // Snapshot the essentials before tacking on the `(N out)` tail,
-        // so the fit pass can fall back to the compact form on narrow
-        // terminals instead of dropping the segment outright.
-        s.mark_compact();
-        s.push_styled(format!(" ({} out)", humanize_tokens(out_tokens)), pal.dim);
+        let pct = pct as u32;
+        let cur_tokens = input.context_window.current_usage.total();
+        let max_tokens = input.context_window.context_window_size.unwrap_or(0);
+        let have_tokens = cur_tokens > 0 && max_tokens > 0;
+        let style = if have_tokens {
+            pal.color_for_token_count(cur_tokens)
+        } else {
+            pal.color_for_pct(pct, 50, 75)
+        };
+
+        let text = match (have_tokens, settings.context_format) {
+            (true, ContextFormat::Auto | ContextFormat::Tokens) => {
+                format!(
+                    "{}/{}",
+                    humanize_tokens(cur_tokens),
+                    humanize_tokens(max_tokens)
+                )
+            }
+            _ => format!("{pct}%"),
+        };
+
+        let output_tail = (input.context_window.current_usage.output_tokens > 0).then(|| {
+            format!(
+                " ({} out)",
+                humanize_tokens(input.context_window.current_usage.output_tokens)
+            )
+        });
+
+        Some(Self {
+            text,
+            style,
+            output_tail,
+            tail_style: pal.dim,
+        })
     }
-    Some(s)
+}
+
+impl From<ContextView> for Segment {
+    fn from(view: ContextView) -> Self {
+        let mut s = Self::droppable().styled(view.text, view.style);
+        if let Some(tail) = view.output_tail {
+            s = s.compact();
+            s.append_styled(tail, view.tail_style);
+        }
+        s
+    }
 }
 
 pub fn clock(input: &Input, icons: &Icons, pal: &Palette) -> Option<Segment> {
@@ -114,17 +131,17 @@ pub fn clock(input: &Input, icons: &Icons, pal: &Palette) -> Option<Segment> {
     }
     let mut s = Segment::droppable();
     if !icons.clock.is_empty() {
-        s.push_plain(format!("{} ", icons.clock));
+        s.append_plain(format!("{} ", icons.clock));
     }
-    s.push_styled(&dur, pal.dim);
+    s.append_styled(&dur, pal.dim);
     if let Some(api_ms) = input.cost.total_api_duration_ms
         && api_ms > 0
     {
         #[expect(clippy::cast_possible_wrap)]
         let wait = humanize_duration((api_ms / 1000) as i64);
         if !wait.is_empty() && wait != dur {
-            s.mark_compact();
-            s.push_styled(format!(" (chat {wait})"), pal.dim);
+            s = s.compact();
+            s.append_styled(format!(" (chat {wait})"), pal.dim);
         }
     }
     Some(s)
@@ -138,13 +155,11 @@ pub fn speed(input: &Input, pal: &Palette) -> Option<Segment> {
     }
     let secs = api_ms as f64 / 1000.0;
     let tps = tokens as f64 / secs;
-    let mut s = Segment::droppable();
     let text = match tps {
         t if t >= 1000.0 => format!("{:.1}k tok/s", t / 1000.0),
         _ => format!("{tps:.0} tok/s"),
     };
-    s.push_styled(text, pal.cyan);
-    Some(s)
+    Segment::droppable().styled(text, pal.cyan).some()
 }
 
 pub fn cache(input: &Input, pal: &Palette) -> Option<Segment> {
@@ -158,9 +173,9 @@ pub fn cache(input: &Input, pal: &Palette) -> Option<Segment> {
         40.. => pal.yellow,
         _ => pal.red,
     };
-    let mut s = Segment::droppable();
-    s.push_styled(format!("cache {pct}%"), style);
-    Some(s)
+    Segment::droppable()
+        .styled(format!("cache {pct}%"), style)
+        .some()
 }
 
 pub fn pace(
@@ -236,13 +251,13 @@ pub fn rate_limits(
             && let (Some(now), Some(reset)) = (now, slot.resets_at)
             && reset - now > 0
         {
-            s.push_plain(" ");
-            s.push_styled(humanize_duration(reset - now), pal.dim);
+            s.append_plain(" ");
+            s.append_styled(humanize_duration(reset - now), pal.dim);
             any_countdown = true;
         }
     }
     if any_countdown {
-        s.set_compact(compact);
+        s = s.with_compact(compact);
     }
     Some(s)
 }
