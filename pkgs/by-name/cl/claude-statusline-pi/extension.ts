@@ -22,6 +22,8 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import { type Component, truncateToWidth, type TUI } from "@mariozechner/pi-tui";
 
+type FooterComponent = Component & { schedule(): void; dispose(): void };
+
 const FLAG_COMMAND = "statusline-command";
 const FLAG_ARGS = "statusline-args";
 const DEFAULT_COMMAND = "claude-statusline";
@@ -85,7 +87,7 @@ function diffFromToolResult(event: ToolResultEvent): DiffStats {
 
 // Walk the active branch (not all entries) so usage doesn't double-count
 // abandoned messages after a rewind.
-function buildPayload(ctx: ExtensionContext, sessionStartedAtMs: number, state: StatuslineState): StatuslinePayload {
+function buildPayload(ctx: ExtensionContext, state: StatuslineState): StatuslinePayload {
 	const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 	for (const entry of ctx.sessionManager.getBranch()) {
 		if (entry.type !== "message" || entry.message.role !== "assistant") continue;
@@ -96,6 +98,7 @@ function buildPayload(ctx: ExtensionContext, sessionStartedAtMs: number, state: 
 		usage.cacheWrite += u.cacheWrite;
 	}
 	const ctxUsage = ctx.getContextUsage();
+	const startedAt = Date.parse(ctx.sessionManager.getHeader()?.timestamp ?? "");
 	return {
 		workspace: { current_dir: ctx.sessionManager.getCwd() },
 		model: { display_name: ctx.model?.name ?? ctx.model?.id ?? "no-model" },
@@ -110,7 +113,7 @@ function buildPayload(ctx: ExtensionContext, sessionStartedAtMs: number, state: 
 			},
 		},
 		cost: {
-			total_duration_ms: Math.max(0, Date.now() - sessionStartedAtMs),
+			total_duration_ms: Number.isFinite(startedAt) ? Math.max(0, Date.now() - startedAt) : undefined,
 			total_api_duration_ms: orUndef(state.apiDurationMs),
 			total_lines_added: orUndef(state.diff.added),
 			total_lines_removed: orUndef(state.diff.removed),
@@ -118,8 +121,6 @@ function buildPayload(ctx: ExtensionContext, sessionStartedAtMs: number, state: 
 		headers: state.headers,
 	};
 }
-
-type Footer = Component & { schedule(): void; dispose?(): void };
 
 // Built fresh per `session_start`; replaced on session change. Caches the
 // most recent statusline output and debounces subprocess runs.
@@ -129,16 +130,15 @@ function createStatuslineFooter(
 	tui: TUI,
 	theme: Theme,
 	footerData: ReadonlyFooterDataProvider,
-	sessionStartedAtMs: number,
 	state: StatuslineState,
-): Footer {
+): FooterComponent {
 	let cachedLines: string[] = [];
 	let lastError: string | undefined;
 	let lastRunAt = 0;
 	let pending: ReturnType<typeof setTimeout> | undefined;
 	let inflight: AbortController | undefined;
 
-	const flagStr = (k: string): string => {
+	const flag = (k: string): string => {
 		const v = pi.getFlag(k);
 		return typeof v === "string" ? v : "";
 	};
@@ -146,10 +146,9 @@ function createStatuslineFooter(
 	const refresh = async (): Promise<void> => {
 		inflight?.abort();
 		inflight = new AbortController();
-		const cmd = flagStr(FLAG_COMMAND) || process.env.PI_STATUSLINE_COMMAND || DEFAULT_COMMAND;
-		const argsStr = flagStr(FLAG_ARGS) || process.env.PI_STATUSLINE_ARGS || "";
-		const args = argsStr.split(/\s+/).filter(Boolean);
-		const payload = buildPayload(ctx, sessionStartedAtMs, state);
+		const cmd = flag(FLAG_COMMAND) || process.env.PI_STATUSLINE_COMMAND || DEFAULT_COMMAND;
+		const args = (flag(FLAG_ARGS) || process.env.PI_STATUSLINE_ARGS || "").split(/\s+/).filter(Boolean);
+		const payload = buildPayload(ctx, state);
 		const result = await pi.exec(cmd, [...args, "--input-json", JSON.stringify(payload)], {
 			signal: inflight.signal,
 			timeout: SPAWN_TIMEOUT_MS,
@@ -213,7 +212,7 @@ export default function claudeStatuslineExtension(pi: ExtensionAPI): void {
 		description: "Extra args (space-separated) forwarded to the statusline command",
 	});
 
-	let activeFooter: Footer | undefined;
+	let activeFooter: FooterComponent | undefined;
 	const state: StatuslineState = { headers: undefined, diff: zeroDiff(), apiDurationMs: 0 };
 	let requestStartedAt: number | undefined;
 	const reschedule = (): void => activeFooter?.schedule();
@@ -234,7 +233,8 @@ export default function claudeStatuslineExtension(pi: ExtensionAPI): void {
 	pi.on("tool_result", (event) => {
 		const d = diffFromToolResult(event);
 		if (!d.added && !d.removed) return;
-		state.diff = { added: state.diff.added + d.added, removed: state.diff.removed + d.removed };
+		state.diff.added += d.added;
+		state.diff.removed += d.removed;
 		reschedule();
 	});
 	pi.on("message_end", reschedule);
@@ -243,11 +243,12 @@ export default function claudeStatuslineExtension(pi: ExtensionAPI): void {
 
 	pi.on("session_start", (_event, ctx) => {
 		if (!ctx.hasUI) return;
-		Object.assign(state, { diff: zeroDiff(), apiDurationMs: 0, headers: undefined });
+		state.diff = zeroDiff();
+		state.apiDurationMs = 0;
+		state.headers = undefined;
 		requestStartedAt = undefined;
-		const sessionStartedAtMs = Date.now();
 		ctx.ui.setFooter((tui, theme, footerData) => {
-			activeFooter = createStatuslineFooter(pi, ctx, tui, theme, footerData, sessionStartedAtMs, state);
+			activeFooter = createStatuslineFooter(pi, ctx, tui, theme, footerData, state);
 			return activeFooter;
 		});
 	});
