@@ -118,3 +118,10 @@ harness = false
 [[bench]]
 name = "input"
 harness = false
+
+# Cold-start bench spawns the release binary on every iteration to measure
+# end-to-end wall time. Claude Code re-execs the statusline on every render,
+# so this is the metric that ships to users.
+[[bench]]
+name = "startup"
+harness = false
