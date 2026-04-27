@@ -79,6 +79,26 @@ fn spawn_full_payload() {
     assert!(status.success());
 }
 
+/// Same payload, but piped through stdin instead of `--input-json`. This
+/// is the path Claude Code itself takes, and exercises the JSON reader.
+#[divan::bench]
+fn spawn_stdin_payload() {
+    use std::io::Write as _;
+    let mut child = Command::new(BIN)
+        .args(["--color", "never"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn cs stdin");
+    {
+        let mut stdin = child.stdin.take().expect("child stdin");
+        stdin.write_all(PAYLOAD.as_bytes()).expect("write payload");
+    }
+    let status = child.wait().expect("wait cs stdin");
+    assert!(status.success());
+}
+
 /// Same payload, but force a layout DSL through the parser as well — closer
 /// to a configured user invocation.
 #[divan::bench]

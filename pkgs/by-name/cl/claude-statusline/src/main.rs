@@ -7,7 +7,7 @@
 //! directory name so the statusline is never blank.
 
 use std::fmt::Write as _;
-use std::io::{self, Write as _};
+use std::io::{self, Read as _, Write as _};
 
 use anstream::AutoStream;
 use clap::{CommandFactory, FromArgMatches};
@@ -72,8 +72,18 @@ fn main() {
         let input: Input = if let Some(json) = cli.input_json.as_deref() {
             serde_json::from_str(json).unwrap_or_default()
         } else {
-            let stdin = io::stdin().lock();
-            serde_json::from_reader(stdin).unwrap_or_default()
+            // serde_json::from_reader is ~2x slower than slurp-then-parse:
+            // it round-trips every byte through Read::read_buf and can't
+            // see the input length up front. Claude Code payloads are a
+            // few KB; cap at 1 MiB so a runaway producer can't OOM us.
+            const MAX_PAYLOAD: u64 = 1 << 20;
+            let mut buf = Vec::with_capacity(4096);
+            let stdin = io::stdin();
+            if stdin.lock().take(MAX_PAYLOAD).read_to_end(&mut buf).is_ok() {
+                serde_json::from_slice(&buf).unwrap_or_default()
+            } else {
+                Input::default()
+            }
         };
         let default_layout = match input.source {
             InputSource::Claude => Layout::two_line(),
