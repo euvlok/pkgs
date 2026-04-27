@@ -1,0 +1,11 @@
+[workspace]
+members = ["pkgs/by-name/cl/claude-statusline"]
+resolver = "3"
+
+# Cold start matters: Claude Code re-execs this binary on every statusline
+# refresh. `panic = "abort"` would be the biggest single win but main.rs
+# uses catch_unwind for the never-blank fallback, so it stays unwind.
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

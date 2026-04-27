@@ -1,10 +1,20 @@
 { rustPlatform, lib }:
 
+let
+  root = ../../../..;
+in
 rustPlatform.buildRustPackage {
   pname = "claude-statusline";
   version = "0.1.0";
-  src = ./.;
-  cargoLock.lockFile = ./Cargo.lock;
+  src = lib.fileset.toSource {
+    inherit root;
+    fileset = lib.fileset.unions [
+      (root + "/Cargo.lock")
+      (root + "/Cargo.toml")
+      (root + "/pkgs/by-name/cl/claude-statusline")
+    ];
+  };
+  cargoLock.lockFile = root + "/Cargo.lock";
 
   # dashmap 6.1.0 (transitive via jj-lib) ships a rust-toolchain.toml
   # pinning channel = "1.65". Outside the Nix sandbox, rustup honors it
