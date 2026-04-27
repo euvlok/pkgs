@@ -5,6 +5,8 @@
 //! `Input` so the renderer can stay provider-agnostic and simply omit segments
 //! whose backing data is unavailable.
 
+use std::collections::HashMap;
+
 use serde::Deserialize;
 use serde::Deserializer;
 
@@ -240,10 +242,17 @@ struct ClaudeInput {
     context_window: ContextWindow,
     rate_limits: RateLimits,
     cost: Cost,
+    /// Raw HTTP response headers from the host (case-insensitive keys).
+    /// We extract Codex-format rate-limit fields from here when the
+    /// matching `rate_limits.*` slots are otherwise unset, so wrappers
+    /// (e.g. pi-mono) can hand us headers verbatim instead of parsing.
+    headers: HashMap<String, String>,
 }
 
 impl From<ClaudeInput> for Input {
     fn from(v: ClaudeInput) -> Self {
+        let mut rate_limits = v.rate_limits;
+        merge_codex_headers(&mut rate_limits, &v.headers);
         Self {
             source: InputSource::Claude,
             workspace: v.workspace,
@@ -252,8 +261,42 @@ impl From<ClaudeInput> for Input {
             session_id: v.session_id,
             model: v.model,
             context_window: v.context_window,
-            rate_limits: v.rate_limits,
+            rate_limits,
             cost: v.cost,
+        }
+    }
+}
+
+/// Fold Codex `x-codex-{primary,secondary}-{used-percent,reset-at}` headers
+/// (codex-rs/core: `tests/suite/client.rs`) into `rate_limits`. Structured
+/// fields already in `rate_limits` win — headers only fill empty slots.
+fn merge_codex_headers(rl: &mut RateLimits, headers: &HashMap<String, String>) {
+    let lookup = |name: &str| {
+        headers
+            .get(name)
+            .or_else(|| headers.get(&name.to_ascii_lowercase()))
+            .map(String::as_str)
+    };
+    let parse_f64 = |name: &str| lookup(name).and_then(|v| v.parse::<f64>().ok());
+    let parse_i64 = |name: &str| lookup(name).and_then(|v| v.parse::<i64>().ok());
+
+    for (window, pct_h, reset_h) in [
+        (
+            &mut rl.five_hour,
+            "x-codex-primary-used-percent",
+            "x-codex-primary-reset-at",
+        ),
+        (
+            &mut rl.seven_day,
+            "x-codex-secondary-used-percent",
+            "x-codex-secondary-reset-at",
+        ),
+    ] {
+        if window.used_percentage.is_none() {
+            window.used_percentage = parse_f64(pct_h);
+        }
+        if window.resets_at.is_none() {
+            window.resets_at = parse_i64(reset_h);
         }
     }
 }
@@ -380,6 +423,46 @@ mod tests {
         assert_eq!(input.session_id.as_deref(), Some("thread-123"));
         assert_eq!(input.model.display_name.as_deref(), Some("gpt-5-codex"));
         assert_eq!(input.source, InputSource::Codex);
+    }
+
+    #[test]
+    fn folds_codex_headers_into_empty_rate_limits() {
+        let input: Input = serde_json::from_str(
+            r#"{
+                "headers": {
+                    "x-codex-primary-used-percent": "42.5",
+                    "x-codex-primary-reset-at": "1704069000",
+                    "x-codex-secondary-used-percent": "87.5",
+                    "x-codex-secondary-reset-at": "1704074400"
+                }
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(input.rate_limits.five_hour.used_percentage, Some(42.5));
+        assert_eq!(input.rate_limits.five_hour.resets_at, Some(1_704_069_000));
+        assert_eq!(input.rate_limits.seven_day.used_percentage, Some(87.5));
+        assert_eq!(input.rate_limits.seven_day.resets_at, Some(1_704_074_400));
+    }
+
+    #[test]
+    fn structured_rate_limits_override_codex_headers() {
+        let input: Input = serde_json::from_str(
+            r#"{
+                "rate_limits": {
+                    "five_hour": {"used_percentage": 10.0}
+                },
+                "headers": {
+                    "x-codex-primary-used-percent": "99.0",
+                    "x-codex-primary-reset-at": "1704069000"
+                }
+            }"#,
+        )
+        .unwrap();
+
+        // Structured value wins for used_percentage; resets_at falls back to header.
+        assert_eq!(input.rate_limits.five_hour.used_percentage, Some(10.0));
+        assert_eq!(input.rate_limits.five_hour.resets_at, Some(1_704_069_000));
     }
 
     #[test]
