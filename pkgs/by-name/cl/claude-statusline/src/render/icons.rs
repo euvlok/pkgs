@@ -126,3 +126,46 @@ impl IconSet {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use unicode_width::UnicodeWidthStr;
+
+    use super::*;
+
+    #[test]
+    fn separators_are_single_column_in_every_icon_set() {
+        for icons in [&NERD, &EMOJI, &TEXT] {
+            assert_eq!(UnicodeWidthStr::width(icons.sep), 1);
+        }
+    }
+
+    #[test]
+    fn status_icons_have_nonzero_display_widths() {
+        for icons in [&NERD, &EMOJI, &TEXT] {
+            for glyph in [
+                icons.git,
+                icons.jj,
+                icons.ahead,
+                icons.behind,
+                icons.staged,
+                icons.dirty,
+                icons.clean,
+                icons.untracked,
+                icons.stash,
+                icons.merge,
+                icons.rebase,
+                icons.cherry_pick,
+                icons.revert,
+                icons.bisect,
+                icons.conflict,
+                icons.clock,
+            ] {
+                assert!(
+                    UnicodeWidthStr::width(glyph) > 0,
+                    "empty-width glyph {glyph:?}"
+                );
+            }
+        }
+    }
+}

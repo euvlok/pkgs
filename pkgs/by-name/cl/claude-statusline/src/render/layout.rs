@@ -97,8 +97,8 @@ impl SegmentName {
 
 /// Bundle passed to every segment builder.
 ///
-/// `vcs` is precomputed in a scoped thread; `now_unix` is the single
-/// wall-clock sample shared by every segment in this render so
+/// `vcs` is precomputed once per render when the layout needs it;
+/// `now_unix` is the single wall-clock sample shared by every segment so
 /// countdowns and projections agree.
 #[derive(Debug)]
 pub struct BuildCtx<'a> {

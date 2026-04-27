@@ -29,12 +29,12 @@ fn rightmost_compactable(line: &[Segment]) -> Option<usize> {
 /// returning the final per-column widths so callers don't have to
 /// recompute them.
 ///
-/// Accounts for the padding alignment will add. Each iteration finds
-/// the worst-overflowing line, drops one droppable segment from its
-/// right, then recomputes column widths - that lets a drop in line A
-/// shrink a column and rescue line B too. Anchor segments (the first
-/// of each line) are never dropped; if the worst line has nothing left
-/// to drop we bail to avoid an infinite loop.
+/// Accounts for the padding alignment will add. Each iteration evaluates the
+/// whole layout, not just the currently overflowing line: a wide segment in
+/// line A can define a shared column width that makes line B overflow, so
+/// compacting/dropping line A may preserve more information than dropping line
+/// B's own rightmost segment. Anchor segments (the first of each line) are
+/// never dropped; if no candidate can improve the overflow, we bail.
 pub fn fit_with_alignment(
     lines: &mut [Vec<Segment>],
     sep_width: usize,
@@ -45,26 +45,103 @@ pub fn fit_with_alignment(
     };
     loop {
         let widths = column_widths(lines);
-        let worst = lines
-            .iter()
-            .enumerate()
-            .map(|(i, line)| (i, aligned_width(line, &widths, sep_width)))
-            .filter(|(_, w)| *w > max)
-            .max_by_key(|(_, w)| *w);
-        let Some((i, _)) = worst else {
+        let Some(score) = overflow_score(lines, sep_width, max) else {
             return widths;
         };
-        if let Some(j) = rightmost_compactable(&lines[i]) {
-            lines[i][j].apply_compact();
+        if let Some((line, col)) = best_compaction(lines, sep_width, max, score) {
+            lines[line][col].apply_compact();
             continue;
         }
-        match rightmost_droppable(&lines[i]) {
-            Some(j) => {
-                lines[i].remove(j);
+        if let Some((line, col)) = best_drop(lines, sep_width, max, score) {
+            lines[line].remove(col);
+            continue;
+        }
+        return widths;
+    }
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+struct OverflowScore {
+    max: usize,
+    total: usize,
+}
+
+fn overflow_score(
+    lines: &[Vec<Segment>],
+    sep_width: usize,
+    max_cols: usize,
+) -> Option<OverflowScore> {
+    let widths = column_widths(lines);
+    let mut score = OverflowScore { max: 0, total: 0 };
+    for line in lines {
+        let overflow = aligned_width(line, &widths, sep_width).saturating_sub(max_cols);
+        score.max = score.max.max(overflow);
+        score.total += overflow;
+    }
+    (score.max > 0).then_some(score)
+}
+
+fn best_compaction(
+    lines: &[Vec<Segment>],
+    sep_width: usize,
+    max_cols: usize,
+    current: OverflowScore,
+) -> Option<(usize, usize)> {
+    best_candidate(
+        lines,
+        sep_width,
+        max_cols,
+        current,
+        |candidate, line, col| candidate[line][col].apply_compact(),
+    )
+}
+
+fn best_drop(
+    lines: &[Vec<Segment>],
+    sep_width: usize,
+    max_cols: usize,
+    current: OverflowScore,
+) -> Option<(usize, usize)> {
+    best_candidate(
+        lines,
+        sep_width,
+        max_cols,
+        current,
+        |candidate, line, col| {
+            if Some(col) != rightmost_droppable(&candidate[line]) {
+                return false;
             }
-            None => return widths,
+            candidate[line].remove(col);
+            true
+        },
+    )
+}
+
+fn best_candidate(
+    lines: &[Vec<Segment>],
+    sep_width: usize,
+    max_cols: usize,
+    current: OverflowScore,
+    mut apply: impl FnMut(&mut Vec<Vec<Segment>>, usize, usize) -> bool,
+) -> Option<(usize, usize)> {
+    let mut best: Option<((usize, usize), OverflowScore)> = None;
+    for (line_idx, line) in lines.iter().enumerate() {
+        for col_idx in (0..line.len()).rev() {
+            let mut candidate = lines.to_vec();
+            if !apply(&mut candidate, line_idx, col_idx) {
+                continue;
+            }
+            let score = overflow_score(&candidate, sep_width, max_cols)
+                .unwrap_or(OverflowScore { max: 0, total: 0 });
+            if score >= current {
+                continue;
+            }
+            if best.is_none_or(|(_, best_score)| score < best_score) {
+                best = Some(((line_idx, col_idx), score));
+            }
         }
     }
+    best.map(|(pos, _)| pos)
 }
 
 /// Drop-to-fit without column alignment.
@@ -151,9 +228,23 @@ mod tests {
         s
     }
 
+    fn droppable(text: &str) -> Segment {
+        let mut s = Segment::droppable();
+        s.push_plain(text.to_string());
+        s
+    }
+
     fn droppable_with_compact(full: &str, compact: &str) -> Segment {
         use crate::render::segment::Cell;
         let mut s = Segment::droppable();
+        s.push_plain(full.to_string());
+        s.set_compact(vec![Cell::plain(compact.to_string())]);
+        s
+    }
+
+    fn anchor_with_compact(full: &str, compact: &str) -> Segment {
+        use crate::render::segment::Cell;
+        let mut s = Segment::anchor();
         s.push_plain(full.to_string());
         s.set_compact(vec![Cell::plain(compact.to_string())]);
         s
@@ -184,5 +275,20 @@ mod tests {
         ]];
         fit_unaligned(&mut lines, 3, Some(10));
         assert_eq!(lines[0].len(), 1, "no fit even after compact → drop");
+    }
+
+    #[test]
+    fn aligned_fit_compacts_shared_column_in_other_line_before_dropping() {
+        // Line 0 fits by itself (width 10), but its wide first column makes line
+        // 1 render as 10 + sep + 4 = 17. Compacting line 0's anchor shrinks the
+        // shared column and preserves line 1's droppable `keep` segment.
+        let mut lines = vec![
+            vec![anchor_with_compact("toolongcol", "x")],
+            vec![anchor("b"), droppable("keep")],
+        ];
+        let widths = fit_with_alignment(&mut lines, 3, Some(10));
+        assert_eq!(lines[0][0].width(), 1, "shared column should compact");
+        assert_eq!(lines[1].len(), 2, "line 1 segment should be preserved");
+        assert_eq!(aligned_width(&lines[1], &widths, 3), 8);
     }
 }

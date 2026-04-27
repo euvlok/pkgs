@@ -22,7 +22,7 @@ use crate::pace::PaceSettings;
 use crate::render::colors::Palette;
 use crate::render::icons::Icons;
 use crate::render::layout::{BuildCtx, Layout};
-use crate::render::segment::Segment;
+use crate::render::segment::{Segment, SegmentKind};
 use crate::settings::Settings;
 use crate::vcs;
 
@@ -94,10 +94,25 @@ pub(crate) fn render_lines(
         .lines
         .iter()
         .map(|line| {
-            line.iter()
+            let mut segments: Vec<Segment> = line
+                .iter()
                 .filter_map(|name| name.build(ctx))
                 .filter(|s| !s.is_empty())
-                .collect()
+                .collect();
+            // The layout, not the individual builder, defines the line anchor.
+            // Missing data can make the named first segment disappear, so anchor
+            // the first segment that actually renders and make all later ones
+            // droppable. This keeps custom layouts such as `model,diff` from
+            // going blank on narrow terminals, while allowing `dir` to be
+            // dropped when the user places it later in a line.
+            for (i, segment) in segments.iter_mut().enumerate() {
+                segment.kind = if i == 0 {
+                    SegmentKind::Anchor
+                } else {
+                    SegmentKind::Droppable
+                };
+            }
+            segments
         })
         .collect();
 
@@ -175,6 +190,37 @@ mod tests {
 
     fn strip_ansi(s: &str) -> String {
         anstream::adapter::strip_str(s).to_string()
+    }
+
+    #[test]
+    fn first_rendered_segment_is_anchor_even_when_builder_marks_droppable() {
+        let input = Input {
+            model: crate::input::Model {
+                display_name: Some("Sonnet 4.6".into()),
+            },
+            cost: Cost {
+                total_lines_added: Some(5),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let layout = Layout::parse("model,diff").unwrap();
+        let ctx = BuildCtx {
+            input: &input,
+            icons: icons(),
+            palette: &pal(),
+            vcs: None,
+            settings: &Settings::default(),
+            pace_settings: &PaceSettings::default(),
+            now_unix: crate::pace::now_unix(),
+        };
+        let out = render_lines(&ctx, &layout, Some(1));
+        let plain = strip_ansi(&out);
+        assert!(plain.contains("Sonnet"), "anchor was dropped: {plain:?}");
+        assert!(
+            !plain.contains("+5"),
+            "right segment should drop first: {plain:?}"
+        );
     }
 
     #[test]

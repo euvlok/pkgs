@@ -19,7 +19,7 @@ pub fn dir(input: &Input, settings: &Settings) -> Segment {
     };
     match (settings.hyperlinks, input.workspace.current_dir.as_deref()) {
         (true, Some(full_path)) => {
-            let url = format!("file://{full_path}");
+            let url = file_url(full_path);
             s.push_linked(text, anstyle::Style::new(), url);
         }
         _ => {
@@ -27,6 +27,26 @@ pub fn dir(input: &Input, settings: &Settings) -> Segment {
         }
     }
     s
+}
+
+fn file_url(path: &str) -> String {
+    let mut url = String::with_capacity(path.len() + 16);
+    url.push_str("file://");
+    if !path.starts_with('/') {
+        url.push('/');
+    }
+    for byte in path.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'/' | b'-' | b'.' | b'_' | b'~' => {
+                url.push(byte as char);
+            }
+            _ => {
+                use std::fmt::Write as _;
+                let _ = write!(url, "%{byte:02X}");
+            }
+        }
+    }
+    url
 }
 
 pub fn model(input: &Input, _icons: &Icons, pal: &Palette) -> Option<Segment> {
@@ -236,4 +256,19 @@ pub fn rate_limits(
         s.set_compact(compact);
     }
     Some(s)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn file_urls_percent_encode_reserved_and_control_bytes() {
+        assert_eq!(file_url("/tmp/a b#c%\n"), "file:///tmp/a%20b%23c%25%0A");
+    }
+
+    #[test]
+    fn file_urls_add_slash_for_relative_paths() {
+        assert_eq!(file_url("tmp/project"), "file:///tmp/project");
+    }
 }
