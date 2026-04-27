@@ -6,34 +6,52 @@ import {
 	isWriteToolResult,
 	type ToolResultEvent,
 } from "@mariozechner/pi-coding-agent";
-import { type Component, truncateToWidth } from "@mariozechner/pi-tui";
 
 const FLAG_COMMAND = "statusline-command";
 const FLAG_ARGS = "statusline-args";
+const STATUS_KEY = "agent-statusline";
 const DEFAULT_COMMAND = "agent-statusline";
 const REFRESH_DEBOUNCE_MS = 200;
 const SPAWN_TIMEOUT_MS = 3000;
 const IDLE_TICK_MS = 30_000;
+const PI_STATUSLINE_COMMAND = "PI_STATUSLINE_COMMAND";
+const PI_STATUSLINE_ARGS = "PI_STATUSLINE_ARGS";
 
 type DiffStats = { added: number; removed: number };
-type Footer = Component & { schedule(): void; dispose(): void };
+type TokenUsage = Pick<AssistantMessage["usage"], "input" | "output" | "cacheRead" | "cacheWrite">;
 type State = { headers?: Record<string, string>; diff: DiffStats; apiDurationMs: number };
+type Statusline = { schedule(force?: boolean): void; dispose(): void };
 
 const zeroDiff = (): DiffStats => ({ added: 0, removed: 0 });
+const zeroUsage = (): TokenUsage => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
 const positive = (n: number) => (n > 0 ? n : undefined);
 const hasFormatArg = (args: readonly string[]) => args.some((a) => a === "--format" || a.startsWith("--format="));
+const oneLine = (text: string) =>
+	text
+		.replace(/[\r\n\t]/g, " ")
+		.replace(/ +/g, " ")
+		.trim();
+
+function parseStatuslineArgs(value: string): string[] {
+	const input = value.trim();
+	if (!input) return [];
+	if (!input.startsWith("[")) return input.split(/\s+/).filter(Boolean);
+
+	const parsed: unknown = JSON.parse(input);
+	if (!Array.isArray(parsed) || !parsed.every((arg) => typeof arg === "string")) {
+		throw new Error("statusline args JSON must be an array of strings");
+	}
+	return parsed;
+}
 
 function diffFromToolResult(event: ToolResultEvent): DiffStats {
 	if (event.isError) return zeroDiff();
 	if (isEditToolResult(event)) {
-		return (event.details?.diff ?? "").split("\n").reduce(
-			(acc, line) => {
-				if (line.startsWith("+") && !line.startsWith("+++")) acc.added++;
-				if (line.startsWith("-") && !line.startsWith("---")) acc.removed++;
-				return acc;
-			},
-			zeroDiff(),
-		);
+		return (event.details?.diff ?? "").split("\n").reduce((acc, line) => {
+			if (line.startsWith("+") && !line.startsWith("+++")) acc.added++;
+			if (line.startsWith("-") && !line.startsWith("---")) acc.removed++;
+			return acc;
+		}, zeroDiff());
 	}
 	if (isWriteToolResult(event) && typeof event.input.content === "string" && event.input.content) {
 		const lines = event.input.content.split("\n").length;
@@ -43,10 +61,11 @@ function diffFromToolResult(event: ToolResultEvent): DiffStats {
 }
 
 function buildPayload(ctx: ExtensionContext, state: State) {
-	const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
-	for (const entry of ctx.sessionManager.getBranch()) {
+	const usage = zeroUsage();
+	for (const entry of ctx.sessionManager.getEntries()) {
 		if (entry.type !== "message" || entry.message.role !== "assistant") continue;
-		const { usage: u } = entry.message as AssistantMessage;
+		const u = (entry.message as AssistantMessage).usage;
+		if (!u) continue;
 		usage.input += u.input;
 		usage.output += u.output;
 		usage.cacheRead += u.cacheRead;
@@ -54,13 +73,17 @@ function buildPayload(ctx: ExtensionContext, state: State) {
 	}
 
 	const context = ctx.getContextUsage();
-	const startedAt = Date.parse(ctx.sessionManager.getHeader()?.timestamp ?? "");
+	const header = ctx.sessionManager.getHeader();
+	const startedAt = Date.parse(header?.timestamp ?? "");
 	return {
 		workspace: { current_dir: ctx.cwd },
+		cwd: ctx.cwd,
+		transcript_path: ctx.sessionManager.getSessionFile(),
+		session_id: header?.id ?? ctx.sessionManager.getSessionId(),
 		model: { display_name: ctx.model?.name ?? ctx.model?.id ?? "no-model" },
 		context_window: {
 			used_percentage: context?.percent ?? undefined,
-			context_window_size: context?.contextWindow,
+			context_window_size: context?.contextWindow ?? ctx.model?.contextWindow,
 			current_usage: {
 				input_tokens: usage.input,
 				output_tokens: usage.output,
@@ -85,13 +108,13 @@ export default function agentStatuslineExtension(pi: ExtensionAPI): void {
 	});
 	pi.registerFlag(FLAG_ARGS, {
 		type: "string",
-		description: "Extra args (space-separated) forwarded to the statusline command",
+		description: "Extra args forwarded to the statusline command (whitespace-separated or JSON string array)",
 	});
 
-	let footer: Footer | undefined;
+	let statusline: Statusline | undefined;
 	const state: State = { diff: zeroDiff(), apiDurationMs: 0 };
 	let requestStartedAt: number | undefined;
-	const schedule = () => footer?.schedule();
+	const schedule = () => statusline?.schedule();
 
 	pi.on("before_provider_request", () => {
 		requestStartedAt = Date.now();
@@ -112,34 +135,35 @@ export default function agentStatuslineExtension(pi: ExtensionAPI): void {
 	pi.on("message_end", schedule);
 	pi.on("turn_end", schedule);
 	pi.on("model_select", schedule);
+	pi.on("input", schedule);
+	pi.on("user_bash", schedule);
+	pi.on("session_compact", schedule);
+	pi.on("session_tree", schedule);
 
 	pi.on("session_start", (_event, ctx) => {
 		if (!ctx.hasUI) return;
 		Object.assign(state, { headers: undefined, diff: zeroDiff(), apiDurationMs: 0 });
 		requestStartedAt = undefined;
 
-		ctx.ui.setFooter((tui, theme, footerData) => {
-			let cachedLines: string[] = [];
-			let error: string | undefined;
-			let lastRunAt = 0;
-			let pending: ReturnType<typeof setTimeout> | undefined;
-			let inflight: AbortController | undefined;
-			let unsubBranch = () => {};
-			let tick: ReturnType<typeof setInterval> | undefined;
-			let runId = 0;
+		let lastRunAt = 0;
+		let pending: ReturnType<typeof setTimeout> | undefined;
+		let inflight: AbortController | undefined;
+		let tick: ReturnType<typeof setInterval> | undefined;
+		let runId = 0;
 
-			const flag = (key: string) => {
-				const value = pi.getFlag(key);
-				return typeof value === "string" ? value : "";
-			};
+		const flag = (key: string) => {
+			const value = pi.getFlag(key);
+			return typeof value === "string" ? value : "";
+		};
 
-			const refresh = async () => {
-				const currentRun = ++runId;
-				inflight?.abort();
-				inflight = new AbortController();
+		const refresh = async () => {
+			const currentRun = ++runId;
+			inflight?.abort();
+			inflight = new AbortController();
 
-				const cmd = flag(FLAG_COMMAND) || process.env.PI_STATUSLINE_COMMAND || DEFAULT_COMMAND;
-				const args = (flag(FLAG_ARGS) || process.env.PI_STATUSLINE_ARGS || "").split(/\s+/).filter(Boolean);
+			const cmd = flag(FLAG_COMMAND) || process.env[PI_STATUSLINE_COMMAND] || DEFAULT_COMMAND;
+			try {
+				const args = parseStatuslineArgs(flag(FLAG_ARGS) || process.env[PI_STATUSLINE_ARGS] || "");
 				const renderArgs = hasFormatArg(args) ? args : [...args, "--format", "text"];
 				const result = await pi.exec(cmd, [...renderArgs, "--input-json", JSON.stringify(buildPayload(ctx, state))], {
 					signal: inflight.signal,
@@ -148,62 +172,62 @@ export default function agentStatuslineExtension(pi: ExtensionAPI): void {
 				if (currentRun !== runId) return;
 
 				lastRunAt = Date.now();
-				error = result.code === 0 ? undefined : `${cmd} exited ${result.code}`;
-				cachedLines = result.code === 0 ? result.stdout.replace(/\n+$/, "").split("\n").filter(Boolean) : [];
-				tui.requestRender();
-			};
+				const detail = result.killed ? "timed out" : result.stderr.trim().split("\n")[0];
+				ctx.ui.setStatus(
+					STATUS_KEY,
+					result.code === 0
+						? oneLine(result.stdout.replace(/\n+$/, ""))
+						: ctx.ui.theme.fg("error", `[statusline] ${cmd} exited ${result.code}${detail ? `: ${detail}` : ""}`),
+				);
+			} catch (err) {
+				if (currentRun !== runId) return;
+				lastRunAt = Date.now();
+				ctx.ui.setStatus(STATUS_KEY, ctx.ui.theme.fg("error", `[statusline] ${err instanceof Error ? err.message : String(err)}`));
+			}
+		};
 
-			const component: Footer = {
-				schedule() {
-					if (pending) return;
-					const delay = lastRunAt === 0 ? 0 : Math.max(0, REFRESH_DEBOUNCE_MS - (Date.now() - lastRunAt));
-					pending = setTimeout(() => {
-						pending = undefined;
-						void refresh();
-					}, delay);
-				},
-				invalidate() {},
-				render(width: number): string[] {
-					const ellipsis = theme.fg("dim", "...");
-					const lines = (cachedLines.length ? cachedLines : [error ? theme.fg("error", `[statusline] ${error}`) : ""])
-						.map((line) => truncateToWidth(line, width, ellipsis));
-					const statuses = [...footerData.getExtensionStatuses()]
-						.sort(([a], [b]) => a.localeCompare(b))
-						.map(([, text]) => text)
-						.join(" ");
-					if (statuses) lines.push(truncateToWidth(statuses, width, ellipsis));
-					return lines;
-				},
-				dispose() {
-					inflight?.abort();
-					if (pending) clearTimeout(pending);
-					if (tick) clearInterval(tick);
-					unsubBranch();
-				},
-			};
+		statusline = {
+			schedule(force = false) {
+				if (pending) {
+					if (!force) return;
+					clearTimeout(pending);
+					pending = undefined;
+				}
+				const delay = force || lastRunAt === 0 ? 0 : Math.max(0, REFRESH_DEBOUNCE_MS - (Date.now() - lastRunAt));
+				pending = setTimeout(() => {
+					pending = undefined;
+					void refresh();
+				}, delay);
+			},
+			dispose() {
+				inflight?.abort();
+				if (pending) clearTimeout(pending);
+				if (tick) clearInterval(tick);
+				ctx.ui.setStatus(STATUS_KEY, undefined);
+			},
+		};
 
-			footer = component;
-			unsubBranch = footerData.onBranchChange(component.schedule);
-			tick = setInterval(component.schedule, IDLE_TICK_MS);
-			tick.unref?.();
-			component.schedule();
-			return component;
-		});
+		tick = setInterval(statusline.schedule, IDLE_TICK_MS);
+		tick.unref?.();
+		statusline.schedule();
 	});
 
 	pi.on("session_shutdown", () => {
-		footer = undefined;
+		statusline?.dispose();
+		statusline = undefined;
+		requestStartedAt = undefined;
 	});
 
 	pi.registerCommand("statusline-refresh", {
-		description: "Force-refresh the agent-statusline footer",
-		handler: async () => footer?.schedule(),
+		description: "Force-refresh the agent-statusline status",
+		handler: async () => statusline?.schedule(true),
 	});
 	pi.registerCommand("statusline-default", {
-		description: "Restore pi-mono's built-in footer",
+		description: "Clear the agent-statusline status and use pi's built-in footer only",
 		handler: async (_args, ctx) => {
-			ctx.ui.setFooter(undefined);
-			ctx.ui.notify("Built-in footer restored", "info");
+			statusline?.dispose();
+			statusline = undefined;
+			ctx.ui.notify("agent-statusline cleared", "info");
 		},
 	});
 }

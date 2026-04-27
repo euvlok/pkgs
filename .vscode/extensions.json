@@ -3,6 +3,7 @@
     "ms-python.python",
     "charliermarsh.ruff",
     "astral-sh.ty",
-    "jnoortheen.nix-ide"
+    "jnoortheen.nix-ide",
+    "biomejs.biome"
   ]
 }

@@ -24,7 +24,7 @@ stdenvNoCC.mkDerivation (finalAttrs: {
   };
 
   meta = {
-    description = "pi-mono extension that renders agent-statusline as the interactive footer";
+    description = "pi-mono extension that renders agent-statusline in the built-in footer status area";
     license = lib.licenses.mit;
     platforms = lib.platforms.unix;
   };
