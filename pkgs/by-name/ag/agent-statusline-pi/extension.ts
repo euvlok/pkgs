@@ -17,15 +17,22 @@ const IDLE_TICK_MS = 30_000;
 const PI_STATUSLINE_COMMAND = "PI_STATUSLINE_COMMAND";
 const PI_STATUSLINE_ARGS = "PI_STATUSLINE_ARGS";
 
+const STATUSLINE_FLAGS = [
+	{ name: FLAG_COMMAND, description: `Statusline command to spawn (default: ${DEFAULT_COMMAND})` },
+	{ name: FLAG_ARGS, description: "Extra args forwarded to the statusline command (whitespace-separated or JSON string array)" },
+] as const;
+
 type DiffStats = { added: number; removed: number };
-type TokenUsage = Pick<AssistantMessage["usage"], "input" | "output" | "cacheRead" | "cacheWrite">;
+type AssistantUsage = NonNullable<AssistantMessage["usage"]>;
 type State = { headers?: Record<string, string>; diff: DiffStats; apiDurationMs: number };
+type SessionEntry = ReturnType<ExtensionContext["sessionManager"]["getEntries"]>[number];
 type Statusline = { schedule(force?: boolean): void; dispose(): void };
 
 const zeroDiff = (): DiffStats => ({ added: 0, removed: 0 });
-const zeroUsage = (): TokenUsage => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
 const positive = (n: number) => (n > 0 ? n : undefined);
 const hasFormatArg = (args: readonly string[]) => args.some((a) => a === "--format" || a.startsWith("--format="));
+const assistantUsage = (entry: SessionEntry) =>
+	entry.type === "message" && entry.message.role === "assistant" ? (entry.message as AssistantMessage).usage : undefined;
 const oneLine = (text: string) =>
 	text
 		.replace(/[\r\n\t]/g, " ")
@@ -47,11 +54,13 @@ function parseStatuslineArgs(value: string): string[] {
 function diffFromToolResult(event: ToolResultEvent): DiffStats {
 	if (event.isError) return zeroDiff();
 	if (isEditToolResult(event)) {
-		return (event.details?.diff ?? "").split("\n").reduce((acc, line) => {
-			if (line.startsWith("+") && !line.startsWith("+++")) acc.added++;
-			if (line.startsWith("-") && !line.startsWith("---")) acc.removed++;
-			return acc;
-		}, zeroDiff());
+		return (event.details?.diff ?? "").split("\n").reduce(
+			(acc, line) => ({
+				added: acc.added + Number(line.startsWith("+") && !line.startsWith("+++")),
+				removed: acc.removed + Number(line.startsWith("-") && !line.startsWith("---")),
+			}),
+			zeroDiff(),
+		);
 	}
 	if (isWriteToolResult(event) && typeof event.input.content === "string" && event.input.content) {
 		const lines = event.input.content.split("\n").length;
@@ -61,17 +70,19 @@ function diffFromToolResult(event: ToolResultEvent): DiffStats {
 }
 
 function buildPayload(ctx: ExtensionContext, state: State) {
-	const usage = zeroUsage();
-	for (const entry of ctx.sessionManager.getEntries()) {
-		if (entry.type !== "message" || entry.message.role !== "assistant") continue;
-		const u = (entry.message as AssistantMessage).usage;
-		if (!u) continue;
-		usage.input += u.input;
-		usage.output += u.output;
-		usage.cacheRead += u.cacheRead;
-		usage.cacheWrite += u.cacheWrite;
-	}
-
+	const usage = ctx.sessionManager
+		.getEntries()
+		.map(assistantUsage)
+		.filter((usage): usage is AssistantUsage => usage !== undefined)
+		.reduce(
+			(acc, usage) => ({
+				input: acc.input + usage.input,
+				output: acc.output + usage.output,
+				cacheRead: acc.cacheRead + usage.cacheRead,
+				cacheWrite: acc.cacheWrite + usage.cacheWrite,
+			}),
+			{ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		);
 	const context = ctx.getContextUsage();
 	const header = ctx.sessionManager.getHeader();
 	const startedAt = Date.parse(header?.timestamp ?? "");
@@ -102,13 +113,8 @@ function buildPayload(ctx: ExtensionContext, state: State) {
 }
 
 export default function agentStatuslineExtension(pi: ExtensionAPI): void {
-	pi.registerFlag(FLAG_COMMAND, {
-		type: "string",
-		description: `Statusline command to spawn (default: ${DEFAULT_COMMAND})`,
-	});
-	pi.registerFlag(FLAG_ARGS, {
-		type: "string",
-		description: "Extra args forwarded to the statusline command (whitespace-separated or JSON string array)",
+	STATUSLINE_FLAGS.forEach((flag) => {
+		pi.registerFlag(flag.name, { type: "string", description: flag.description });
 	});
 
 	let statusline: Statusline | undefined;
@@ -132,13 +138,17 @@ export default function agentStatuslineExtension(pi: ExtensionAPI): void {
 		state.diff.removed += diff.removed;
 		schedule();
 	});
-	pi.on("message_end", schedule);
-	pi.on("turn_end", schedule);
-	pi.on("model_select", schedule);
-	pi.on("input", schedule);
-	pi.on("user_bash", schedule);
-	pi.on("session_compact", schedule);
-	pi.on("session_tree", schedule);
+	[
+		() => pi.on("message_end", schedule),
+		() => pi.on("turn_end", schedule),
+		() => pi.on("model_select", schedule),
+		() => pi.on("input", schedule),
+		() => pi.on("user_bash", schedule),
+		() => pi.on("session_compact", schedule),
+		() => pi.on("session_tree", schedule),
+	].forEach((listen) => {
+		listen();
+	});
 
 	pi.on("session_start", (_event, ctx) => {
 		if (!ctx.hasUI) return;
