@@ -97,6 +97,7 @@ pub struct Cli {
 }
 
 #[derive(Args, Debug)]
+#[command(next_help_heading = "Layout")]
 pub struct LayoutArgs {
     /// Layout DSL: `dir,vcs,model | diff,context,rates`
     #[arg(
@@ -104,7 +105,6 @@ pub struct LayoutArgs {
         long,
         env = "CLAUDE_STATUSLINE_LAYOUT",
         value_name = "DSL",
-        help_heading = "Layout",
         hide_env = true
     )]
     pub layout: Option<String>,
@@ -116,7 +116,6 @@ pub struct LayoutArgs {
         env = "CLAUDE_STATUSLINE_EXCLUDE",
         value_delimiter = ',',
         value_name = "NAMES",
-        help_heading = "Layout",
         hide_env = true
     )]
     pub exclude: Vec<String>,
@@ -128,7 +127,6 @@ pub struct LayoutArgs {
         long,
         env = "CLAUDE_STATUSLINE_CONFIG",
         value_name = "PATH",
-        help_heading = "Layout",
         hide_env = true
     )]
     pub config: Option<PathBuf>,
@@ -137,7 +135,6 @@ pub struct LayoutArgs {
     #[arg(
         long = "no-align",
         env = "CLAUDE_STATUSLINE_NO_ALIGN",
-        help_heading = "Layout",
         hide_env = true,
         action = clap::ArgAction::SetTrue,
     )]
@@ -145,6 +142,7 @@ pub struct LayoutArgs {
 }
 
 #[derive(Args, Debug)]
+#[command(next_help_heading = "Display")]
 pub struct DisplayArgs {
     /// When to emit ANSI color escapes
     #[arg(
@@ -152,7 +150,6 @@ pub struct DisplayArgs {
         value_enum,
         default_value_t = ColorChoice::Always,
         env = "CLAUDE_STATUSLINE_COLOR",
-        help_heading = "Display",
         hide_env = true,
     )]
     pub color: ColorChoice,
@@ -165,7 +162,6 @@ pub struct DisplayArgs {
         env = "CLAUDE_STATUSLINE_ICONS",
         value_name = "SET",
         default_value_t = IconSet::default(),
-        help_heading = "Display",
         hide_env = true,
         hide_default_value = true,
     )]
@@ -177,7 +173,6 @@ pub struct DisplayArgs {
         long,
         env = "CLAUDE_STATUSLINE_SEPARATOR",
         value_name = "STR",
-        help_heading = "Display",
         hide_env = true
     )]
     pub separator: Option<String>,
@@ -189,7 +184,6 @@ pub struct DisplayArgs {
         env = "CLAUDE_STATUSLINE_DIR",
         value_name = "STYLE",
         default_value_t = DirStyle::default(),
-        help_heading = "Display",
         hide_env = true,
         hide_default_value = true,
     )]
@@ -202,7 +196,6 @@ pub struct DisplayArgs {
         env = "CLAUDE_STATUSLINE_CONTEXT_FORMAT",
         value_name = "FMT",
         default_value_t = ContextFormat::default(),
-        help_heading = "Display",
         hide_env = true,
         hide_default_value = true,
     )]
@@ -214,7 +207,6 @@ pub struct DisplayArgs {
         env = "CLAUDE_STATUSLINE_SEVEN_DAY_THRESHOLD",
         value_name = "PCT",
         default_value_t = 80,
-        help_heading = "Display",
         hide_env = true,
         hide_default_value = true
     )]
@@ -228,7 +220,6 @@ pub struct DisplayArgs {
         env = "CLAUDE_STATUSLINE_HYPERLINKS",
         value_name = "MODE",
         default_value_t = HyperlinksMode::default(),
-        help_heading = "Display",
         hide_env = true,
         hide_default_value = true,
     )]
@@ -241,7 +232,6 @@ pub struct DisplayArgs {
         env = "CLAUDE_STATUSLINE_THEME",
         value_name = "MODE",
         default_value_t = ThemeMode::default(),
-        help_heading = "Display",
         hide_env = true,
         hide_default_value = true,
     )]
@@ -249,34 +239,23 @@ pub struct DisplayArgs {
 }
 
 #[derive(Args, Debug)]
+#[command(next_help_heading = "Shell integration")]
 pub struct ShellArgs {
     /// Print shell completions to stdout and exit
-    #[arg(
-        long,
-        value_enum,
-        value_name = "SHELL",
-        help_heading = "Shell integration"
-    )]
+    #[arg(long, value_enum, value_name = "SHELL")]
     pub completions: Option<Shell>,
 
     /// Render the resolved layout against sample data and exit
-    #[arg(
-        long,
-        help_heading = "Shell integration",
-        action = clap::ArgAction::SetTrue,
-    )]
+    #[arg(long, action = clap::ArgAction::SetTrue)]
     pub preview: bool,
 
     /// Read the payload from a JSON string instead of stdin
-    #[arg(
-        long = "input-json",
-        value_name = "JSON",
-        help_heading = "Shell integration"
-    )]
+    #[arg(long = "input-json", value_name = "JSON")]
     pub input_json: Option<String>,
 }
 
 #[derive(Args, Debug)]
+#[command(next_help_heading = "Pace")]
 pub struct PaceArgs {
     /// Pace segment glyph set (default: emoji)
     #[arg(
@@ -285,7 +264,6 @@ pub struct PaceArgs {
         env = "CLAUDE_STATUSLINE_PACE_GLYPHS",
         value_name = "SET",
         default_value_t = PaceGlyphs::default(),
-        help_heading = "Pace",
         hide_env = true,
         hide_default_value = true,
     )]
@@ -297,7 +275,6 @@ pub struct PaceArgs {
         env = "CLAUDE_STATUSLINE_PACE_LOOKBACK_MINS",
         value_name = "N",
         default_value_t = 20,
-        help_heading = "Pace",
         hide_env = true,
         hide_default_value = true
     )]
@@ -309,7 +286,6 @@ pub struct PaceArgs {
         env = "CLAUDE_STATUSLINE_PACE_COOL_BELOW",
         value_name = "F",
         default_value_t = 0.9,
-        help_heading = "Pace",
         hide_env = true,
         hide_default_value = true
     )]
@@ -321,7 +297,6 @@ pub struct PaceArgs {
         env = "CLAUDE_STATUSLINE_PACE_HOT_ABOVE",
         value_name = "F",
         default_value_t = 1.2,
-        help_heading = "Pace",
         hide_env = true,
         hide_default_value = true
     )]
@@ -333,7 +308,6 @@ pub struct PaceArgs {
         env = "CLAUDE_STATUSLINE_PACE_WARMUP_MINS",
         value_name = "N",
         default_value_t = 10,
-        help_heading = "Pace",
         hide_env = true,
         hide_default_value = true
     )]
@@ -343,7 +317,6 @@ pub struct PaceArgs {
     #[arg(
         long = "pace-debug",
         env = "CLAUDE_STATUSLINE_PACE_DEBUG",
-        help_heading = "Pace",
         hide_env = true,
         action = clap::ArgAction::SetTrue,
     )]

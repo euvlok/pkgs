@@ -69,7 +69,7 @@ const JJ_CLI_DEFAULT_REVSETS_TOML: &str = include_str!("jj_default_revsets.toml"
 /// `jj log` would use, given the current op-log head of `repo`.
 /// Falls back to `1` on any failure so the caller can always render
 /// at least one character.
-pub fn shortest_prefix_len(
+pub(super) fn shortest_prefix_len(
     workspace: &Workspace,
     repo: &Arc<ReadonlyRepo>,
     change_id: &ChangeId,

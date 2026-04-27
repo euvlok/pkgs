@@ -14,7 +14,7 @@ use crate::render::colors::Palette;
 use crate::render::icons::Icons;
 use crate::render::segment::Segment;
 
-pub fn collect(dir: &Path, icons: &Icons, pal: &Palette) -> Option<Segment> {
+pub(super) fn collect(dir: &Path, icons: &Icons, pal: &Palette) -> Option<Segment> {
     // Disable optional file locks - read-only operations shouldn't
     // contend with concurrent git processes.
     // SAFETY: single-threaded init time, called before any threads are spawned.
@@ -33,9 +33,7 @@ pub fn collect(dir: &Path, icons: &Icons, pal: &Palette) -> Option<Segment> {
 
     let short_hash = head_id.as_ref().map(|id| id.to_hex_with_len(7).to_string());
 
-    if !icons.git.is_empty() {
-        s.append_plain(format!("{} ", icons.git));
-    }
+    s.append_icon_prefix(icons.git);
 
     match (branch_name.as_deref(), short_hash.as_deref()) {
         (Some(b), Some(h)) => {
@@ -66,10 +64,10 @@ pub fn collect(dir: &Path, icons: &Icons, pal: &Palette) -> Option<Segment> {
     .filter(|(_, n)| *n > 0)
     .peekable();
     if arrows.peek().is_some() {
-        s.append_plain(" ");
+        s.append_space();
         for (i, (icon, n)) in arrows.enumerate() {
             if i > 0 {
-                s.append_plain(" ");
+                s.append_space();
             }
             s.append_styled(format!("{icon}{n}"), pal.cyan);
         }
@@ -91,8 +89,7 @@ pub fn collect(dir: &Path, icons: &Icons, pal: &Palette) -> Option<Segment> {
             Bisect => Some(format!("{} bisect", icons.bisect)),
         };
         if let Some(l) = label {
-            s.append_plain(" ");
-            s.append_styled(l, pal.red);
+            s.append_spaced_styled(l, pal.red);
         }
     }
 
@@ -100,32 +97,26 @@ pub fn collect(dir: &Path, icons: &Icons, pal: &Palette) -> Option<Segment> {
     match compute_status(&repo) {
         Some(status) => {
             if status.staged {
-                s.append_plain(" ");
-                s.append_styled(icons.staged, pal.green);
+                s.append_spaced_styled(icons.staged, pal.green);
             }
             if status.unstaged {
-                s.append_plain(" ");
-                s.append_styled(icons.dirty, pal.yellow);
+                s.append_spaced_styled(icons.dirty, pal.yellow);
             } else if !status.staged && !status.untracked {
-                s.append_plain(" ");
-                s.append_styled(icons.clean, pal.green);
+                s.append_spaced_styled(icons.clean, pal.green);
             }
             if status.untracked {
-                s.append_plain(" ");
-                s.append_styled(icons.untracked, pal.dim);
+                s.append_spaced_styled(icons.untracked, pal.dim);
             }
         }
         None => {
-            s.append_plain(" ");
-            s.append_styled(icons.untracked, pal.dim);
+            s.append_spaced_styled(icons.untracked, pal.dim);
         }
     }
 
     // Stash count (read .git/logs/refs/stash).
     let stash_count = count_stash(&repo);
     if stash_count > 0 {
-        s.append_plain(" ");
-        s.append_styled(format!("{}{stash_count}", icons.stash), pal.dim);
+        s.append_spaced_styled(format!("{}{stash_count}", icons.stash), pal.dim);
     }
 
     if s.is_empty() { None } else { Some(s) }

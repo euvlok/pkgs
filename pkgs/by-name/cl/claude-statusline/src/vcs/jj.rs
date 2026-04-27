@@ -21,7 +21,7 @@ fn user_settings() -> Option<UserSettings> {
     UserSettings::from_config(StackedConfig::with_defaults()).ok()
 }
 
-pub fn collect(dir: &Path, icons: &Icons, pal: &Palette) -> Option<Segment> {
+pub(super) fn collect(dir: &Path, icons: &Icons, pal: &Palette) -> Option<Segment> {
     let settings = user_settings()?;
     let workspace = Workspace::load(
         &settings,
@@ -38,9 +38,7 @@ pub fn collect(dir: &Path, icons: &Icons, pal: &Palette) -> Option<Segment> {
     let change_id = commit.change_id();
 
     let mut s = Segment::droppable();
-    if !icons.jj.is_empty() {
-        s.append_plain(format!("{} ", icons.jj));
-    }
+    s.append_icon_prefix(icons.jj);
 
     // Bookmark on @ takes precedence visually
     let bookmark: Option<String> = repo.view().local_bookmarks().find_map(|(name, target)| {
@@ -59,21 +57,18 @@ pub fn collect(dir: &Path, icons: &Icons, pal: &Palette) -> Option<Segment> {
     s.append_styled(head, pal.cyan);
 
     if let Some(b) = bookmark {
-        s.append_plain(" ");
-        s.append_styled(format!("({b})"), pal.magenta);
+        s.append_spaced_styled(format!("({b})"), pal.magenta);
     }
 
     // Dirty indicator
-    s.append_plain(" ");
     match working_copy_dirty(&workspace) {
-        Some(true) => s.append_styled(icons.dirty, pal.yellow),
-        Some(false) => s.append_styled(icons.clean, pal.green),
-        None => s.append_styled(icons.untracked, pal.dim),
+        Some(true) => s.append_spaced_styled(icons.dirty, pal.yellow),
+        Some(false) => s.append_spaced_styled(icons.clean, pal.green),
+        None => s.append_spaced_styled(icons.untracked, pal.dim),
     };
 
     if commit.has_conflict() {
-        s.append_plain(" ");
-        s.append_styled(format!("{} conflict", icons.conflict), pal.red);
+        s.append_spaced_styled(format!("{} conflict", icons.conflict), pal.red);
     }
 
     Some(s)

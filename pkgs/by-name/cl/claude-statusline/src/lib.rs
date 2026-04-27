@@ -7,6 +7,7 @@
 //! anything here is `pub` for the benches and tests, not for downstream
 //! consumers.
 
+pub mod app;
 pub mod cli;
 pub mod config;
 pub mod input;

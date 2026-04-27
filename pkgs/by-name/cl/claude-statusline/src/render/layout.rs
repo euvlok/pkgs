@@ -20,50 +20,12 @@
 use std::fmt;
 use std::str::FromStr;
 
-use strum::EnumString;
-
 use crate::input::Input;
 use crate::pace::PaceSettings;
 use crate::render::builders;
 use crate::render::colors::Palette;
 use crate::render::segment::Segment;
 use crate::settings::Settings;
-
-/// Names of every renderable segment. Add a variant here, wire it in
-/// [`SegmentName::build`], and add `strum` annotations for any aliases,
-/// and it instantly becomes available in the layout DSL.
-///
-/// `strum::Display` emits the canonical name (the `to_string` value);
-/// `strum::EnumString` accepts both the canonical name and any aliases
-/// listed in `serialize`.
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, strum::Display, EnumString)]
-pub enum SegmentName {
-    #[strum(to_string = "dir")]
-    Dir,
-    #[strum(to_string = "vcs", serialize = "git", serialize = "jj")]
-    Vcs,
-    #[strum(to_string = "model")]
-    Model,
-    #[strum(to_string = "diff", serialize = "lines")]
-    Diff,
-    #[strum(to_string = "context", serialize = "ctx")]
-    Context,
-    #[strum(
-        to_string = "rate_limits",
-        serialize = "rate-limits",
-        serialize = "rates",
-        serialize = "limits"
-    )]
-    RateLimits,
-    #[strum(to_string = "clock", serialize = "time", serialize = "elapsed")]
-    Clock,
-    #[strum(to_string = "speed", serialize = "tps", serialize = "throughput")]
-    Speed,
-    #[strum(to_string = "cache")]
-    Cache,
-    #[strum(to_string = "pace", serialize = "burn")]
-    Pace,
-}
 
 #[derive(Debug, Copy, Clone)]
 pub struct SegmentSpec {
@@ -72,102 +34,135 @@ pub struct SegmentSpec {
     pub help: &'static str,
 }
 
-impl SegmentName {
-    pub const ALL: [Self; 10] = [
-        Self::Dir,
-        Self::Vcs,
-        Self::Model,
-        Self::Diff,
-        Self::Context,
-        Self::RateLimits,
-        Self::Clock,
-        Self::Speed,
-        Self::Cache,
-        Self::Pace,
-    ];
-
-    pub const fn spec(self) -> SegmentSpec {
-        match self {
-            Self::Dir => SegmentSpec {
-                name: "dir",
-                aliases: &[],
-                help: "working directory basename (anchor)",
-            },
-            Self::Vcs => SegmentSpec {
-                name: "vcs",
-                aliases: &["git", "jj"],
-                help: "git/jj branch + status",
-            },
-            Self::Model => SegmentSpec {
-                name: "model",
-                aliases: &[],
-                help: "agent model display name",
-            },
-            Self::Diff => SegmentSpec {
-                name: "diff",
-                aliases: &["lines"],
-                help: "lines added / removed",
-            },
-            Self::Context => SegmentSpec {
-                name: "context",
-                aliases: &["ctx"],
-                help: "context-window usage",
-            },
-            Self::RateLimits => SegmentSpec {
-                name: "rate_limits",
-                aliases: &["rate-limits", "rates", "limits"],
-                help: "5h / 7d quota",
-            },
-            Self::Clock => SegmentSpec {
-                name: "clock",
-                aliases: &["time", "elapsed"],
-                help: "session elapsed time",
-            },
-            Self::Speed => SegmentSpec {
-                name: "speed",
-                aliases: &["tps", "throughput"],
-                help: "token throughput (tok/s)",
-            },
-            Self::Cache => SegmentSpec {
-                name: "cache",
-                aliases: &[],
-                help: "prompt cache hit ratio",
-            },
-            Self::Pace => SegmentSpec {
-                name: "pace",
-                aliases: &["burn"],
-                help: "5h burn-rate projection",
-            },
-        }
-    }
-
-    /// Parse a segment name from user input (trimmed). Returns `None`
-    /// for unrecognised names.
-    #[must_use]
-    pub fn parse(s: &str) -> Option<Self> {
-        Self::from_str(s.trim()).ok()
-    }
-
-    /// Build the styled [`Segment`] for this name. Returns `None` when
-    /// the underlying data is missing - the renderer drops the line
-    /// position cleanly.
-    pub fn build(self, ctx: &BuildCtx<'_>) -> Option<Segment> {
-        let pal = ctx.palette;
-        match self {
-            Self::Dir => Some(builders::dir(ctx.input, ctx.settings)),
-            Self::Vcs => ctx.vcs.clone(),
-            Self::Model => builders::model(ctx.input, ctx.icons, pal),
-            Self::Diff => builders::diff(ctx.input, pal),
-            Self::Context => builders::context(ctx.input, ctx.settings, pal),
-            Self::RateLimits => {
-                builders::rate_limits(ctx.input, ctx.icons, ctx.settings, pal, ctx.now_unix)
+macro_rules! segment_registry {
+    (
+        $(
+            $variant:ident {
+                name: $name:literal,
+                aliases: [$($alias:literal),* $(,)?],
+                help: $help:literal,
+                build: |$ctx:ident| $build:expr $(,)?
             }
-            Self::Clock => builders::clock(ctx.input, ctx.icons, pal),
-            Self::Speed => builders::speed(ctx.input, pal),
-            Self::Cache => builders::cache(ctx.input, pal),
-            Self::Pace => builders::pace(ctx.input, ctx.pace_settings, pal, ctx.now_unix),
+        ),+ $(,)?
+    ) => {
+        /// Names of every renderable segment.
+        ///
+        /// Add a new entry to the registry below and it becomes available to the
+        /// layout DSL, `--help`, default layouts, and the renderer.
+        #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, strum::Display, strum::EnumString)]
+        pub enum SegmentName {
+            $(
+                #[strum(to_string = $name $(, serialize = $alias)*)]
+                $variant,
+            )+
         }
-    }
+
+        impl SegmentName {
+            pub const ALL: &'static [Self] = &[$(Self::$variant),+];
+
+            pub const fn spec(self) -> SegmentSpec {
+                match self {
+                    $(
+                        Self::$variant => SegmentSpec {
+                            name: $name,
+                            aliases: &[$($alias),*],
+                            help: $help,
+                        },
+                    )+
+                }
+            }
+
+            /// Parse a segment name from user input (trimmed). Returns `None`
+            /// for unrecognised names.
+            #[must_use]
+            pub fn parse(s: &str) -> Option<Self> {
+                Self::from_str(s.trim()).ok()
+            }
+
+            /// Build the styled [`Segment`] for this name. Returns `None` when
+            /// the underlying data is missing - the renderer drops the line
+            /// position cleanly.
+            pub fn build(self, ctx: &BuildCtx<'_>) -> Option<Segment> {
+                match self {
+                    $(
+                        Self::$variant => {
+                            let $ctx = ctx;
+                            $build
+                        },
+                    )+
+                }
+            }
+        }
+    };
+}
+
+segment_registry! {
+    Dir {
+        name: "dir",
+        aliases: [],
+        help: "working directory basename (anchor)",
+        build: |ctx| Some(builders::dir(ctx.input, ctx.settings)),
+    },
+    Vcs {
+        name: "vcs",
+        aliases: ["git", "jj"],
+        help: "git/jj branch + status",
+        build: |ctx| ctx.vcs.clone(),
+    },
+    Model {
+        name: "model",
+        aliases: [],
+        help: "agent model display name",
+        build: |ctx| builders::model(ctx.input, ctx.icons, ctx.palette),
+    },
+    Diff {
+        name: "diff",
+        aliases: ["lines"],
+        help: "lines added / removed",
+        build: |ctx| builders::diff(ctx.input, ctx.palette),
+    },
+    Context {
+        name: "context",
+        aliases: ["ctx"],
+        help: "context-window usage",
+        build: |ctx| builders::context(ctx.input, ctx.settings, ctx.palette),
+    },
+    RateLimits {
+        name: "rate_limits",
+        aliases: ["rate-limits", "rates", "limits"],
+        help: "5h / 7d quota",
+        build: |ctx| builders::rate_limits(
+            ctx.input,
+            ctx.icons,
+            ctx.settings,
+            ctx.palette,
+            ctx.now_unix,
+        ),
+    },
+    Clock {
+        name: "clock",
+        aliases: ["time", "elapsed"],
+        help: "session elapsed time",
+        build: |ctx| builders::clock(ctx.input, ctx.icons, ctx.palette),
+    },
+    Speed {
+        name: "speed",
+        aliases: ["tps", "throughput"],
+        help: "token throughput (tok/s)",
+        build: |ctx| builders::speed(ctx.input, ctx.palette),
+    },
+    Cache {
+        name: "cache",
+        aliases: [],
+        help: "prompt cache hit ratio",
+        build: |ctx| builders::cache(ctx.input, ctx.palette),
+    },
+    Pace {
+        name: "pace",
+        aliases: ["burn"],
+        help: "5h burn-rate projection",
+        build: |ctx| builders::pace(ctx.input, ctx.pace_settings, ctx.palette, ctx.now_unix),
+    },
 }
 
 /// Bundle passed to every segment builder.

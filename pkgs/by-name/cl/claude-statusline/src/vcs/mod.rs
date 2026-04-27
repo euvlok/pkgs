@@ -3,9 +3,9 @@
 
 use std::path::{Path, PathBuf};
 
-pub mod git;
-pub mod jj;
-pub mod jj_prefix;
+mod git;
+mod jj;
+mod jj_prefix;
 
 use crate::render::colors::Palette;
 use crate::render::icons::Icons;

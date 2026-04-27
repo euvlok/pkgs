@@ -130,9 +130,7 @@ pub fn clock(input: &Input, icons: &Icons, pal: &Palette) -> Option<Segment> {
         return None;
     }
     let mut s = Segment::droppable();
-    if !icons.clock.is_empty() {
-        s.append_plain(format!("{} ", icons.clock));
-    }
+    s.append_icon_prefix(icons.clock);
     s.append_styled(&dur, pal.dim);
     if let Some(api_ms) = input.cost.total_api_duration_ms
         && api_ms > 0
@@ -251,8 +249,7 @@ pub fn rate_limits(
             && let (Some(now), Some(reset)) = (now, slot.resets_at)
             && reset - now > 0
         {
-            s.append_plain(" ");
-            s.append_styled(humanize_duration(reset - now), pal.dim);
+            s.append_spaced_styled(humanize_duration(reset - now), pal.dim);
             any_countdown = true;
         }
     }

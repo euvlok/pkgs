@@ -170,11 +170,7 @@ impl Input {
     /// -> process cwd). Substitutes the actual process cwd as a fallback so
     /// `gix::open` can resolve a real absolute path.
     pub fn vcs_dir(&self) -> String {
-        if let Some(p) = self.path_field() {
-            return p.to_string();
-        }
-        std::env::current_dir()
-            .map_or_else(|_| ".".to_string(), |p| p.to_string_lossy().into_owned())
+        self.dir_full()
     }
 
     /// Display name for the directory segment (last path component).

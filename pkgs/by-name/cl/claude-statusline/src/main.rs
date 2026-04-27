@@ -6,26 +6,20 @@
 //! colored line. On any error or panic, falls back to printing just the
 //! directory name so the statusline is never blank.
 
-use std::borrow::Cow;
 use std::fmt::Write as _;
-use std::io::{self, Read as _, Write as _};
+use std::io::{self, Write as _};
 
 use anstream::AutoStream;
 use clap::{CommandFactory, FromArgMatches};
 use clap_complete::Shell as ClapShell;
 
-use claude_statusline::cli::{
-    Cli, ColorChoice, HELP_AFTER_EXAMPLES, HELP_LAYOUT_SHAPES, Shell, segment_help,
-};
-use claude_statusline::input::{Input, InputSource};
+use claude_statusline::app;
+use claude_statusline::cli::{Cli, HELP_AFTER_EXAMPLES, HELP_LAYOUT_SHAPES, Shell, segment_help};
 use claude_statusline::render::colors::Palette;
-use claude_statusline::render::icons::{IconSet, Icons};
+use claude_statusline::render::icons::IconSet;
 use claude_statusline::render::layout::Layout;
-use claude_statusline::render::preview::{preview, preview_with};
-use claude_statusline::render::render_with_pace;
+use claude_statusline::render::preview::preview_with;
 use claude_statusline::settings::Settings;
-use claude_statusline::theme::ThemeMode;
-use claude_statusline::{config, theme};
 
 fn main() {
     let cli = parse_cli();
@@ -35,44 +29,16 @@ fn main() {
         return;
     }
 
-    let base_icons = cli.display.icons.icons();
-    let owned_icons;
-    let icons: &Icons = match cli.display.separator.as_deref() {
-        Some(sep) => {
-            owned_icons = {
-                let mut icons = base_icons.clone();
-                icons.sep = Cow::Owned(sep.to_owned());
-                icons
-            };
-            &owned_icons
-        }
-        None => base_icons,
-    };
-
+    let icons = app::resolved_icons(cli.display.icons, cli.display.separator.as_deref());
     let settings = cli.to_settings();
     let pace_settings = cli.to_pace_settings();
-
-    // Detect terminal theme (dark/light) and build the color palette.
-    // Skip OSC 11 entirely when colors are off — colorsaurus can otherwise
-    // wait up to 100ms on terminals that don't reply, and the palette is
-    // discarded by AutoStream anyway.
-    let theme_mode = if matches!(cli.display.color, ColorChoice::Never) {
-        ThemeMode::Dark
-    } else {
-        theme::detect(cli.display.theme)
-    };
-    let palette = Palette::for_theme(theme_mode);
+    let palette = app::palette_for(cli.display.color, cli.display.theme);
 
     if cli.shell.preview {
-        let layout = config::load(
-            cli.layout.layout.as_deref(),
-            cli.layout.config.as_deref(),
-            &cli.layout.exclude,
-        );
-        let line = preview(icons, &layout, &settings, &palette);
+        let preview = app::preview_output(&cli, icons.as_ref(), &settings, &palette);
         let mut stdout = AutoStream::new(io::stdout().lock(), cli.display.color.into());
-        let _ = writeln!(stdout, "layout: {layout}");
-        let _ = stdout.write_all(line.as_bytes());
+        let _ = writeln!(stdout, "layout: {}", preview.layout);
+        let _ = stdout.write_all(preview.line.as_bytes());
         let _ = stdout.write_all(b"\n");
         return;
     }
@@ -80,36 +46,18 @@ fn main() {
     std::panic::set_hook(Box::new(|_| {}));
 
     let result = std::panic::catch_unwind(|| {
-        let input: Input = if let Some(json) = cli.shell.input_json.as_deref() {
-            serde_json::from_str(json).unwrap_or_default()
-        } else {
-            // serde_json::from_reader is ~2x slower than slurp-then-parse:
-            // it round-trips every byte through Read::read_buf and can't
-            // see the input length up front. Claude Code payloads are a
-            // few KB; cap at 1 MiB so a runaway producer can't OOM us.
-            const MAX_PAYLOAD: u64 = 1 << 20;
-            let mut buf = Vec::with_capacity(4096);
-            let stdin = io::stdin();
-            if stdin.lock().take(MAX_PAYLOAD).read_to_end(&mut buf).is_ok() {
-                serde_json::from_slice(&buf).unwrap_or_default()
-            } else {
-                Input::default()
-            }
-        };
-        let default_layout = match input.source {
-            InputSource::Claude => Layout::two_line(),
-            InputSource::Codex => Layout::one_line(),
-        };
-        let layout = config::load_with_default(
-            cli.layout.layout.as_deref(),
-            cli.layout.config.as_deref(),
-            &cli.layout.exclude,
-            default_layout,
-        );
-        render_with_pace(&input, icons, &layout, &settings, &pace_settings, &palette)
+        let input = app::parse_input(cli.shell.input_json.as_deref(), io::stdin().lock());
+        app::render_statusline(
+            &cli,
+            &input,
+            icons.as_ref(),
+            &settings,
+            &pace_settings,
+            &palette,
+        )
     });
 
-    let line = result.unwrap_or_else(|_| fallback_dir());
+    let line = result.unwrap_or_else(|_| app::fallback_dir());
 
     let mut stdout = AutoStream::new(io::stdout().lock(), cli.display.color.into());
     let _ = stdout.write_all(line.as_bytes());
@@ -160,10 +108,6 @@ fn dynamic_after_help() -> String {
     }
     out.push_str(HELP_AFTER_EXAMPLES);
     out
-}
-
-fn fallback_dir() -> String {
-    Input::default().dir_name()
 }
 
 fn emit_completions(shell: Shell) {

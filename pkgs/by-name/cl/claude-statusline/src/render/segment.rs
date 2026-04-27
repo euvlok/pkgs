@@ -143,9 +143,28 @@ impl Segment {
         self
     }
 
+    pub fn append_space(&mut self) -> &mut Self {
+        self.append_plain(" ")
+    }
+
+    pub fn append_icon_prefix(&mut self, icon: &str) -> &mut Self {
+        if !icon.is_empty() {
+            self.append_plain(format!("{icon} "));
+        }
+        self
+    }
+
     pub fn append_styled(&mut self, text: impl Into<CompactString>, style: Style) -> &mut Self {
         self.cells.push(Cell::new(text, style));
         self
+    }
+
+    pub fn append_spaced_styled(
+        &mut self,
+        text: impl Into<CompactString>,
+        style: Style,
+    ) -> &mut Self {
+        self.append_space().append_styled(text, style)
     }
 
     pub fn append_linked(
