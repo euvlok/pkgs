@@ -66,6 +66,8 @@ interface StatuslineState {
 
 const zeroDiff = (): DiffStats => ({ added: 0, removed: 0 });
 const orUndef = (n: number) => (n > 0 ? n : undefined);
+const hasFormatArg = (args: readonly string[]) =>
+	args.some((arg) => arg === "--format" || arg.startsWith("--format="));
 
 function diffFromToolResult(event: ToolResultEvent): DiffStats {
 	if (event.isError) return zeroDiff();
@@ -148,8 +150,9 @@ function createStatuslineFooter(
 		inflight = new AbortController();
 		const cmd = flag(FLAG_COMMAND) || process.env.PI_STATUSLINE_COMMAND || DEFAULT_COMMAND;
 		const args = (flag(FLAG_ARGS) || process.env.PI_STATUSLINE_ARGS || "").split(/\s+/).filter(Boolean);
+		const renderArgs = hasFormatArg(args) ? args : [...args, "--format", "text"];
 		const payload = buildPayload(ctx, state);
-		const result = await pi.exec(cmd, [...args, "--input-json", JSON.stringify(payload)], {
+		const result = await pi.exec(cmd, [...renderArgs, "--input-json", JSON.stringify(payload)], {
 			signal: inflight.signal,
 			timeout: SPAWN_TIMEOUT_MS,
 		});
