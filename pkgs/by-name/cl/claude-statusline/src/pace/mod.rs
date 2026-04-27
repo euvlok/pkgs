@@ -160,7 +160,11 @@ fn emit_debug(window: &Window, projection: &Projection) {
         path.push("claude-statusline");
         if std::fs::create_dir_all(&path).is_ok() {
             path.push("pace-debug.log");
-            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+            if let Ok(mut f) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&path)
+            {
                 use std::io::Write as _;
                 let _ = f.write_all(buf.as_bytes());
             }

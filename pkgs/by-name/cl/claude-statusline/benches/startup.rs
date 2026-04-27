@@ -1,4 +1,9 @@
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::doc_markdown)]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::doc_markdown
+)]
 
 //! Cold-start benchmarks: spawn the release binary and measure end-to-end
 //! wall time. Claude Code re-execs the statusline on every render, so this

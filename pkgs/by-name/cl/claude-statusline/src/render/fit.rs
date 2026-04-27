@@ -14,8 +14,7 @@ use crate::render::segment::{Segment, SegmentKind};
 /// Index of the rightmost droppable segment in `line`, or `None` if the
 /// line has nothing left to give up. Anchors are skipped by construction.
 fn rightmost_droppable(line: &[Segment]) -> Option<usize> {
-    line.iter()
-        .rposition(|s| s.kind == SegmentKind::Droppable)
+    line.iter().rposition(|s| s.kind == SegmentKind::Droppable)
 }
 
 /// Index of the rightmost segment that still has a compact form to fall
@@ -165,7 +164,10 @@ mod tests {
         // Anchor (4) + sep (3) + full (10) = 17. Budget 12 forces fit;
         // compact form is 4 wide, total becomes 11 — fits without
         // dropping.
-        let mut lines = vec![vec![anchor("home"), droppable_with_compact("longvalue!", "v=1")]];
+        let mut lines = vec![vec![
+            anchor("home"),
+            droppable_with_compact("longvalue!", "v=1"),
+        ]];
         fit_unaligned(&mut lines, 3, Some(12));
         assert_eq!(lines[0].len(), 2, "compact should fit, not be dropped");
         assert_eq!(lines[0][1].width(), 3);

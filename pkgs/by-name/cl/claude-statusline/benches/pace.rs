@@ -66,8 +66,14 @@ fn rate_empty_input() -> RateEstimate {
 fn rate_under_min_span() -> RateEstimate {
     // Two close samples → returns empty quickly. Pins the early-exit cost.
     let s = [
-        PctSample { ts_unix: NOW - 30, used_pct: 0.0 },
-        PctSample { ts_unix: NOW, used_pct: 1.0 },
+        PctSample {
+            ts_unix: NOW - 30,
+            used_pct: 0.0,
+        },
+        PctSample {
+            ts_unix: NOW,
+            used_pct: 1.0,
+        },
     ];
     RateEstimate::from_samples(divan::black_box(&s), 20, NOW)
 }
@@ -102,7 +108,13 @@ fn projection_classify(rate: f64) -> Projection {
         samples_consumed: 8,
         span_mins: 20.0,
     };
-    classify(divan::black_box(&w), 20.0, &est, &PaceSettings::default(), NOW)
+    classify(
+        divan::black_box(&w),
+        20.0,
+        &est,
+        &PaceSettings::default(),
+        NOW,
+    )
 }
 
 #[divan::bench(args = [0.0_f64, 42.0, 97.4, 142.6, 999.0, f64::INFINITY])]
@@ -163,7 +175,5 @@ fn pace_segment_end_to_end(bencher: divan::Bencher<'_, '_>) {
         ..PaceSettings::default()
     };
     let pal = Palette::dark();
-    bencher.bench(|| {
-        claude_statusline::pace::pace(divan::black_box(&input), &settings, &pal, NOW)
-    });
+    bencher.bench(|| claude_statusline::pace::pace(divan::black_box(&input), &settings, &pal, NOW));
 }

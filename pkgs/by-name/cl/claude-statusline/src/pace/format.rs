@@ -161,10 +161,7 @@ mod tests {
         assert_eq!(b, "→ 42%");
     }
 
-    fn proj_with_advisory(
-        cap_eta: Option<Duration>,
-        rest: Option<Duration>,
-    ) -> Projection {
+    fn proj_with_advisory(cap_eta: Option<Duration>, rest: Option<Duration>) -> Projection {
         Projection {
             state: PaceState::TooHot,
             current_pct: 60.0,
@@ -207,10 +204,7 @@ mod tests {
 
     #[test]
     fn sub_minute_advisories_are_dropped() {
-        let p = proj_with_advisory(
-            Some(Duration::from_secs(30)),
-            Some(Duration::from_secs(45)),
-        );
+        let p = proj_with_advisory(Some(Duration::from_secs(30)), Some(Duration::from_secs(45)));
         let body = body_text(&p);
         assert_eq!(body, "→ 142%");
     }

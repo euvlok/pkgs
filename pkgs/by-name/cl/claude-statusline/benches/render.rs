@@ -205,9 +205,7 @@ fn builder_rate_limits(bencher: divan::Bencher<'_, '_>) {
     let settings = Settings::default();
     let pal = Palette::dark();
     let now = claude_statusline::pace::now_unix();
-    bencher.bench(|| {
-        builders::rate_limits(divan::black_box(&input), icons, &settings, &pal, now)
-    });
+    bencher.bench(|| builders::rate_limits(divan::black_box(&input), icons, &settings, &pal, now));
 }
 
 #[divan::bench]
@@ -270,13 +268,5 @@ fn preview_two_line(bencher: divan::Bencher<'_, '_>) {
     let layout = Layout::two_line();
     let settings = Settings::default();
     let pal = Palette::dark();
-    bencher.bench(|| {
-        preview_with(
-            icons,
-            divan::black_box(&layout),
-            &settings,
-            &pal,
-            Some(120),
-        )
-    });
+    bencher.bench(|| preview_with(icons, divan::black_box(&layout), &settings, &pal, Some(120)));
 }

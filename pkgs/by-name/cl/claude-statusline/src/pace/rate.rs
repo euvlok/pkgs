@@ -176,7 +176,17 @@ fn weighted_median(pairs: &mut [(f64, f64)]) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unwrap_in_result, clippy::cast_possible_wrap, clippy::float_cmp, clippy::suboptimal_flops, clippy::uninlined_format_args, clippy::match_wildcard_for_single_variants)]
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unwrap_in_result,
+        clippy::cast_possible_wrap,
+        clippy::float_cmp,
+        clippy::suboptimal_flops,
+        clippy::uninlined_format_args,
+        clippy::match_wildcard_for_single_variants
+    )]
 
     use super::*;
 
@@ -287,11 +297,7 @@ mod tests {
         // Two raw samples is below MIN_POINTS regardless of span.
         let s = [sample(0, 0.0), sample(600, 10.0)];
         let e = RateEstimate::from_samples(&s, 20, 600);
-        assert_eq!(
-            e.samples_consumed, 0,
-            "got rate {}",
-            e.rate_pct_per_min
-        );
+        assert_eq!(e.samples_consumed, 0, "got rate {}", e.rate_pct_per_min);
     }
 
     #[test]

@@ -153,7 +153,12 @@ pub fn cache(input: &Input, pal: &Palette) -> Option<Segment> {
     Some(s)
 }
 
-pub fn pace(input: &Input, settings: &PaceSettings, pal: &Palette, now_unix: u64) -> Option<Segment> {
+pub fn pace(
+    input: &Input,
+    settings: &PaceSettings,
+    pal: &Palette,
+    now_unix: u64,
+) -> Option<Segment> {
     pace::pace(input, settings, pal, now_unix)
 }
 
@@ -184,7 +189,12 @@ pub fn rate_limits(
     // configured threshold; 5h always shows.
     let visible: Vec<(&'static str, &RateLimit, u32, bool)> = [
         ("5h", &rl.five_hour, visible_pct(&rl.five_hour, 0), true),
-        ("7d", &rl.seven_day, visible_pct(&rl.seven_day, settings.seven_day_threshold), false),
+        (
+            "7d",
+            &rl.seven_day,
+            visible_pct(&rl.seven_day, settings.seven_day_threshold),
+            false,
+        ),
     ]
     .into_iter()
     .filter_map(|(l, s, pct, c)| pct.map(|p| (l, s, p, c)))
@@ -209,7 +219,10 @@ pub fn rate_limits(
         }
         both(&mut s, Cell::new(*label, pal.dim));
         both(&mut s, Cell::plain(" "));
-        both(&mut s, Cell::new(format!("{pct}%"), pal.color_for_pct(*pct, 50, 100)));
+        both(
+            &mut s,
+            Cell::new(format!("{pct}%"), pal.color_for_pct(*pct, 50, 100)),
+        );
         if *show_countdown
             && let (Some(now), Some(reset)) = (now, slot.resets_at)
             && reset - now > 0
