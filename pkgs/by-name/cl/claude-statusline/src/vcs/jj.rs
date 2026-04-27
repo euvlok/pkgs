@@ -82,6 +82,12 @@ pub fn collect(dir: &Path, icons: &Icons, pal: &Palette) -> Option<Segment> {
 const DIRTY_CHECK_BUDGET: usize = 4096;
 
 fn working_copy_dirty(workspace: &Workspace) -> Option<bool> {
+    // Intentionally avoid jj-lib's snapshot/status path here: the statusline is
+    // a read-only prompt hook and must not write a new working-copy commit just
+    // to decide which glyph to render. jj-lib exposes `FileState::is_clean()`
+    // for comparing two recorded states, but constructing the current disk
+    // `FileState` from metadata is private, so this mirrors that cheap metadata
+    // check while staying non-mutating.
     let wc = workspace
         .working_copy()
         .downcast_ref::<LocalWorkingCopy>()?;
@@ -110,11 +116,9 @@ fn working_copy_dirty(workspace: &Workspace) -> Option<bool> {
         }
         if let Ok(modified) = meta.modified()
             && let Ok(dur) = modified.duration_since(UNIX_EPOCH)
+            && i64::try_from(dur.as_millis()).ok() != Some(state.mtime.0)
         {
-            let millis = dur.as_millis() as i64;
-            if millis != state.mtime.0 {
-                return Some(true);
-            }
+            return Some(true);
         }
         checked += 1;
     }

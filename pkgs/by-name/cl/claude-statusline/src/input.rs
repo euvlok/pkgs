@@ -104,7 +104,8 @@ impl ContextUsage {
         if denom == 0 {
             return None;
         }
-        Some(((self.cache_read_input_tokens as f64 / denom as f64) * 100.0).round() as u32)
+        let pct = (self.cache_read_input_tokens.saturating_mul(100) + denom / 2) / denom;
+        Some(u32::try_from(pct).unwrap_or(u32::MAX))
     }
 }
 
@@ -152,9 +153,8 @@ impl Input {
             return p.to_string();
         }
         std::env::current_dir()
-            .ok()
-            .and_then(|p| p.to_str().map(str::to_owned))
-            .unwrap_or_else(|| ".".to_string())
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_else(|_| ".".to_string())
     }
 
     /// Display name for the directory segment (last path component).
@@ -162,17 +162,8 @@ impl Input {
     /// supply a usable path - without this, fresh sessions render a bare
     /// `.` next to the VCS info.
     pub fn dir_name(&self) -> String {
-        if let Some(p) = self.path_field() {
-            return basename(p).to_string();
-        }
-        std::env::current_dir()
-            .ok()
-            .and_then(|p| {
-                p.file_name()
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .or_else(|| p.to_str().map(str::to_owned))
-            })
-            .unwrap_or_else(|| ".".to_string())
+        self.path_field()
+            .map_or_else(process_cwd_basename, |p| basename(p).to_owned())
     }
 
     /// Full absolute path as Claude Code reported it. Falls back to the
@@ -183,9 +174,8 @@ impl Input {
             return p.to_string();
         }
         std::env::current_dir()
-            .ok()
-            .and_then(|p| p.to_str().map(str::to_owned))
-            .unwrap_or_else(|| ".".to_string())
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_else(|_| ".".to_string())
     }
 
     /// Full path with the user's home directory collapsed to `~`.
@@ -196,29 +186,32 @@ impl Input {
         let Some(home) = dirs::home_dir() else {
             return full;
         };
-        let Some(home_str) = home.to_str() else {
+        let Ok(rest) = std::path::Path::new(&full).strip_prefix(&home) else {
             return full;
         };
-        if home_str.is_empty() {
-            return full;
+        if rest.as_os_str().is_empty() {
+            return "~".to_string();
         }
-        if let Some(rest) = full.strip_prefix(home_str) {
-            if rest.is_empty() {
-                return "~".to_string();
-            }
-            // On Windows the separator is `\`, on Unix it's `/`. Match
-            // either so the home collapse works on both without us
-            // having to import `MAIN_SEPARATOR`.
-            if rest.starts_with(['/', '\\']) {
-                return format!("~{rest}");
-            }
-        }
-        full
+        format!("~{}{}", std::path::MAIN_SEPARATOR, rest.display())
     }
 }
 
+pub fn process_cwd_basename() -> String {
+    std::env::current_dir()
+        .ok()
+        .and_then(|p| {
+            p.file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .or_else(|| p.to_str().map(str::to_owned))
+        })
+        .unwrap_or_else(|| ".".to_owned())
+}
+
 fn basename(path: &str) -> &str {
-    camino::Utf8Path::new(path).file_name().unwrap_or(".")
+    std::path::Path::new(path)
+        .file_name()
+        .and_then(std::ffi::OsStr::to_str)
+        .unwrap_or(".")
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -276,17 +269,17 @@ struct CodexHookInput {
 
 impl From<CodexHookInput> for Input {
     fn from(v: CodexHookInput) -> Self {
-        let cwd = v.cwd.and_then(nonempty_owned);
+        let cwd = nonempty(v.cwd);
         Self {
             source: InputSource::Codex,
             workspace: Workspace {
                 current_dir: cwd.clone(),
             },
             cwd,
-            transcript_path: v.transcript_path.and_then(nonempty_owned),
-            session_id: v.session_id.and_then(nonempty_owned),
+            transcript_path: nonempty(v.transcript_path),
+            session_id: nonempty(v.session_id),
             model: Model {
-                display_name: v.model.and_then(nonempty_owned),
+                display_name: nonempty(v.model),
             },
             ..Self::default()
         }
@@ -312,21 +305,21 @@ struct CodexNotifyInput {
 
 impl From<CodexNotifyInput> for Input {
     fn from(v: CodexNotifyInput) -> Self {
-        let cwd = v.cwd.and_then(nonempty_owned);
+        let cwd = nonempty(v.cwd);
         Self {
             source: InputSource::Codex,
             workspace: Workspace {
                 current_dir: cwd.clone(),
             },
             cwd,
-            session_id: v.thread_id.and_then(nonempty_owned),
+            session_id: nonempty(v.thread_id),
             ..Self::default()
         }
     }
 }
 
-fn nonempty_owned(value: String) -> Option<String> {
-    (!value.trim().is_empty()).then_some(value)
+fn nonempty(value: Option<String>) -> Option<String> {
+    value.filter(|s| !s.trim().is_empty())
 }
 
 #[cfg(test)]

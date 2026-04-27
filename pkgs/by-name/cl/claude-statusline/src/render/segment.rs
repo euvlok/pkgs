@@ -71,7 +71,7 @@ impl Cell {
             .as_deref()
             .map(anstyle_hyperlink::Hyperlink::with_url)
             .unwrap_or_default();
-        if self.style == Style::new() {
+        if self.style.is_plain() {
             let _ = write!(out, "{link}{}{link:#}", self.text);
         } else {
             let _ = write!(out, "{link}{}{}{Reset}{link:#}", self.style, self.text);

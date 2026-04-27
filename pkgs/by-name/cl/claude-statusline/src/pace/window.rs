@@ -27,7 +27,7 @@ impl Window {
         if resets_at_i <= 0 {
             return None;
         }
-        let resets_at = resets_at_i as u64;
+        let resets_at = resets_at_i.cast_unsigned();
         if resets_at <= now {
             return None;
         }
@@ -54,7 +54,7 @@ impl Window {
     /// Remaining time in minutes, as a float (useful for fair-share math).
     #[must_use]
     pub fn remaining_mins(&self, now: u64) -> f64 {
-        self.remaining(now).as_secs() as f64 / 60.0
+        self.remaining(now).as_secs_f64() / 60.0
     }
 
     /// `%/min` you could spend and exactly hit 100% at reset. Returns

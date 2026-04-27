@@ -58,16 +58,16 @@ pub fn collect(dir: &Path, icons: &Icons, pal: &Palette) -> Option<Segment> {
 
     // Ahead / behind upstream.
     let tracking = upstream_divergence(&repo);
-    let arrows: Vec<(&str, usize)> = [
+    let mut arrows = [
         (icons.ahead, tracking.ahead),
         (icons.behind, tracking.behind),
     ]
     .into_iter()
     .filter(|(_, n)| *n > 0)
-    .collect();
-    if !arrows.is_empty() {
+    .peekable();
+    if arrows.peek().is_some() {
         s.push_plain(" ");
-        for (i, (icon, n)) in arrows.iter().enumerate() {
+        for (i, (icon, n)) in arrows.enumerate() {
             if i > 0 {
                 s.push_plain(" ");
             }

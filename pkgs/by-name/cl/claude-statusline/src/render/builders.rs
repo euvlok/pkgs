@@ -2,6 +2,8 @@
 //! styled cells; passing `None` upstream tells the layout to skip the
 //! position cleanly.
 
+use std::path::Path;
+
 use crate::input::{Input, RateLimit};
 use crate::pace::{self, PaceSettings};
 use crate::render::colors::Palette;
@@ -18,10 +20,14 @@ pub fn dir(input: &Input, settings: &Settings) -> Segment {
         DirStyle::Home => input.dir_home(),
     };
     match (settings.hyperlinks, input.workspace.current_dir.as_deref()) {
-        (true, Some(full_path)) => {
-            let url = file_url(full_path);
-            s.push_linked(text, anstyle::Style::new(), url);
-        }
+        (true, Some(full_path)) => match file_url(full_path) {
+            Some(url) => {
+                s.push_linked(text, anstyle::Style::new(), url);
+            }
+            None => {
+                s.push_plain(text);
+            }
+        },
         _ => {
             s.push_plain(text);
         }
@@ -29,24 +35,8 @@ pub fn dir(input: &Input, settings: &Settings) -> Segment {
     s
 }
 
-fn file_url(path: &str) -> String {
-    let mut url = String::with_capacity(path.len() + 16);
-    url.push_str("file://");
-    if !path.starts_with('/') {
-        url.push('/');
-    }
-    for byte in path.bytes() {
-        match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'/' | b'-' | b'.' | b'_' | b'~' => {
-                url.push(byte as char);
-            }
-            _ => {
-                use std::fmt::Write as _;
-                let _ = write!(url, "%{byte:02X}");
-            }
-        }
-    }
-    url
+fn file_url(path: &str) -> Option<String> {
+    anstyle_hyperlink::file_to_url(None, Path::new(path))
 }
 
 pub fn model(input: &Input, _icons: &Icons, pal: &Palette) -> Option<Segment> {
@@ -207,7 +197,7 @@ pub fn rate_limits(
     let rl = &input.rate_limits;
     // (label, slot, pct, show_countdown). 7d is suppressed below the
     // configured threshold; 5h always shows.
-    let visible: Vec<(&'static str, &RateLimit, u32, bool)> = [
+    let visible = [
         ("5h", &rl.five_hour, visible_pct(&rl.five_hour, 0), true),
         (
             "7d",
@@ -215,13 +205,12 @@ pub fn rate_limits(
             visible_pct(&rl.seven_day, settings.seven_day_threshold),
             false,
         ),
-    ]
-    .into_iter()
-    .filter_map(|(l, s, pct, c)| pct.map(|p| (l, s, p, c)))
-    .collect();
-    if visible.is_empty() {
-        return None;
-    }
+    ];
+    let mut visible = visible
+        .into_iter()
+        .filter_map(|(l, s, pct, c)| pct.map(|p| (l, s, p, c)))
+        .peekable();
+    visible.peek()?;
 
     let mut s = Segment::droppable();
     let mut compact: Vec<Cell> = Vec::new();
@@ -233,17 +222,17 @@ pub fn rate_limits(
     if !icons.clock.is_empty() {
         both(&mut s, Cell::plain(format!("{} ", icons.clock)));
     }
-    for (i, (label, slot, pct, show_countdown)) in visible.iter().enumerate() {
+    for (i, (label, slot, pct, show_countdown)) in visible.enumerate() {
         if i > 0 {
             both(&mut s, Cell::plain("  "));
         }
-        both(&mut s, Cell::new(*label, pal.dim));
+        both(&mut s, Cell::new(label, pal.dim));
         both(&mut s, Cell::plain(" "));
         both(
             &mut s,
-            Cell::new(format!("{pct}%"), pal.color_for_pct(*pct, 50, 100)),
+            Cell::new(format!("{pct}%"), pal.color_for_pct(pct, 50, 100)),
         );
-        if *show_countdown
+        if show_countdown
             && let (Some(now), Some(reset)) = (now, slot.resets_at)
             && reset - now > 0
         {
@@ -264,11 +253,17 @@ mod tests {
 
     #[test]
     fn file_urls_percent_encode_reserved_and_control_bytes() {
-        assert_eq!(file_url("/tmp/a b#c%\n"), "file:///tmp/a%20b%23c%25%0A");
+        assert_eq!(
+            file_url("/tmp/a b#c%\n").as_deref(),
+            Some("file:///tmp/a%20b%23c%25%0A")
+        );
     }
 
     #[test]
     fn file_urls_add_slash_for_relative_paths() {
-        assert_eq!(file_url("tmp/project"), "file:///tmp/project");
+        assert_eq!(
+            file_url("tmp/project").as_deref(),
+            Some("file:///tmp/project")
+        );
     }
 }

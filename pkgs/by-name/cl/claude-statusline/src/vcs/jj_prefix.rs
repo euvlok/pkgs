@@ -38,9 +38,8 @@
 //! repo, which is also when paying ~10-100ms is fine.
 
 use std::collections::HashMap;
-use std::collections::hash_map::DefaultHasher;
 use std::fs;
-use std::hash::{Hash, Hasher};
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -122,7 +121,7 @@ pub fn shortest_prefix_len(
     // the resolved disambiguation set keyed by op-log head; if it's
     // still valid we never touch jj-lib's revset parser.
     if let Some(cached) = read_cache(workspace.workspace_root(), &op_id_hex)
-        && let Some(len) = cached.shortest_prefix_for(&target_hex)
+        && let Some(len) = cached.shortest_prefix_for(&target_hex, repo.as_ref())
     {
         return len;
     }
@@ -304,7 +303,7 @@ impl CachedSet {
     /// cached set without re-evaluating the revset. Returns `None` if
     /// the cache doesn't actually contain `target_hex` (which would
     /// mean it's stale - the caller should re-resolve).
-    fn shortest_prefix_for(&self, target_hex: &str) -> Option<usize> {
+    fn shortest_prefix_for(&self, target_hex: &str, repo: &dyn Repo) -> Option<usize> {
         let mut found_self = false;
         let mut max_common = 0usize;
         for other in &self.change_ids {
@@ -313,8 +312,8 @@ impl CachedSet {
                 continue;
             }
             let common = target_hex
-                .chars()
-                .zip(other.chars())
+                .bytes()
+                .zip(other.bytes())
                 .take_while(|(a, b)| a == b)
                 .count();
             if common > max_common {
@@ -328,8 +327,23 @@ impl CachedSet {
             // re-resolve.
             return None;
         }
-        Some((max_common + 1).max(1))
+        Some(disambiguate_prefix_with_refs(
+            repo,
+            target_hex,
+            (max_common + 1).max(1),
+        ))
     }
+}
+
+/// Match jj-lib's final prefix disambiguation against local tag/bookmark names.
+fn disambiguate_prefix_with_refs(repo: &dyn Repo, id_sym: &str, min_len: usize) -> usize {
+    (min_len..id_sym.len())
+        .find(|&n| {
+            let prefix = &id_sym[..n];
+            repo.view().get_local_tag(prefix.as_ref()).is_absent()
+                && repo.view().get_local_bookmark(prefix.as_ref()).is_absent()
+        })
+        .unwrap_or(id_sym.len())
 }
 
 /// Cache file for the given workspace. We hash the workspace root
@@ -339,10 +353,8 @@ fn cache_path(workspace_root: &Path) -> Option<PathBuf> {
     let dir = dirs::cache_dir()?
         .join("claude-statusline")
         .join("jj-prefix");
-    let mut hasher = DefaultHasher::new();
-    workspace_root.hash(&mut hasher);
-    let h = hasher.finish();
-    Some(dir.join(format!("{h:016x}.json")))
+    let hash = blake3::hash(workspace_root.as_os_str().as_encoded_bytes());
+    Some(dir.join(format!("{hash}.json")))
 }
 
 fn read_cache(workspace_root: &Path, op_id: &str) -> Option<CachedSet> {
@@ -363,11 +375,9 @@ fn write_cache(workspace_root: &Path, set: &CachedSet) -> std::io::Result<()> {
         .parent()
         .ok_or_else(|| std::io::Error::other("no parent dir"))?;
     fs::create_dir_all(parent)?;
-    let bytes =
-        serde_json::to_vec(set).map_err(|e| std::io::Error::other(format!("serialize: {e}")))?;
-    let tmp = tempfile::NamedTempFile::new_in(parent)?;
-    fs::write(tmp.path(), &bytes)?;
-    tmp.persist(&path)
-        .map_err(|e| std::io::Error::other(format!("persist: {e}")))?;
+    let bytes = serde_json::to_vec(set).map_err(std::io::Error::other)?;
+    let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
+    tmp.write_all(&bytes)?;
+    tmp.persist(&path).map_err(std::io::Error::other)?;
     Ok(())
 }

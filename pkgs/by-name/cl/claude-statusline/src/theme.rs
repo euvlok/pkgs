@@ -50,7 +50,7 @@ fn detect_auto() -> ThemeMode {
 /// Indices 0–6 and 8 are dark; 7 and 9–15 are light.
 fn detect_from_colorfgbg() -> Option<ThemeMode> {
     let value = std::env::var("COLORFGBG").ok()?;
-    let bg_str = value.split(';').nth(1)?.trim();
+    let bg_str = value.rsplit(';').next()?.trim();
     let bg: u8 = bg_str.parse().ok()?;
     Some(match bg {
         0..=6 | 8 => ThemeMode::Dark,

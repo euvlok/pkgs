@@ -28,7 +28,7 @@ pub fn humanize_duration(secs: i64) -> String {
     if secs <= 0 {
         return String::new();
     }
-    let secs = secs as u64;
+    let secs = secs.cast_unsigned();
     match secs {
         0..60 => format!("{secs}s"),
         60..3600 => format!("{}m", secs / 60),

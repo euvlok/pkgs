@@ -151,10 +151,7 @@ fn dynamic_after_help() -> String {
 }
 
 fn fallback_dir() -> String {
-    std::env::current_dir()
-        .ok()
-        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
-        .unwrap_or_else(|| ".".to_string())
+    Input::default().dir_name()
 }
 
 fn emit_completions(shell: Shell) {

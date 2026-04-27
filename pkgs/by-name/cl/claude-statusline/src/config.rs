@@ -13,6 +13,7 @@
 //! file may contain comments starting with `#`; everything from `#` to
 //! the next newline is stripped before parsing.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use crate::render::layout::{Layout, SegmentName};
@@ -40,7 +41,7 @@ pub fn load_with_default(
 ) -> Layout {
     let mut layout = resolve_base(cli_layout, cli_config, &default_layout);
     if !excludes.is_empty() {
-        let drop: Vec<SegmentName> = excludes
+        let drop: HashSet<SegmentName> = excludes
             .iter()
             .filter_map(|s| SegmentName::parse(s))
             .collect();
@@ -102,8 +103,8 @@ fn config_file() -> Option<PathBuf> {
 fn strip_comments(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for line in text.lines() {
-        let cut = line.find('#').unwrap_or(line.len());
-        out.push_str(&line[..cut]);
+        let uncommented = line.split_once('#').map_or(line, |(before, _)| before);
+        out.push_str(uncommented);
         out.push('\n');
     }
     out

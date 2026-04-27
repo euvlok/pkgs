@@ -60,7 +60,7 @@ pub fn classify(
     now: u64,
 ) -> Projection {
     let remaining = window.remaining(now);
-    let remaining_mins = remaining.as_secs() as f64 / 60.0;
+    let remaining_mins = remaining.as_secs_f64() / 60.0;
     let fair = window.fair_share(current_pct, now);
     let rate = estimate.rate_pct_per_min.max(0.0);
     let projected = (current_pct + rate * remaining_mins).max(current_pct);
