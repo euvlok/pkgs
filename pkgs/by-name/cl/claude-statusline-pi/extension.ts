@@ -33,11 +33,6 @@ const IDLE_TICK_MS = 30_000;
 // Lifecycle events that should trigger a (debounced) re-render of the footer.
 const REFRESH_EVENTS = ["message_end", "turn_end", "model_select"] as const;
 
-interface RateLimitSnapshot {
-	five_hour: { used_percentage?: number; resets_at?: number };
-	seven_day: { used_percentage?: number; resets_at?: number };
-}
-
 interface DiffStats {
 	added: number;
 	removed: number;
@@ -47,10 +42,10 @@ const ZERO_DIFF: DiffStats = { added: 0, removed: 0 };
 
 // Wire shape consumed by `claude-statusline` (Rust). Mirrors the serde
 // structs in `claude-statusline/src/input.rs`; keep in sync by hand.
+// `headers` carries raw HTTP response headers; the binary extracts
+// Codex-format rate-limit fields (`x-codex-{primary,secondary}-…`) itself.
 interface StatuslinePayload {
 	workspace: { current_dir: string };
-	transcript_path?: string;
-	session_id?: string;
 	model: { display_name: string };
 	context_window: {
 		used_percentage?: number;
@@ -68,37 +63,13 @@ interface StatuslinePayload {
 		total_lines_added?: number;
 		total_lines_removed?: number;
 	};
-	rate_limits?: RateLimitSnapshot;
+	headers?: Record<string, string>;
 }
 
 interface StatuslineState {
-	rateLimits: RateLimitSnapshot | undefined;
+	headers: Record<string, string> | undefined;
 	diff: DiffStats;
 	apiDurationMs: number;
-}
-
-function readNumber(headers: Record<string, string>, name: string): number | undefined {
-	const raw = headers[name] ?? headers[name.toLowerCase()];
-	const parsed = raw === undefined ? Number.NaN : Number(raw);
-	return Number.isFinite(parsed) ? parsed : undefined;
-}
-
-// Parses Codex `x-codex-{primary,secondary}-{used-percent,reset-at}` headers
-// (codex-rs/core: tests/suite/client.rs). Returns undefined when *no* values
-// are present so a cached snapshot from a prior response isn't clobbered by
-// an unrelated request.
-function parseRateLimitHeaders(h: Record<string, string>): RateLimitSnapshot | undefined {
-	const five_hour = {
-		used_percentage: readNumber(h, "x-codex-primary-used-percent"),
-		resets_at: readNumber(h, "x-codex-primary-reset-at"),
-	};
-	const seven_day = {
-		used_percentage: readNumber(h, "x-codex-secondary-used-percent"),
-		resets_at: readNumber(h, "x-codex-secondary-reset-at"),
-	};
-	const empty = { ...five_hour, ...seven_day };
-	if (Object.values(empty).every((v) => v === undefined)) return undefined;
-	return { five_hour, seven_day };
 }
 
 function diffFromToolResult(event: ToolResultEvent): DiffStats {
@@ -143,15 +114,9 @@ function buildPayload(ctx: ExtensionContext, sessionStartedAtMs: number, state: 
 	}
 
 	const ctxUsage = ctx.getContextUsage();
-	// session_id + transcript_path give the Rust binary a stable key for
-	// its delta-flash tracker (see `session::session_key`). Without them
-	// the "since last render" delta segment is suppressed.
-	const sessionId = ctx.sessionManager.getSessionId();
 
 	return {
 		workspace: { current_dir: ctx.sessionManager.getCwd() },
-		transcript_path: ctx.sessionManager.getSessionFile(),
-		session_id: sessionId.length > 0 ? sessionId : undefined,
 		model: { display_name: ctx.model?.name ?? ctx.model?.id ?? "no-model" },
 		context_window: {
 			used_percentage: ctxUsage?.percent ?? undefined,
@@ -169,7 +134,7 @@ function buildPayload(ctx: ExtensionContext, sessionStartedAtMs: number, state: 
 			total_lines_added: state.diff.added > 0 ? state.diff.added : undefined,
 			total_lines_removed: state.diff.removed > 0 ? state.diff.removed : undefined,
 		},
-		rate_limits: state.rateLimits,
+		headers: state.headers,
 	};
 }
 
@@ -270,7 +235,7 @@ export default function claudeStatuslineExtension(pi: ExtensionAPI): void {
 	});
 
 	let activeFooter: StatuslineFooter | undefined;
-	const state: StatuslineState = { rateLimits: undefined, diff: { ...ZERO_DIFF }, apiDurationMs: 0 };
+	const state: StatuslineState = { headers: undefined, diff: { ...ZERO_DIFF }, apiDurationMs: 0 };
 	let requestStartedAt: number | undefined;
 
 	pi.on("before_provider_request", () => {
@@ -282,8 +247,10 @@ export default function claudeStatuslineExtension(pi: ExtensionAPI): void {
 			state.apiDurationMs += Date.now() - requestStartedAt;
 			requestStartedAt = undefined;
 		}
-		const snapshot = parseRateLimitHeaders(event.headers ?? {});
-		if (snapshot) state.rateLimits = snapshot;
+		// Forward raw headers; the binary extracts Codex rate-limit fields.
+		// Only replace when the response actually carried headers, so a
+		// header-less response can't clobber the cache.
+		if (event.headers && Object.keys(event.headers).length > 0) state.headers = event.headers;
 		activeFooter?.schedule();
 	});
 
@@ -300,7 +267,7 @@ export default function claudeStatuslineExtension(pi: ExtensionAPI): void {
 		if (!ctx.hasUI) return;
 		state.diff = { ...ZERO_DIFF };
 		state.apiDurationMs = 0;
-		state.rateLimits = undefined;
+		state.headers = undefined;
 		requestStartedAt = undefined;
 		const sessionStartedAtMs = Date.now();
 		ctx.ui.setFooter((tui, theme, footerData) => {
