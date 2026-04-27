@@ -66,9 +66,9 @@ pub fn collect(dir: &Path, icons: &Icons, pal: &Palette) -> Option<Segment> {
     // Dirty indicator
     s.push_plain(" ");
     match working_copy_dirty(&workspace) {
-        Some(true) => s.push_styled(icons.dirty.to_string(), pal.yellow),
-        Some(false) => s.push_styled(icons.clean.to_string(), pal.green),
-        None => s.push_styled(icons.untracked.to_string(), pal.dim),
+        Some(true) => s.push_styled(icons.dirty, pal.yellow),
+        Some(false) => s.push_styled(icons.clean, pal.green),
+        None => s.push_styled(icons.untracked, pal.dim),
     };
 
     if commit.has_conflict() {

@@ -39,19 +39,19 @@ pub fn collect(dir: &Path, icons: &Icons, pal: &Palette) -> Option<Segment> {
 
     match (branch_name.as_deref(), short_hash.as_deref()) {
         (Some(b), Some(h)) => {
-            s.push_styled(b.to_string(), pal.magenta);
+            s.push_styled(b, pal.magenta);
             s.push_plain(" ");
-            s.push_styled(h.to_string(), pal.dim);
+            s.push_styled(h, pal.dim);
         }
         (Some(b), None) => {
-            s.push_styled(b.to_string(), pal.magenta);
+            s.push_styled(b, pal.magenta);
             s.push_plain(" ");
             s.push_styled("(no commits)", pal.dim);
         }
         (None, Some(h)) => {
             s.push_styled("(detached)", pal.yellow);
             s.push_plain(" ");
-            s.push_styled(h.to_string(), pal.dim);
+            s.push_styled(h, pal.dim);
         }
         (None, None) => {}
     }
@@ -101,23 +101,23 @@ pub fn collect(dir: &Path, icons: &Icons, pal: &Palette) -> Option<Segment> {
         Some(status) => {
             if status.staged {
                 s.push_plain(" ");
-                s.push_styled(icons.staged.to_string(), pal.green);
+                s.push_styled(icons.staged, pal.green);
             }
             if status.unstaged {
                 s.push_plain(" ");
-                s.push_styled(icons.dirty.to_string(), pal.yellow);
+                s.push_styled(icons.dirty, pal.yellow);
             } else if !status.staged && !status.untracked {
                 s.push_plain(" ");
-                s.push_styled(icons.clean.to_string(), pal.green);
+                s.push_styled(icons.clean, pal.green);
             }
             if status.untracked {
                 s.push_plain(" ");
-                s.push_styled(icons.untracked.to_string(), pal.dim);
+                s.push_styled(icons.untracked, pal.dim);
             }
         }
         None => {
             s.push_plain(" ");
-            s.push_styled(icons.untracked.to_string(), pal.dim);
+            s.push_styled(icons.untracked, pal.dim);
         }
     }
 
