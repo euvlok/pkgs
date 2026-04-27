@@ -1,0 +1,17 @@
+{
+  "name": "eupkgs-ts",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Type-checking scaffold for TypeScript files in eupkgs (pi-mono extensions etc.). Not part of any Nix output.",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@mariozechner/pi-ai": "^0.70.2",
+    "@mariozechner/pi-coding-agent": "^0.70.2",
+    "@mariozechner/pi-tui": "^0.70.2",
+    "@types/node": "^22.10.5",
+    "typescript": "^5.9.2"
+  }
+}

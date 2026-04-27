@@ -25,25 +25,15 @@ import { type Component, truncateToWidth, type TUI } from "@mariozechner/pi-tui"
 const FLAG_COMMAND = "statusline-command";
 const FLAG_ARGS = "statusline-args";
 const DEFAULT_COMMAND = "claude-statusline";
-
 const REFRESH_DEBOUNCE_MS = 200;
 const SPAWN_TIMEOUT_MS = 3000;
 const IDLE_TICK_MS = 30_000;
 
-// Lifecycle events that should trigger a (debounced) re-render of the footer.
-const REFRESH_EVENTS = ["message_end", "turn_end", "model_select"] as const;
+type DiffStats = { added: number; removed: number };
 
-interface DiffStats {
-	added: number;
-	removed: number;
-}
-
-const ZERO_DIFF: DiffStats = { added: 0, removed: 0 };
-
-// Wire shape consumed by `claude-statusline` (Rust). Mirrors the serde
-// structs in `claude-statusline/src/input.rs`; keep in sync by hand.
-// `headers` carries raw HTTP response headers; the binary extracts
-// Codex-format rate-limit fields (`x-codex-{primary,secondary}-…`) itself.
+// Wire shape consumed by `claude-statusline` (Rust). Mirrors the serde structs
+// in `claude-statusline/src/input.rs`; keep in sync by hand. `headers` carries
+// raw HTTP response headers; the binary extracts Codex-format rate-limit fields.
 interface StatuslinePayload {
 	workspace: { current_dir: string };
 	model: { display_name: string };
@@ -72,12 +62,13 @@ interface StatuslineState {
 	apiDurationMs: number;
 }
 
+const zeroDiff = (): DiffStats => ({ added: 0, removed: 0 });
+const orUndef = (n: number) => (n > 0 ? n : undefined);
+
 function diffFromToolResult(event: ToolResultEvent): DiffStats {
-	if (event.isError) return ZERO_DIFF;
+	if (event.isError) return zeroDiff();
 	if (isEditToolResult(event)) {
-		const diff = event.details?.diff;
-		if (!diff) return ZERO_DIFF;
-		const lines = diff.split("\n");
+		const lines = event.details?.diff?.split("\n") ?? [];
 		return {
 			added: lines.filter((l) => l.startsWith("+") && !l.startsWith("+++")).length,
 			removed: lines.filter((l) => l.startsWith("-") && !l.startsWith("---")).length,
@@ -85,11 +76,11 @@ function diffFromToolResult(event: ToolResultEvent): DiffStats {
 	}
 	if (isWriteToolResult(event)) {
 		const c = event.input.content;
-		if (typeof c !== "string" || c.length === 0) return ZERO_DIFF;
+		if (typeof c !== "string" || !c) return zeroDiff();
 		const n = c.split("\n").length;
 		return { added: c.endsWith("\n") ? n - 1 : n, removed: 0 };
 	}
-	return ZERO_DIFF;
+	return zeroDiff();
 }
 
 // Walk the active branch (not all entries) so usage doesn't double-count
@@ -104,9 +95,7 @@ function buildPayload(ctx: ExtensionContext, sessionStartedAtMs: number, state: 
 		usage.cacheRead += u.cacheRead;
 		usage.cacheWrite += u.cacheWrite;
 	}
-
 	const ctxUsage = ctx.getContextUsage();
-
 	return {
 		workspace: { current_dir: ctx.sessionManager.getCwd() },
 		model: { display_name: ctx.model?.name ?? ctx.model?.id ?? "no-model" },
@@ -122,15 +111,15 @@ function buildPayload(ctx: ExtensionContext, sessionStartedAtMs: number, state: 
 		},
 		cost: {
 			total_duration_ms: Math.max(0, Date.now() - sessionStartedAtMs),
-			total_api_duration_ms: state.apiDurationMs > 0 ? state.apiDurationMs : undefined,
-			total_lines_added: state.diff.added > 0 ? state.diff.added : undefined,
-			total_lines_removed: state.diff.removed > 0 ? state.diff.removed : undefined,
+			total_api_duration_ms: orUndef(state.apiDurationMs),
+			total_lines_added: orUndef(state.diff.added),
+			total_lines_removed: orUndef(state.diff.removed),
 		},
 		headers: state.headers,
 	};
 }
 
-type Footer = Component & { schedule(): void };
+type Footer = Component & { schedule(): void; dispose?(): void };
 
 // Built fresh per `session_start`; replaced on session change. Caches the
 // most recent statusline output and debounces subprocess runs.
@@ -149,15 +138,18 @@ function createStatuslineFooter(
 	let pending: ReturnType<typeof setTimeout> | undefined;
 	let inflight: AbortController | undefined;
 
+	const flagStr = (k: string): string => {
+		const v = pi.getFlag(k);
+		return typeof v === "string" ? v : "";
+	};
+
 	const refresh = async (): Promise<void> => {
 		inflight?.abort();
 		inflight = new AbortController();
-		const payload = buildPayload(ctx, sessionStartedAtMs, state);
-		const cmdFlag = pi.getFlag(FLAG_COMMAND);
-		const argsFlag = pi.getFlag(FLAG_ARGS);
-		const cmd = (typeof cmdFlag === "string" && cmdFlag) || process.env.PI_STATUSLINE_COMMAND || DEFAULT_COMMAND;
-		const argsStr = (typeof argsFlag === "string" && argsFlag) || process.env.PI_STATUSLINE_ARGS || "";
+		const cmd = flagStr(FLAG_COMMAND) || process.env.PI_STATUSLINE_COMMAND || DEFAULT_COMMAND;
+		const argsStr = flagStr(FLAG_ARGS) || process.env.PI_STATUSLINE_ARGS || "";
 		const args = argsStr.split(/\s+/).filter(Boolean);
+		const payload = buildPayload(ctx, sessionStartedAtMs, state);
 		const result = await pi.exec(cmd, [...args, "--input-json", JSON.stringify(payload)], {
 			signal: inflight.signal,
 			timeout: SPAWN_TIMEOUT_MS,
@@ -222,39 +214,36 @@ export default function claudeStatuslineExtension(pi: ExtensionAPI): void {
 	});
 
 	let activeFooter: Footer | undefined;
-	const state: StatuslineState = { headers: undefined, diff: { ...ZERO_DIFF }, apiDurationMs: 0 };
+	const state: StatuslineState = { headers: undefined, diff: zeroDiff(), apiDurationMs: 0 };
 	let requestStartedAt: number | undefined;
+	const reschedule = (): void => activeFooter?.schedule();
 
 	pi.on("before_provider_request", () => {
 		requestStartedAt = Date.now();
 	});
-
 	pi.on("after_provider_response", (event) => {
 		if (requestStartedAt !== undefined) {
 			state.apiDurationMs += Date.now() - requestStartedAt;
 			requestStartedAt = undefined;
 		}
-		// Forward raw headers; the binary extracts Codex rate-limit fields.
-		// Only replace when the response actually carried headers, so a
+		// Only replace headers when the response actually carried them, so a
 		// header-less response can't clobber the cache.
 		if (event.headers && Object.keys(event.headers).length > 0) state.headers = event.headers;
-		activeFooter?.schedule();
+		reschedule();
 	});
-
 	pi.on("tool_result", (event) => {
 		const d = diffFromToolResult(event);
-		if (d.added === 0 && d.removed === 0) return;
+		if (!d.added && !d.removed) return;
 		state.diff = { added: state.diff.added + d.added, removed: state.diff.removed + d.removed };
-		activeFooter?.schedule();
+		reschedule();
 	});
-
-	for (const ev of REFRESH_EVENTS) pi.on(ev, () => activeFooter?.schedule());
+	pi.on("message_end", reschedule);
+	pi.on("turn_end", reschedule);
+	pi.on("model_select", reschedule);
 
 	pi.on("session_start", (_event, ctx) => {
 		if (!ctx.hasUI) return;
-		state.diff = { ...ZERO_DIFF };
-		state.apiDurationMs = 0;
-		state.headers = undefined;
+		Object.assign(state, { diff: zeroDiff(), apiDurationMs: 0, headers: undefined });
 		requestStartedAt = undefined;
 		const sessionStartedAtMs = Date.now();
 		ctx.ui.setFooter((tui, theme, footerData) => {
@@ -262,18 +251,14 @@ export default function claudeStatuslineExtension(pi: ExtensionAPI): void {
 			return activeFooter;
 		});
 	});
-
 	pi.on("session_shutdown", () => {
 		activeFooter = undefined;
 	});
 
 	pi.registerCommand("statusline-refresh", {
 		description: "Force-refresh the claude-statusline footer",
-		handler: async () => {
-			activeFooter?.schedule();
-		},
+		handler: async () => activeFooter?.schedule(),
 	});
-
 	pi.registerCommand("statusline-default", {
 		description: "Restore pi-mono's built-in footer",
 		handler: async (_args, ctx) => {
