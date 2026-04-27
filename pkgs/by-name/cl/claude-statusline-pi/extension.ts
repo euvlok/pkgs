@@ -92,14 +92,6 @@ function diffFromToolResult(event: ToolResultEvent): DiffStats {
 	return ZERO_DIFF;
 }
 
-function resolveCommand(pi: ExtensionAPI): { cmd: string; args: string[] } {
-	const cmdFlag = pi.getFlag(FLAG_COMMAND);
-	const argsFlag = pi.getFlag(FLAG_ARGS);
-	const cmd = (typeof cmdFlag === "string" && cmdFlag) || process.env.PI_STATUSLINE_COMMAND || DEFAULT_COMMAND;
-	const argsStr = (typeof argsFlag === "string" && argsFlag) || process.env.PI_STATUSLINE_ARGS || "";
-	return { cmd, args: argsStr.split(/\s+/).filter(Boolean) };
-}
-
 // Walk the active branch (not all entries) so usage doesn't double-count
 // abandoned messages after a rewind.
 function buildPayload(ctx: ExtensionContext, sessionStartedAtMs: number, state: StatuslineState): StatuslinePayload {
@@ -138,90 +130,85 @@ function buildPayload(ctx: ExtensionContext, sessionStartedAtMs: number, state: 
 	};
 }
 
-// One instance per `session_start`; replaced on session change. Caches the
+type Footer = Component & { schedule(): void };
+
+// Built fresh per `session_start`; replaced on session change. Caches the
 // most recent statusline output and debounces subprocess runs.
-class StatuslineFooter implements Component {
-	private cachedLines: string[] = [];
-	private lastError: string | undefined;
-	private lastRunAt = 0;
-	private pending: ReturnType<typeof setTimeout> | undefined;
-	private inflight: AbortController | undefined;
-	private readonly tickInterval: ReturnType<typeof setInterval>;
-	private readonly unsubBranch: () => void;
+function createStatuslineFooter(
+	pi: ExtensionAPI,
+	ctx: ExtensionContext,
+	tui: TUI,
+	theme: Theme,
+	footerData: ReadonlyFooterDataProvider,
+	sessionStartedAtMs: number,
+	state: StatuslineState,
+): Footer {
+	let cachedLines: string[] = [];
+	let lastError: string | undefined;
+	let lastRunAt = 0;
+	let pending: ReturnType<typeof setTimeout> | undefined;
+	let inflight: AbortController | undefined;
 
-	constructor(
-		private readonly pi: ExtensionAPI,
-		private readonly ctx: ExtensionContext,
-		private readonly tui: TUI,
-		private readonly theme: Theme,
-		private readonly footerData: ReadonlyFooterDataProvider,
-		private readonly sessionStartedAtMs: number,
-		private readonly state: StatuslineState,
-	) {
-		this.unsubBranch = footerData.onBranchChange(() => this.schedule());
-		this.tickInterval = setInterval(() => this.schedule(), IDLE_TICK_MS);
-		this.tickInterval.unref?.();
-		this.schedule();
-	}
-
-	schedule(): void {
-		if (this.pending) return;
-		const since = Date.now() - this.lastRunAt;
-		const delay = this.lastRunAt === 0 ? 0 : Math.max(0, REFRESH_DEBOUNCE_MS - since);
-		this.pending = setTimeout(() => {
-			this.pending = undefined;
-			void this.refresh();
-		}, delay);
-	}
-
-	render(width: number): string[] {
-		const ellipsis = this.theme.fg("dim", "...");
-		const lines =
-			this.cachedLines.length > 0
-				? this.cachedLines.map((l) => truncateToWidth(l, width, ellipsis))
-				: [this.lastError ? this.theme.fg("error", `[statusline] ${this.lastError}`) : ""];
-
-		const exts = this.footerData.getExtensionStatuses();
-		if (exts.size > 0) {
-			const status = Array.from(exts.entries())
-				.sort(([a], [b]) => a.localeCompare(b))
-				.map(([, value]) => value)
-				.join(" ");
-			lines.push(truncateToWidth(status, width, ellipsis));
-		}
-		return lines;
-	}
-
-	invalidate(): void {}
-
-	dispose(): void {
-		this.inflight?.abort();
-		if (this.pending) clearTimeout(this.pending);
-		clearInterval(this.tickInterval);
-		this.unsubBranch();
-	}
-
-	private async refresh(): Promise<void> {
-		this.inflight?.abort();
-		this.inflight = new AbortController();
-
-		const payload = buildPayload(this.ctx, this.sessionStartedAtMs, this.state);
-		const { cmd, args } = resolveCommand(this.pi);
-		const result = await this.pi.exec(cmd, [...args, "--input-json", JSON.stringify(payload)], {
-			signal: this.inflight.signal,
+	const refresh = async (): Promise<void> => {
+		inflight?.abort();
+		inflight = new AbortController();
+		const payload = buildPayload(ctx, sessionStartedAtMs, state);
+		const cmdFlag = pi.getFlag(FLAG_COMMAND);
+		const argsFlag = pi.getFlag(FLAG_ARGS);
+		const cmd = (typeof cmdFlag === "string" && cmdFlag) || process.env.PI_STATUSLINE_COMMAND || DEFAULT_COMMAND;
+		const argsStr = (typeof argsFlag === "string" && argsFlag) || process.env.PI_STATUSLINE_ARGS || "";
+		const args = argsStr.split(/\s+/).filter(Boolean);
+		const result = await pi.exec(cmd, [...args, "--input-json", JSON.stringify(payload)], {
+			signal: inflight.signal,
 			timeout: SPAWN_TIMEOUT_MS,
 		});
-
-		this.lastRunAt = Date.now();
+		lastRunAt = Date.now();
 		if (result.code === 0) {
-			this.lastError = undefined;
-			this.cachedLines = result.stdout.replace(/\n+$/, "").split("\n").filter(Boolean);
+			lastError = undefined;
+			cachedLines = result.stdout.replace(/\n+$/, "").split("\n").filter(Boolean);
 		} else {
-			this.lastError = `${cmd} exited ${result.code}`;
-			this.cachedLines = [];
+			lastError = `${cmd} exited ${result.code}`;
+			cachedLines = [];
 		}
-		this.tui.requestRender();
-	}
+		tui.requestRender();
+	};
+
+	const schedule = (): void => {
+		if (pending) return;
+		const delay = lastRunAt === 0 ? 0 : Math.max(0, REFRESH_DEBOUNCE_MS - (Date.now() - lastRunAt));
+		pending = setTimeout(() => {
+			pending = undefined;
+			void refresh();
+		}, delay);
+	};
+
+	const unsubBranch = footerData.onBranchChange(schedule);
+	const tickInterval = setInterval(schedule, IDLE_TICK_MS);
+	tickInterval.unref?.();
+	schedule();
+
+	return {
+		schedule,
+		invalidate() {},
+		render(width: number): string[] {
+			const ellipsis = theme.fg("dim", "...");
+			const lines = cachedLines.length > 0
+				? cachedLines.map((l) => truncateToWidth(l, width, ellipsis))
+				: [lastError ? theme.fg("error", `[statusline] ${lastError}`) : ""];
+			const exts = footerData.getExtensionStatuses();
+			if (exts.size > 0) {
+				const status = [...exts].sort(([a], [b]) => a.localeCompare(b)).map(([, v]) => v).join(" ");
+				lines.push(truncateToWidth(status, width, ellipsis));
+			}
+			return lines;
+		},
+		dispose() {
+			inflight?.abort();
+			if (pending) clearTimeout(pending);
+			clearInterval(tickInterval);
+			unsubBranch();
+		},
+	};
 }
 
 export default function claudeStatuslineExtension(pi: ExtensionAPI): void {
@@ -234,7 +221,7 @@ export default function claudeStatuslineExtension(pi: ExtensionAPI): void {
 		description: "Extra args (space-separated) forwarded to the statusline command",
 	});
 
-	let activeFooter: StatuslineFooter | undefined;
+	let activeFooter: Footer | undefined;
 	const state: StatuslineState = { headers: undefined, diff: { ...ZERO_DIFF }, apiDurationMs: 0 };
 	let requestStartedAt: number | undefined;
 
@@ -271,7 +258,7 @@ export default function claudeStatuslineExtension(pi: ExtensionAPI): void {
 		requestStartedAt = undefined;
 		const sessionStartedAtMs = Date.now();
 		ctx.ui.setFooter((tui, theme, footerData) => {
-			activeFooter = new StatuslineFooter(pi, ctx, tui, theme, footerData, sessionStartedAtMs, state);
+			activeFooter = createStatuslineFooter(pi, ctx, tui, theme, footerData, sessionStartedAtMs, state);
 			return activeFooter;
 		});
 	});
