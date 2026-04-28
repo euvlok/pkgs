@@ -14,6 +14,9 @@ stdenvNoCC.mkDerivation (finalAttrs: {
   installPhase = ''
     runHook preInstall
     install -Dm644 extension.ts "$out/share/pi/extensions/agent-statusline.ts"
+    # NixOS/nix-darwin system profiles link bin/ by default, but not arbitrary
+    # share/ subdirectories. Keep a stable profile-visible path for settings.json.
+    install -Dm644 extension.ts "$out/bin/agent-statusline-pi.ts"
     runHook postInstall
   '';
 
