@@ -26,6 +26,8 @@ const STATUSLINE_FLAGS = [
 
 type DiffStats = { added: number; removed: number };
 type AssistantUsage = NonNullable<AssistantMessage["usage"]>;
+type TokenUsage = { input: number; output: number; cacheRead: number; cacheWrite: number };
+type ContextUsage = NonNullable<ReturnType<ExtensionContext["getContextUsage"]>>;
 type State = { headers?: Record<string, string>; diff: DiffStats; apiDurationMs: number };
 type SessionEntry = ReturnType<ExtensionContext["sessionManager"]["getEntries"]>[number];
 type Statusline = { schedule(force?: boolean): void; dispose(): void };
@@ -33,8 +35,9 @@ type Statusline = { schedule(force?: boolean): void; dispose(): void };
 const zeroDiff = (): DiffStats => ({ added: 0, removed: 0 });
 const positive = (n: number) => (n > 0 ? n : undefined);
 const hasFormatArg = (args: readonly string[]) => args.some((a) => a === "--format" || a.startsWith("--format="));
-const assistantUsage = (entry: SessionEntry) =>
-	entry.type === "message" && entry.message.role === "assistant" ? (entry.message as AssistantMessage).usage : undefined;
+const assistantMessage = (entry: SessionEntry) =>
+	entry.type === "message" && entry.message.role === "assistant" ? (entry.message as AssistantMessage) : undefined;
+const assistantUsage = (entry: SessionEntry) => assistantMessage(entry)?.usage;
 const oneLine = (text: string) =>
 	text
 		.replace(/[\r\n\t]/g, " ")
@@ -73,6 +76,7 @@ function diffFromToolResult(event: ToolResultEvent): DiffStats {
 
 function createStatusOnlyFooter(theme: ExtensionContext["ui"]["theme"], footerData: ReadonlyFooterDataProvider): Component {
 	return {
+		invalidate() {},
 		render(width: number): string[] {
 			const statusLine = Array.from(footerData.getExtensionStatuses().entries())
 				.sort(([a], [b]) => a.localeCompare(b))
@@ -84,9 +88,8 @@ function createStatusOnlyFooter(theme: ExtensionContext["ui"]["theme"], footerDa
 	};
 }
 
-function buildPayload(ctx: ExtensionContext, state: State) {
-	const usage = ctx.sessionManager
-		.getEntries()
+function sumUsage(entries: readonly SessionEntry[]): TokenUsage {
+	return entries
 		.map(assistantUsage)
 		.filter((usage): usage is AssistantUsage => usage !== undefined)
 		.reduce(
@@ -98,7 +101,53 @@ function buildPayload(ctx: ExtensionContext, state: State) {
 			}),
 			{ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 		);
+}
+
+function branchAfterLatestCompaction(entries: readonly SessionEntry[]): readonly SessionEntry[] {
+	const index = entries.findLastIndex((entry) => entry.type === "compaction");
+	return index === -1 ? entries : entries.slice(index + 1);
+}
+
+function lastSuccessfulAssistantUsage(entries: readonly SessionEntry[]): AssistantUsage | undefined {
+	for (let i = entries.length - 1; i >= 0; i--) {
+		const entry = entries[i];
+		if (!entry) continue;
+		const message = assistantMessage(entry);
+		if (message && message.stopReason !== "aborted" && message.stopReason !== "error") return message.usage;
+	}
+	return undefined;
+}
+
+function inputUsageForContext(branchEntries: readonly SessionEntry[], context: ContextUsage | undefined): TokenUsage {
+	const contextTokens = typeof context?.tokens === "number" && Number.isFinite(context.tokens) ? Math.max(0, context.tokens) : undefined;
+	const lastUsage = lastSuccessfulAssistantUsage(branchAfterLatestCompaction(branchEntries));
+	if (!lastUsage) return { input: contextTokens ?? 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+
+	const inputSide = lastUsage.input + lastUsage.cacheRead + lastUsage.cacheWrite;
+	if (contextTokens === undefined || inputSide <= 0) {
+		return {
+			input: lastUsage.input,
+			output: lastUsage.output,
+			cacheRead: lastUsage.cacheRead,
+			cacheWrite: lastUsage.cacheWrite,
+		};
+	}
+
+	// Provider usage is per request, while Pi's context usage also accounts for
+	// trailing messages after the last response. Scale the last request's
+	// input/cache split to Pi's authoritative current context token count.
+	const factor = contextTokens / inputSide;
+	const cacheRead = Math.round(lastUsage.cacheRead * factor);
+	const cacheWrite = Math.round(lastUsage.cacheWrite * factor);
+	const input = Math.max(0, contextTokens - cacheRead - cacheWrite);
+	return { input, output: lastUsage.output, cacheRead, cacheWrite };
+}
+
+function buildPayload(ctx: ExtensionContext, state: State) {
+	const entries = ctx.sessionManager.getEntries();
+	const usage = sumUsage(entries);
 	const context = ctx.getContextUsage();
+	const currentUsage = inputUsageForContext(ctx.sessionManager.getBranch(), context);
 	const header = ctx.sessionManager.getHeader();
 	const startedAt = Date.parse(header?.timestamp ?? "");
 	return {
@@ -111,10 +160,10 @@ function buildPayload(ctx: ExtensionContext, state: State) {
 			used_percentage: context?.percent ?? undefined,
 			context_window_size: context?.contextWindow ?? ctx.model?.contextWindow,
 			current_usage: {
-				input_tokens: usage.input,
+				input_tokens: currentUsage.input,
 				output_tokens: usage.output,
-				cache_creation_input_tokens: usage.cacheWrite,
-				cache_read_input_tokens: usage.cacheRead,
+				cache_creation_input_tokens: currentUsage.cacheWrite,
+				cache_read_input_tokens: currentUsage.cacheRead,
 			},
 		},
 		cost: {
