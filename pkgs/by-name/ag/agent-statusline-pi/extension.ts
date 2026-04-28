@@ -4,8 +4,10 @@ import {
 	type ExtensionContext,
 	isEditToolResult,
 	isWriteToolResult,
+	type ReadonlyFooterDataProvider,
 	type ToolResultEvent,
 } from "@mariozechner/pi-coding-agent";
+import { type Component, truncateToWidth } from "@mariozechner/pi-tui";
 
 const FLAG_COMMAND = "statusline-command";
 const FLAG_ARGS = "statusline-args";
@@ -67,6 +69,19 @@ function diffFromToolResult(event: ToolResultEvent): DiffStats {
 		return { added: event.input.content.endsWith("\n") ? lines - 1 : lines, removed: 0 };
 	}
 	return zeroDiff();
+}
+
+function createStatusOnlyFooter(theme: ExtensionContext["ui"]["theme"], footerData: ReadonlyFooterDataProvider): Component {
+	return {
+		render(width: number): string[] {
+			const statusLine = Array.from(footerData.getExtensionStatuses().entries())
+				.sort(([a], [b]) => a.localeCompare(b))
+				.map(([, text]) => oneLine(text))
+				.filter(Boolean)
+				.join(" ");
+			return statusLine ? [truncateToWidth(statusLine, width, theme.fg("dim", "..."))] : [];
+		},
+	};
 }
 
 function buildPayload(ctx: ExtensionContext, state: State) {
@@ -152,6 +167,7 @@ export default function agentStatuslineExtension(pi: ExtensionAPI): void {
 
 	pi.on("session_start", (_event, ctx) => {
 		if (!ctx.hasUI) return;
+		ctx.ui.setFooter((_tui, theme, footerData) => createStatusOnlyFooter(theme, footerData));
 		Object.assign(state, { headers: undefined, diff: zeroDiff(), apiDurationMs: 0 });
 		requestStartedAt = undefined;
 
@@ -214,6 +230,7 @@ export default function agentStatuslineExtension(pi: ExtensionAPI): void {
 				if (pending) clearTimeout(pending);
 				if (tick) clearInterval(tick);
 				ctx.ui.setStatus(STATUS_KEY, undefined);
+				ctx.ui.setFooter(undefined);
 			},
 		};
 
