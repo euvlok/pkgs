@@ -55,7 +55,7 @@ EOF
 cp package.nix ./*.patch "$tmp_pkg/"
 
 build_log=$(NIXPKGS_ALLOW_UNFREE=1 nix build --impure --no-link --print-build-logs \
-  --expr "with import <nixpkgs> {}; callPackage $tmp_pkg {}" 2>&1 || true)
+  --expr "with import <nixpkgs> {}; callPackage $tmp_pkg/package.nix {}" 2>&1 || true)
 cargo_hash=$(echo "$build_log" | awk '/got: +sha256-/ {print $2; exit}')
 
 if [[ -z "$cargo_hash" ]]; then
