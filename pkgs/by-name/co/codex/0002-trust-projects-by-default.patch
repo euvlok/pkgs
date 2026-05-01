@@ -1,21 +1,21 @@
-From 7b592a1b9c46deacd684af867c33268c3405538f Mon Sep 17 00:00:00 2001
+From d91302e350aed231754e4572eb04436e64f4db28 Mon Sep 17 00:00:00 2001
 From: FlameFlag <git@ps1.sh>
 Date: Thu, 23 Apr 2026 14:52:26 +0300
-Subject: [PATCH] Trust projects by default
+Subject: [PATCH 2/4] Trust projects by default
 
 ---
- codex-rs/config/src/config_toml.rs       |  9 ++++-----
- codex-rs/core/src/config/config_tests.rs |  2 +-
- codex-rs/core/src/config_loader/mod.rs   |  2 +-
- codex-rs/core/src/config_loader/tests.rs | 22 ++++++++--------------
- codex-rs/tui/src/lib.rs                  | 19 ++++++-------------
+ codex-rs/config/src/config_toml.rs            |  9 ++++----
+ codex-rs/config/src/loader/mod.rs             |  2 +-
+ .../core/src/config/config_loader_tests.rs    | 22 +++++++------------
+ codex-rs/core/src/config/config_tests.rs      |  2 +-
+ codex-rs/tui/src/lib.rs                       | 19 +++++-----------
  5 files changed, 20 insertions(+), 34 deletions(-)
 
 diff --git a/codex-rs/config/src/config_toml.rs b/codex-rs/config/src/config_toml.rs
-index 543cb59ef..b1661fc8a 100644
+index 2e89550..89ccd38 100644
 --- a/codex-rs/config/src/config_toml.rs
 +++ b/codex-rs/config/src/config_toml.rs
-@@ -448,7 +448,7 @@ pub struct ProjectConfig {
+@@ -473,7 +473,7 @@ pub struct ProjectConfig {
  
  impl ProjectConfig {
      pub fn is_trusted(&self) -> bool {
@@ -24,8 +24,8 @@ index 543cb59ef..b1661fc8a 100644
      }
  
      pub fn is_untrusted(&self) -> bool {
-@@ -696,9 +696,8 @@ impl ConfigToml {
-         sandbox_policy
+@@ -731,9 +731,8 @@ impl ConfigToml {
+         }
      }
  
 -    /// Resolves the cwd to an existing project, or returns None if ConfigToml
@@ -36,7 +36,7 @@ index 543cb59ef..b1661fc8a 100644
      pub fn get_active_project(
          &self,
          resolved_cwd: &Path,
-@@ -722,7 +721,7 @@ impl ConfigToml {
+@@ -757,7 +756,7 @@ impl ConfigToml {
              }
          }
  
@@ -45,24 +45,11 @@ index 543cb59ef..b1661fc8a 100644
      }
  
      pub fn get_config_profile(
-diff --git a/codex-rs/core/src/config/config_tests.rs b/codex-rs/core/src/config/config_tests.rs
-index fa27ba4f4..cd8dfb925 100644
---- a/codex-rs/core/src/config/config_tests.rs
-+++ b/codex-rs/core/src/config/config_tests.rs
-@@ -5962,7 +5962,7 @@ async fn active_project_does_not_match_configured_alias_for_canonical_cwd() -> a
- 
-     assert_eq!(
-         config.get_active_project(&project_root, /*repo_root*/ None),
--        None
-+        Some(ProjectConfig { trust_level: None })
-     );
- 
-     Ok(())
-diff --git a/codex-rs/core/src/config_loader/mod.rs b/codex-rs/core/src/config_loader/mod.rs
-index 4681aa075..13f889100 100644
---- a/codex-rs/core/src/config_loader/mod.rs
-+++ b/codex-rs/core/src/config_loader/mod.rs
-@@ -656,7 +656,7 @@ struct ProjectTrustDecision {
+diff --git a/codex-rs/config/src/loader/mod.rs b/codex-rs/config/src/loader/mod.rs
+index 74dd258..c5b2943 100644
+--- a/codex-rs/config/src/loader/mod.rs
++++ b/codex-rs/config/src/loader/mod.rs
+@@ -623,7 +623,7 @@ struct ProjectTrustDecision {
  
  impl ProjectTrustDecision {
      fn is_trusted(&self) -> bool {
@@ -71,11 +58,11 @@ index 4681aa075..13f889100 100644
      }
  }
  
-diff --git a/codex-rs/core/src/config_loader/tests.rs b/codex-rs/core/src/config_loader/tests.rs
-index 7f6195269..271f780fb 100644
---- a/codex-rs/core/src/config_loader/tests.rs
-+++ b/codex-rs/core/src/config_loader/tests.rs
-@@ -1543,7 +1543,7 @@ async fn codex_home_within_project_tree_is_not_double_loaded() -> std::io::Resul
+diff --git a/codex-rs/core/src/config/config_loader_tests.rs b/codex-rs/core/src/config/config_loader_tests.rs
+index d9a2463..b62d03b 100644
+--- a/codex-rs/core/src/config/config_loader_tests.rs
++++ b/codex-rs/core/src/config/config_loader_tests.rs
+@@ -1590,7 +1590,7 @@ async fn codex_home_within_project_tree_is_not_double_loaded() -> std::io::Resul
  }
  
  #[tokio::test]
@@ -84,8 +71,8 @@ index 7f6195269..271f780fb 100644
      let tmp = tempdir()?;
      let project_root = tmp.path().join("project");
      let nested = project_root.join("child");
-@@ -1634,17 +1634,14 @@ async fn project_layers_disabled_when_untrusted_or_unknown() -> std::io::Result<
-         .filter(|layer| matches!(layer.name, super::ConfigLayerSource::Project { .. }))
+@@ -1679,17 +1679,14 @@ async fn project_layers_disabled_when_untrusted_or_unknown() -> std::io::Result<
+         .filter(|layer| matches!(layer.name, ConfigLayerSource::Project { .. }))
          .collect();
      assert_eq!(project_layers_unknown.len(), 1);
 -    assert!(
@@ -104,7 +91,7 @@ index 7f6195269..271f780fb 100644
      );
  
      Ok(())
-@@ -1804,7 +1801,7 @@ enabled = false
+@@ -1848,7 +1845,7 @@ enabled = false
  }
  
  #[tokio::test]
@@ -113,7 +100,7 @@ index 7f6195269..271f780fb 100644
      let tmp = tempdir()?;
      let project_root = tmp.path().join("project");
      let nested = project_root.join("child");
-@@ -1813,10 +1810,7 @@ async fn invalid_project_config_ignored_when_untrusted_or_unknown() -> std::io::
+@@ -1857,10 +1854,7 @@ async fn invalid_project_config_ignored_when_untrusted_or_unknown() -> std::io::
      tokio::fs::write(nested.join(".codex").join(CONFIG_TOML_FILE), "foo =").await?;
  
      let cwd = AbsolutePathBuf::from_absolute_path(&nested)?;
@@ -125,7 +112,7 @@ index 7f6195269..271f780fb 100644
  
      for (name, trust_level) in cases {
          let codex_home = tmp.path().join(format!("home_{name}"));
-@@ -1879,8 +1873,8 @@ async fn invalid_project_config_ignored_when_untrusted_or_unknown() -> std::io::
+@@ -1922,8 +1916,8 @@ async fn invalid_project_config_ignored_when_untrusted_or_unknown() -> std::io::
  }
  
  #[tokio::test]
@@ -136,7 +123,7 @@ index 7f6195269..271f780fb 100644
      let tmp = tempdir()?;
      let project_root = tmp.path().join("project");
      let nested = project_root.join("child");
-@@ -1890,7 +1884,7 @@ async fn project_layer_without_config_toml_is_disabled_when_untrusted_or_unknown
+@@ -1933,7 +1927,7 @@ async fn project_layer_without_config_toml_is_disabled_when_untrusted_or_unknown
      let cwd = AbsolutePathBuf::from_absolute_path(&nested)?;
      let cases = [
          ("untrusted", Some(TrustLevel::Untrusted), true),
@@ -145,11 +132,24 @@ index 7f6195269..271f780fb 100644
          ("trusted", Some(TrustLevel::Trusted), false),
      ];
  
+diff --git a/codex-rs/core/src/config/config_tests.rs b/codex-rs/core/src/config/config_tests.rs
+index 8f92677..d2a2638 100644
+--- a/codex-rs/core/src/config/config_tests.rs
++++ b/codex-rs/core/src/config/config_tests.rs
+@@ -7064,7 +7064,7 @@ async fn active_project_does_not_match_configured_alias_for_canonical_cwd() -> a
+ 
+     assert_eq!(
+         config.get_active_project(&project_root, /*repo_root*/ None),
+-        None
++        Some(ProjectConfig { trust_level: None })
+     );
+ 
+     Ok(())
 diff --git a/codex-rs/tui/src/lib.rs b/codex-rs/tui/src/lib.rs
-index ee50d0a17..941729976 100644
+index 39b4294..d74010b 100644
 --- a/codex-rs/tui/src/lib.rs
 +++ b/codex-rs/tui/src/lib.rs
-@@ -1712,7 +1712,7 @@ async fn load_config_or_exit_with_fallback_cwd(
+@@ -1732,7 +1732,7 @@ async fn load_config_or_exit_with_fallback_cwd(
  
  /// Determine if the user has decided whether to trust the current directory.
  fn should_show_trust_screen(config: &Config) -> bool {
@@ -158,7 +158,7 @@ index ee50d0a17..941729976 100644
  }
  
  fn should_show_onboarding(
-@@ -2147,24 +2147,17 @@ mod tests {
+@@ -2167,24 +2167,17 @@ mod tests {
      }
      #[tokio::test]
      #[serial]
