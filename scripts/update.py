@@ -103,7 +103,7 @@ def extract_metadata(nix_file: Path) -> Metadata:
 
 
 def run_path_update_script(nix_file: Path, wrapper: Path) -> None:
-    script_path = nix_eval(f"toString (import {wrapper}).pkg.passthru.updateScript")
+    script_path = nix_eval(f"toString (import {wrapper} {{}}).pkg.passthru.updateScript")
     if not script_path or not Path(script_path).is_file():
         log_error(f"Could not resolve path updateScript for '{nix_file}'")
         raise typer.Exit(1)
