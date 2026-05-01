@@ -3,6 +3,7 @@
   fetchFromGitHub,
   lib,
   rustPlatform,
+  stdenv,
 }:
 let
   sources = lib.importJSON ./sources.json;
@@ -42,5 +43,25 @@ codex.overrideAttrs (
     ];
 
     patchFlags = [ "-p2" ];
+
+    # Skip tests + install-check for faster local rebuilds.
+    doCheck = false;
+    doInstallCheck = false;
+
+    postPatch = ''
+      # webrtc-sys asks rustc to link libwebrtc statically by default,
+      # but nixpkgs provides libwebrtc as a shared library.
+      substituteInPlace $cargoDepsCopy/*/webrtc-sys-*/build.rs \
+        --replace-fail "cargo:rustc-link-lib=static=webrtc" "cargo:rustc-link-lib=dylib=webrtc"
+    ''
+    # Keep upstream's release profile (lto=fat, codegen-units=1) on Darwin.
+    # Stripping them shrinks build time, but the resulting aarch64-darwin
+    # binary grows past ld64's 128MB ARM64 branch range.
+    # See NixOS/nixpkgs#515153.
+    + lib.optionalString (!stdenv.hostPlatform.isDarwin) ''
+      substituteInPlace Cargo.toml \
+        --replace-fail 'lto = "fat"' "" \
+        --replace-fail 'codegen-units = 1' ""
+    '';
   }
 )
