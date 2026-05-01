@@ -18,7 +18,7 @@ use crate::pace;
 use crate::render::colors::Palette;
 use crate::render::icons::Icons;
 use crate::render::layout::{BuildCtx, Layout};
-use crate::render::segment::Segment;
+use crate::vcs::{VcsInfo, VcsProvider, WorktreeStatus};
 
 /// Build a fake input + fake VCS segment, then route them through the
 /// same `render_lines` pipeline that real renders use. Returned string
@@ -36,7 +36,7 @@ pub fn preview_with(
     max_cols: Option<usize>,
 ) -> super::RenderedStatusline {
     let input = sample_input();
-    let vcs = Some(sample_vcs(icons, pal));
+    let vcs = Some(sample_vcs());
 
     let ctx = BuildCtx {
         input: &input,
@@ -102,14 +102,15 @@ fn now_plus_secs(secs: i64) -> i64 {
     now.saturating_add(secs)
 }
 
-fn sample_vcs(icons: &Icons, pal: &Palette) -> Segment {
-    let s = Segment::droppable();
-    let s = if icons.git.is_empty() {
-        s
-    } else {
-        s.plain(format!("{} ", icons.git))
-    };
-    s.styled("main", pal.magenta)
-        .plain(" ")
-        .styled(icons.dirty.to_string(), pal.yellow)
+fn sample_vcs() -> VcsInfo {
+    VcsInfo {
+        provider: VcsProvider::Git,
+        branch: Some("main".to_string()),
+        hash: Some("abc1234".to_string()),
+        status: Some(WorktreeStatus {
+            unstaged: true,
+            ..WorktreeStatus::default()
+        }),
+        ..VcsInfo::default()
+    }
 }

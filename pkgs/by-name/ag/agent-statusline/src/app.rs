@@ -10,7 +10,7 @@ use serde::Serialize;
 
 use crate::cli::Cli;
 use crate::config::schema::{ColorMode, DisplayConfig, IconSetConfig};
-use crate::config::{self, Config, LoadedConfig, OutputFormat, ResolvedConfig};
+use crate::config::{self, Config, ConfigWarning, LoadedConfig, OutputFormat, ResolvedConfig};
 use crate::input::{Input, InputSource};
 use crate::render::colors::Palette;
 use crate::render::icons::{IconSet, Icons};
@@ -57,15 +57,55 @@ pub fn palette_for(display: &DisplayConfig) -> Palette {
 }
 
 pub fn parse_input(json: Option<&str>, reader: impl io::Read) -> Input {
+    parse_input_with_warnings(json, reader).input
+}
+
+#[derive(Debug)]
+pub struct ParsedInput {
+    pub input: Input,
+    pub warnings: Vec<ConfigWarning>,
+}
+
+pub fn parse_input_with_warnings(json: Option<&str>, reader: impl io::Read) -> ParsedInput {
     if let Some(json) = json {
-        return serde_json::from_str(json).unwrap_or_default();
+        return match serde_json::from_str(json) {
+            Ok(input) => ParsedInput {
+                input,
+                warnings: Vec::new(),
+            },
+            Err(err) => ParsedInput {
+                input: Input::default(),
+                warnings: vec![ConfigWarning {
+                    message: format!("failed to parse --input-json payload: {err}"),
+                }],
+            },
+        };
     }
 
     let mut buf = Vec::with_capacity(4096);
-    if reader.take(MAX_PAYLOAD).read_to_end(&mut buf).is_ok() {
-        serde_json::from_slice(&buf).unwrap_or_default()
-    } else {
-        Input::default()
+    match reader.take(MAX_PAYLOAD).read_to_end(&mut buf) {
+        Ok(_) if buf.is_empty() => ParsedInput {
+            input: Input::default(),
+            warnings: Vec::new(),
+        },
+        Ok(_) => match serde_json::from_slice(&buf) {
+            Ok(input) => ParsedInput {
+                input,
+                warnings: Vec::new(),
+            },
+            Err(err) => ParsedInput {
+                input: Input::default(),
+                warnings: vec![ConfigWarning {
+                    message: format!("failed to parse stdin JSON payload: {err}"),
+                }],
+            },
+        },
+        Err(err) => ParsedInput {
+            input: Input::default(),
+            warnings: vec![ConfigWarning {
+                message: format!("failed to read stdin JSON payload: {err}"),
+            }],
+        },
     }
 }
 
@@ -120,15 +160,23 @@ pub fn run(cli: &Cli) -> ExitCode {
 
     std::panic::set_hook(Box::new(|_| {}));
 
-    let input = parse_input(cli.input_json.as_deref(), io::stdin().lock());
+    let parsed = parse_input_with_warnings(cli.input_json.as_deref(), io::stdin().lock());
+    let mut resolved = resolved;
+    resolved.warnings.extend(parsed.warnings);
 
     if cli.inspect {
-        let rendered = render_statusline(&input, icons.as_ref(), &resolved, &palette);
-        return print_json(&InspectOutput::new(&loaded, &resolved, &input, &rendered));
+        let rendered = render_statusline(&parsed.input, icons.as_ref(), &resolved, &palette);
+        return print_json(&InspectOutput::new(
+            &loaded,
+            &resolved,
+            &parsed.input,
+            &rendered,
+        ));
     }
 
-    let result =
-        std::panic::catch_unwind(|| render_statusline(&input, icons.as_ref(), &resolved, &palette));
+    let result = std::panic::catch_unwind(|| {
+        render_statusline(&parsed.input, icons.as_ref(), &resolved, &palette)
+    });
 
     match result {
         Ok(rendered) => print_rendered(&rendered, format, resolved.display.config.color),

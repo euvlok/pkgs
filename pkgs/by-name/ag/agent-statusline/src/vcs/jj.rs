@@ -1,5 +1,4 @@
-//! jj collector: build the styled VCS info segment via `jj-lib`, without
-//! ever snapshotting the working copy.
+//! jj collector via `jj-lib`, without ever snapshotting the working copy.
 
 use std::path::Path;
 use std::time::UNIX_EPOCH;
@@ -13,15 +12,14 @@ use pollster::FutureExt as _;
 
 use crate::vcs::jj_prefix;
 
-use crate::render::colors::Palette;
-use crate::render::icons::Icons;
-use crate::render::segment::Segment;
+use crate::config::schema::VcsSegmentConfig;
+use crate::vcs::{VcsInfo, VcsProvider, WorktreeStatus};
 
 fn user_settings() -> Option<UserSettings> {
     UserSettings::from_config(StackedConfig::with_defaults()).ok()
 }
 
-pub(super) fn collect(dir: &Path, icons: &Icons, pal: &Palette) -> Option<Segment> {
+pub(super) fn collect(dir: &Path, config: &VcsSegmentConfig) -> Option<VcsInfo> {
     let settings = user_settings()?;
     let workspace = Workspace::load(
         &settings,
@@ -37,41 +35,35 @@ pub(super) fn collect(dir: &Path, icons: &Icons, pal: &Palette) -> Option<Segmen
     let commit = repo.store().get_commit(wc_id).ok()?;
     let change_id = commit.change_id();
 
-    let mut s = Segment::droppable();
-    s.append_icon_prefix(icons.jj);
+    let bookmark = config
+        .show_bookmark
+        .then(|| {
+            repo.view().local_bookmarks().find_map(|(name, target)| {
+                if target.added_ids().any(|id| id == wc_id) {
+                    Some(name.as_symbol().to_string())
+                } else {
+                    None
+                }
+            })
+        })
+        .flatten();
 
-    // Bookmark on @ takes precedence visually
-    let bookmark: Option<String> = repo.view().local_bookmarks().find_map(|(name, target)| {
-        if target.added_ids().any(|id| id == wc_id) {
-            Some(name.as_symbol().to_string())
-        } else {
-            None
-        }
+    let hash = config.show_hash.then(|| {
+        let full_hex = change_id.reverse_hex();
+        let prefix_len = jj_prefix::shortest_prefix_len(&workspace, &repo, change_id)
+            .min(full_hex.len())
+            .max(1);
+        full_hex.chars().take(prefix_len).collect()
     });
 
-    let full_hex = change_id.reverse_hex();
-    let prefix_len = jj_prefix::shortest_prefix_len(&workspace, &repo, change_id)
-        .min(full_hex.len())
-        .max(1);
-    let head: String = full_hex.chars().take(prefix_len).collect();
-    s.append_styled(head, pal.cyan);
-
-    if let Some(b) = bookmark {
-        s.append_spaced_styled(format!("({b})"), pal.magenta);
-    }
-
-    // Dirty indicator
-    match working_copy_dirty(&workspace) {
-        Some(true) => s.append_spaced_styled(icons.dirty, pal.yellow),
-        Some(false) => s.append_spaced_styled(icons.clean, pal.green),
-        None => s.append_spaced_styled(icons.untracked, pal.dim),
-    };
-
-    if commit.has_conflict() {
-        s.append_spaced_styled(format!("{} conflict", icons.conflict), pal.red);
-    }
-
-    Some(s)
+    Some(VcsInfo {
+        provider: VcsProvider::Jj,
+        hash,
+        bookmark,
+        status: config.show_dirty.then(|| dirty_status(&workspace)),
+        conflict: commit.has_conflict(),
+        ..VcsInfo::default()
+    })
 }
 
 const DIRTY_CHECK_BUDGET: usize = 4096;
@@ -118,4 +110,49 @@ fn working_copy_dirty(workspace: &Workspace) -> Option<bool> {
         checked += 1;
     }
     Some(false)
+}
+
+fn dirty_status(workspace: &Workspace) -> WorktreeStatus {
+    match working_copy_dirty(workspace) {
+        Some(true) => WorktreeStatus {
+            unstaged: true,
+            ..WorktreeStatus::default()
+        },
+        Some(false) => WorktreeStatus::default(),
+        None => WorktreeStatus {
+            unknown: true,
+            ..WorktreeStatus::default()
+        },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn status_from_dirty(value: Option<bool>) -> WorktreeStatus {
+        match value {
+            Some(true) => WorktreeStatus {
+                unstaged: true,
+                ..WorktreeStatus::default()
+            },
+            Some(false) => WorktreeStatus::default(),
+            None => WorktreeStatus {
+                unknown: true,
+                ..WorktreeStatus::default()
+            },
+        }
+    }
+
+    #[test]
+    fn dirty_budget_unknown_maps_to_unknown_status() {
+        assert!(status_from_dirty(None).unknown);
+    }
+
+    #[test]
+    fn clean_dirty_result_maps_to_clean_status() {
+        let status = status_from_dirty(Some(false));
+        assert!(!status.unknown);
+        assert!(!status.unstaged);
+    }
 }

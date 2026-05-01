@@ -10,13 +10,14 @@ use crate::render::builders;
 use crate::render::colors::Palette;
 use crate::render::segment::Segment;
 use crate::settings::Settings;
+use crate::vcs::VcsInfo;
 
 #[derive(Debug)]
 pub struct BuildCtx<'a> {
     pub input: &'a Input,
     pub icons: &'a crate::render::icons::Icons,
     pub palette: &'a Palette,
-    pub vcs: Option<Segment>,
+    pub vcs: Option<VcsInfo>,
     pub display: &'a crate::config::ResolvedDisplay,
     pub now_unix: u64,
 }
@@ -34,10 +35,15 @@ impl Layout {
 
     #[must_use]
     pub fn needs_vcs(&self) -> bool {
-        self.lines
-            .iter()
-            .flatten()
-            .any(|s| matches!(s.config, SegmentConfig::Vcs(_)))
+        self.vcs_config().is_some()
+    }
+
+    #[must_use]
+    pub fn vcs_config(&self) -> Option<&crate::config::schema::VcsSegmentConfig> {
+        self.lines.iter().flatten().find_map(|s| match &s.config {
+            SegmentConfig::Vcs(config) => Some(config),
+            _ => None,
+        })
     }
 }
 
@@ -46,7 +52,10 @@ pub fn build_segment(ctx: &BuildCtx<'_>, spec: &ResolvedSegment) -> Option<Segme
         SegmentConfig::Dir(config) => {
             Some(builders::dir(ctx.input, &dir_settings(ctx, config.style)))
         }
-        SegmentConfig::Vcs(_) => ctx.vcs.clone(),
+        SegmentConfig::Vcs(config) => ctx
+            .vcs
+            .as_ref()
+            .and_then(|info| crate::vcs::format(info, config, ctx.icons, ctx.palette)),
         SegmentConfig::Model(config) => {
             builders::model(ctx.input, ctx.icons, ctx.palette, config.shorten)
         }

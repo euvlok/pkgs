@@ -75,16 +75,15 @@ pub fn render_output(
     pal: &Palette,
 ) -> RenderedStatusline {
     let layout = Layout::new(resolved.lines.clone());
-    let vcs_seg = layout
-        .needs_vcs()
-        .then(|| vcs::collect(&input.vcs_dir(), icons, pal))
-        .flatten();
+    let vcs_info = layout
+        .vcs_config()
+        .and_then(|config| vcs::collect(&input.vcs_dir(), config));
 
     let ctx = BuildCtx {
         input,
         icons,
         palette: pal,
-        vcs: vcs_seg,
+        vcs: vcs_info,
         display: &resolved.display,
         now_unix: crate::pace::now_unix(),
     };

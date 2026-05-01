@@ -1,20 +1,16 @@
-//! Git collector: build the styled VCS info segment via `gix`.
-//!
-//! Branch / detached-head display, ahead/behind arrows, in-progress
-//! operations (merge/rebase/etc.), staged/unstaged/untracked indicators,
-//! and stash count.
+//! Git collector via `gix`.
 
 use std::path::Path;
 
 use gix::bstr::BString;
 use gix::status::Item as StatusItem;
+use gix::status::UntrackedFiles;
 use gix::status::index_worktree;
 
-use crate::render::colors::Palette;
-use crate::render::icons::Icons;
-use crate::render::segment::Segment;
+use crate::config::schema::VcsSegmentConfig;
+use crate::vcs::{Operation, Tracking, VcsInfo, VcsProvider, WorktreeStatus};
 
-pub(super) fn collect(dir: &Path, icons: &Icons, pal: &Palette) -> Option<Segment> {
+pub(super) fn collect(dir: &Path, config: &VcsSegmentConfig) -> Option<VcsInfo> {
     // Disable optional file locks - read-only operations shouldn't
     // contend with concurrent git processes.
     // SAFETY: single-threaded init time, called before any threads are spawned.
@@ -24,119 +20,46 @@ pub(super) fn collect(dir: &Path, icons: &Icons, pal: &Palette) -> Option<Segmen
     }
 
     let repo = gix::open(dir).ok()?;
-    let mut s = Segment::droppable();
 
-    // Branch / oid.
     let head_ref = repo.head_ref().ok().flatten();
     let head_id = repo.head_id().ok();
     let branch_name: Option<String> = head_ref.as_ref().map(|r| r.name().shorten().to_string());
-
     let short_hash = head_id.as_ref().map(|id| id.to_hex_with_len(7).to_string());
 
-    s.append_icon_prefix(icons.git);
-
-    match (branch_name.as_deref(), short_hash.as_deref()) {
-        (Some(b), Some(h)) => {
-            s.append_styled(b, pal.magenta);
-            s.append_plain(" ");
-            s.append_styled(h, pal.dim);
-        }
-        (Some(b), None) => {
-            s.append_styled(b, pal.magenta);
-            s.append_plain(" ");
-            s.append_styled("(no commits)", pal.dim);
-        }
-        (None, Some(h)) => {
-            s.append_styled("(detached)", pal.yellow);
-            s.append_plain(" ");
-            s.append_styled(h, pal.dim);
-        }
-        (None, None) => {}
-    }
-
-    // Ahead / behind upstream.
-    let tracking = upstream_divergence(&repo);
-    let mut arrows = [
-        (icons.ahead, tracking.ahead),
-        (icons.behind, tracking.behind),
-    ]
-    .into_iter()
-    .filter(|(_, n)| *n > 0)
-    .peekable();
-    if arrows.peek().is_some() {
-        s.append_space();
-        for (i, (icon, n)) in arrows.enumerate() {
-            if i > 0 {
-                s.append_space();
-            }
-            s.append_styled(format!("{icon}{n}"), pal.cyan);
-        }
-    }
-
-    // In-progress operation.
-    if let Some(state) = repo.state() {
+    let operation = repo.state().map(|state| {
         use gix::state::InProgress::{
             ApplyMailbox, ApplyMailboxRebase, Bisect, CherryPick, CherryPickSequence, Merge,
             Rebase, RebaseInteractive, Revert, RevertSequence,
         };
-        let label: Option<String> = match state {
-            Merge => Some(format!("{} merge", icons.merge)),
-            Rebase | RebaseInteractive | ApplyMailbox | ApplyMailboxRebase => {
-                Some(format!("{} rebase", icons.rebase))
-            }
-            CherryPick | CherryPickSequence => Some(format!("{} cherry-pick", icons.cherry_pick)),
-            Revert | RevertSequence => Some(format!("{} revert", icons.revert)),
-            Bisect => Some(format!("{} bisect", icons.bisect)),
-        };
-        if let Some(l) = label {
-            s.append_spaced_styled(l, pal.red);
+        match state {
+            Merge => Operation::Merge,
+            Rebase | RebaseInteractive | ApplyMailbox | ApplyMailboxRebase => Operation::Rebase,
+            CherryPick | CherryPickSequence => Operation::CherryPick,
+            Revert | RevertSequence => Operation::Revert,
+            Bisect => Operation::Bisect,
         }
-    }
+    });
 
-    // Status indicators (staged / unstaged / untracked).
-    match compute_status(&repo) {
-        Some(status) => {
-            if status.staged {
-                s.append_spaced_styled(icons.staged, pal.green);
-            }
-            if status.unstaged {
-                s.append_spaced_styled(icons.dirty, pal.yellow);
-            } else if !status.staged && !status.untracked {
-                s.append_spaced_styled(icons.clean, pal.green);
-            }
-            if status.untracked {
-                s.append_spaced_styled(icons.untracked, pal.dim);
-            }
-        }
-        None => {
-            s.append_spaced_styled(icons.untracked, pal.dim);
-        }
-    }
-
-    // Stash count (read .git/logs/refs/stash).
-    let stash_count = count_stash(&repo);
-    if stash_count > 0 {
-        s.append_spaced_styled(format!("{}{stash_count}", icons.stash), pal.dim);
-    }
-
-    if s.is_empty() { None } else { Some(s) }
-}
-
-/// Working-tree status flags, mutated as `compute_status` walks the
-/// gix status iterator.
-#[derive(Debug, Default)]
-struct GitStatus {
-    staged: bool,
-    unstaged: bool,
-    untracked: bool,
-}
-
-/// Ahead/behind counts vs the configured upstream. Defaults to zero so
-/// callers don't need to special-case "no upstream configured".
-#[derive(Debug, Default)]
-struct Tracking {
-    ahead: usize,
-    behind: usize,
+    Some(VcsInfo {
+        provider: VcsProvider::Git,
+        branch: branch_name,
+        hash: short_hash,
+        no_commits: head_id.is_none() && head_ref.is_some(),
+        detached: head_ref.is_none() && head_id.is_some(),
+        tracking: if config.show_ahead_behind {
+            upstream_divergence(&repo)
+        } else {
+            Tracking::default()
+        },
+        operation,
+        status: config.show_dirty.then(|| compute_status(&repo)).flatten(),
+        stash_count: if config.show_stash {
+            count_stash(&repo)
+        } else {
+            0
+        },
+        ..VcsInfo::default()
+    })
 }
 
 #[expect(clippy::literal_string_with_formatting_args)]
@@ -162,10 +85,13 @@ fn upstream_divergence(repo: &gix::Repository) -> Tracking {
     }
 }
 
-fn compute_status(repo: &gix::Repository) -> Option<GitStatus> {
-    let mut status = GitStatus::default();
+fn compute_status(repo: &gix::Repository) -> Option<WorktreeStatus> {
+    let mut status = WorktreeStatus::default();
 
-    let platform = repo.status(gix::progress::Discard).ok()?;
+    let platform = repo
+        .status(gix::progress::Discard)
+        .ok()?
+        .untracked_files(UntrackedFiles::Collapsed);
     let iter = platform.into_iter(Vec::<BString>::new()).ok()?;
 
     for item in iter.filter_map(Result::ok) {

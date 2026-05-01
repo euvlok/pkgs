@@ -1,10 +1,21 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::io::Write as _;
+use std::path::PathBuf;
 use std::process::Command;
 
-const fn bin() -> &'static str {
-    env!("CARGO_BIN_EXE_agent-statusline")
+fn bin() -> PathBuf {
+    let env_path = PathBuf::from(env!("CARGO_BIN_EXE_agent-statusline"));
+    if env_path.exists() {
+        return env_path;
+    }
+    let mut path = std::env::current_exe().unwrap();
+    path.pop();
+    if path.file_name().is_some_and(|name| name == "deps") {
+        path.pop();
+    }
+    path.push(format!("agent-statusline{}", std::env::consts::EXE_SUFFIX));
+    path
 }
 
 fn write_config(text: &str) -> tempfile::NamedTempFile {
