@@ -19,6 +19,7 @@ import os
 import re
 import shutil
 from dataclasses import dataclass
+from functools import cache
 from pathlib import Path
 from typing import Literal
 
@@ -166,6 +167,38 @@ def run_string_update_script(nix_file: Path, meta: Metadata) -> None:
                     out_link.unlink()
 
 
+@cache
+def nix_update_bin() -> str:
+    if path := shutil.which("nix-update"):
+        return path
+
+    system = nix_current_system()
+    r = run(
+        [
+            "nix",
+            "build",
+            "--impure",
+            "--no-link",
+            "--print-out-paths",
+            f".#legacyPackages.{system}.nix-update",
+        ],
+        cwd=REPO_ROOT,
+        capture=True,
+        env_extra={"NIXPKGS_ALLOW_UNFREE": "1"},
+    )
+    if r.returncode != 0:
+        log_error("nix-update is not on PATH and could not be built from the flake")
+        raise typer.Exit(1)
+
+    out_path = r.stdout.strip().splitlines()[-1] if r.stdout.strip() else ""
+    candidate = Path(out_path) / "bin" / "nix-update"
+    if not candidate.is_file():
+        log_error(f"nix-update executable not found at {candidate}")
+        raise typer.Exit(1)
+
+    return str(candidate)
+
+
 def run_nix_update(
     nix_file: Path,
     wrapper: Path,
@@ -178,7 +211,7 @@ def run_nix_update(
     subpackage_args = [arg for subpackage in subpackages for arg in ("--subpackage", subpackage)]
     r = run(
         [
-            "nix-update",
+            nix_update_bin(),
             f"--version={version}",
             *subpackage_args,
             "-f",

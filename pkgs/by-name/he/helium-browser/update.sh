@@ -14,7 +14,17 @@ fi
 
 cd "${WORKING_DIR}"
 
-latest_version=$(curl -s https://api.github.com/repos/imputnet/helium-macos/releases/latest | jq -r '.tag_name')
+auth_header=()
+if [[ -n "${GITHUB_TOKEN:-${GH_TOKEN:-}}" ]]; then
+    auth_header=(-H "Authorization: Bearer ${GITHUB_TOKEN:-$GH_TOKEN}")
+fi
+
+latest_version=$(
+    curl -fsSL "${auth_header[@]}" \
+        -H "Accept: application/vnd.github+json" \
+        https://api.github.com/repos/imputnet/helium-macos/releases/latest \
+    | jq -r '.tag_name'
+)
 
 if [[ -z "$latest_version" || "$latest_version" == "null" ]]; then
     printf "Error: Failed to get latest version\n" >&2
