@@ -4,6 +4,8 @@
   fetchurl,
   makeBinaryWrapper,
   versionCheckHook,
+  autoPatchelfHook ? null,
+  glibc ? null,
   ripgrep,
   procps,
   claude-code ? null,
@@ -31,7 +33,9 @@ let
     nativeBuildInputs = [
       makeBinaryWrapper
       versionCheckHook
-    ];
+    ] ++ lib.optionals stdenvNoCC.hostPlatform.isLinux [ autoPatchelfHook ];
+
+    buildInputs = lib.optionals stdenvNoCC.hostPlatform.isLinux [ glibc ];
 
     installPhase = ''
       runHook preInstall
