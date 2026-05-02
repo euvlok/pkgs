@@ -38,6 +38,7 @@ fn rich_input() -> Input {
             current_usage: ContextUsage {
                 input_tokens: 25_000,
                 output_tokens: 8_000,
+                cached_input_tokens: 0,
                 cache_creation_input_tokens: 0,
                 cache_read_input_tokens: 18_000,
             },

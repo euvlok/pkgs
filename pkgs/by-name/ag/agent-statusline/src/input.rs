@@ -87,12 +87,20 @@ pub struct ContextWindow {
 pub struct ContextUsage {
     pub input_tokens: u64,
     pub output_tokens: u64,
+    /// Codex/OpenAI cached input tokens. These are a subset of
+    /// `input_tokens`, not an additive field.
+    pub cached_input_tokens: u64,
     pub cache_creation_input_tokens: u64,
     pub cache_read_input_tokens: u64,
 }
 
 impl ContextUsage {
-    /// Total input-side tokens (input + cache creation + cache read).
+    /// Total input-side tokens.
+    ///
+    /// Claude/Anthropic reports cache creation/read tokens separately from
+    /// `input_tokens`, so those fields are additive. Codex/OpenAI reports
+    /// `cached_input_tokens` as a subset of `input_tokens`, so adding it would
+    /// double-count cached prompt tokens.
     #[must_use]
     pub const fn total(&self) -> u64 {
         self.input_tokens + self.cache_creation_input_tokens + self.cache_read_input_tokens
@@ -106,7 +114,12 @@ impl ContextUsage {
         if denom == 0 {
             return None;
         }
-        let pct = (self.cache_read_input_tokens.saturating_mul(100) + denom / 2) / denom;
+        let cached = if self.cached_input_tokens > 0 {
+            self.cached_input_tokens
+        } else {
+            self.cache_read_input_tokens
+        };
+        let pct = (cached.saturating_mul(100) + denom / 2) / denom;
         Some(u32::try_from(pct).unwrap_or(u32::MAX))
     }
 }
@@ -463,6 +476,51 @@ mod tests {
         // Structured value wins for used_percentage; resets_at falls back to header.
         assert_eq!(input.rate_limits.five_hour.used_percentage, Some(10.0));
         assert_eq!(input.rate_limits.five_hour.resets_at, Some(1_704_069_000));
+    }
+
+    #[test]
+    fn codex_cached_input_tokens_are_not_additive() {
+        let input: Input = serde_json::from_str(
+            r#"{
+                "context_window": {
+                    "used_percentage": 10.0,
+                    "context_window_size": 1000,
+                    "current_usage": {
+                        "input_tokens": 100,
+                        "cached_input_tokens": 80,
+                        "output_tokens": 25
+                    }
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let usage = &input.context_window.current_usage;
+        assert_eq!(usage.total(), 100);
+        assert_eq!(usage.cache_hit_pct(), Some(80));
+    }
+
+    #[test]
+    fn claude_cache_tokens_are_additive() {
+        let input: Input = serde_json::from_str(
+            r#"{
+                "context_window": {
+                    "used_percentage": 10.0,
+                    "context_window_size": 1000,
+                    "current_usage": {
+                        "input_tokens": 100,
+                        "cache_creation_input_tokens": 20,
+                        "cache_read_input_tokens": 80,
+                        "output_tokens": 25
+                    }
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let usage = &input.context_window.current_usage;
+        assert_eq!(usage.total(), 200);
+        assert_eq!(usage.cache_hit_pct(), Some(40));
     }
 
     #[test]

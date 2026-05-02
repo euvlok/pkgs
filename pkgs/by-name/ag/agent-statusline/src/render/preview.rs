@@ -72,6 +72,7 @@ fn sample_input() -> Input {
             current_usage: ContextUsage {
                 input_tokens: 162_000,
                 output_tokens: 48_000,
+                cached_input_tokens: 0,
                 cache_creation_input_tokens: 0,
                 cache_read_input_tokens: 120_000,
             },
