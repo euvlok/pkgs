@@ -8,8 +8,8 @@ yt-dlp.overrideAttrs (
     version = upstreamVersion;
     src = fetchFromGitHub {
       inherit (prevAttrs.src) owner repo;
-      rev = "27973bae5ea3467ac412bea3b79cbeeb7de71e81";
-      hash = "sha256-kKloiXl7SvvC6krKoYjkQpDKgrq4Or8FwZ7gYPq+1fI=";
+      rev = "35684c1171dd8b99da825cf43a0b2c06b43824b7";
+      hash = "sha256-r3wqC1uYjVa90EqzIdihdKUjA92hMjtNL9kVH7zG70o=";
     };
   }
 )
