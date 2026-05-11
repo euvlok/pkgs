@@ -43,8 +43,8 @@ prefetch_url() {
 }
 
 darwin_hash=$(prefetch_url "https://github.com/imputnet/helium-macos/releases/download/$latest_version/helium_${latest_version}_arm64-macos.dmg")
-linux_arm_hash=$(prefetch_url "https://github.com/imputnet/helium-linux/releases/download/$latest_version/helium-${latest_version}-arm64.AppImage")
-linux_x86_hash=$(prefetch_url "https://github.com/imputnet/helium-linux/releases/download/$latest_version/helium-${latest_version}-x86_64.AppImage")
+linux_arm_hash=$(prefetch_url "https://github.com/imputnet/helium-linux/releases/download/$latest_version/helium-${latest_version}-arm64_linux.tar.xz")
+linux_x86_hash=$(prefetch_url "https://github.com/imputnet/helium-linux/releases/download/$latest_version/helium-${latest_version}-x86_64_linux.tar.xz")
 
 cat > sources.nix << EOF
 { fetchurl }:
@@ -59,14 +59,14 @@ cat > sources.nix << EOF
   aarch64-linux = {
     version = "$latest_version";
     src = fetchurl {
-      url = "https://github.com/imputnet/helium-linux/releases/download/$latest_version/helium-${latest_version}-arm64.AppImage";
+      url = "https://github.com/imputnet/helium-linux/releases/download/$latest_version/helium-${latest_version}-arm64_linux.tar.xz";
       hash = "$linux_arm_hash";
     };
   };
   x86_64-linux = {
     version = "$latest_version";
     src = fetchurl {
-      url = "https://github.com/imputnet/helium-linux/releases/download/$latest_version/helium-${latest_version}-x86_64.AppImage";
+      url = "https://github.com/imputnet/helium-linux/releases/download/$latest_version/helium-${latest_version}-x86_64_linux.tar.xz";
       hash = "$linux_x86_hash";
     };
   };
