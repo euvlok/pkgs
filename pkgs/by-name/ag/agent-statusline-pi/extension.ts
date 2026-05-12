@@ -1,4 +1,4 @@
-import type { AssistantMessage } from "@mariozechner/pi-ai";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
 import {
 	type ExtensionAPI,
 	type ExtensionContext,
@@ -6,8 +6,8 @@ import {
 	isWriteToolResult,
 	type ReadonlyFooterDataProvider,
 	type ToolResultEvent,
-} from "@mariozechner/pi-coding-agent";
-import { type Component, truncateToWidth } from "@mariozechner/pi-tui";
+} from "@earendil-works/pi-coding-agent";
+import { type Component, truncateToWidth } from "@earendil-works/pi-tui";
 
 const FLAG_COMMAND = "statusline-command";
 const FLAG_ARGS = "statusline-args";

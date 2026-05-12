@@ -1,5 +1,5 @@
-import type { ExtensionAPI, ExtensionContext, MessageRenderer } from "@mariozechner/pi-coding-agent";
-import { Box, Text } from "@mariozechner/pi-tui";
+import type { ExtensionAPI, ExtensionContext, MessageRenderer } from "@earendil-works/pi-coding-agent";
+import { Box, Text } from "@earendil-works/pi-tui";
 
 const STATUS_KEY = "codex-web-search";
 const MESSAGE_TYPE = "codex-web-search";
