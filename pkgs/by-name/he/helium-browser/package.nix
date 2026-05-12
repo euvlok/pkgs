@@ -226,12 +226,13 @@ else
       mkdir -p "$out/libexec/helium" "$out/bin" "$out/share/applications" "$out/share/icons/hicolor/256x256/apps"
       tar -xJf "$src" -C "$out/libexec/helium" --strip-components=1
       rm -f "$out/libexec/helium/libqt5_shim.so"
-      install -Dm644 "$out/libexec/helium/helium.desktop" "$out/share/applications/helium-browser.desktop"
+      install -Dm644 "$out/libexec/helium/helium.desktop" "$out/share/applications/helium.desktop"
       install -Dm644 "$out/libexec/helium/product_logo_256.png" "$out/share/icons/hicolor/256x256/apps/helium.png"
-      substituteInPlace "$out/share/applications/helium-browser.desktop" \
+      substituteInPlace "$out/share/applications/helium.desktop" \
         --replace-fail "Exec=helium %U" "Exec=$out/bin/helium-browser %U" \
         --replace-fail "Exec=helium --incognito" "Exec=$out/bin/helium-browser --incognito"
-      sed -i "s|^Exec=helium$|Exec=$out/bin/helium-browser|" "$out/share/applications/helium-browser.desktop"
+      sed -i "s|^Exec=helium$|Exec=$out/bin/helium-browser|" "$out/share/applications/helium.desktop"
+      ln -s helium.desktop "$out/share/applications/helium-browser.desktop"
 
       makeWrapper "$out/libexec/helium/helium-wrapper" "$out/bin/helium-browser" \
         --add-flags ${lib.escapeShellArg commandLineArgs} \
