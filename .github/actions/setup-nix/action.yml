@@ -10,11 +10,30 @@ inputs:
     description: 'Newline-separated glob list passed to hashFiles() for the primary key suffix'
     required: false
     default: 'flake.lock'
+  cachix-cache:
+    description: 'Cachix cache name to configure (leave empty to skip Cachix)'
+    required: false
+    default: 'eupkgs'
+  cachix-auth-token:
+    description: 'Cachix auth token used to push build results (leave empty for read-only cache access)'
+    required: false
+    default: ''
 
 runs:
   using: 'composite'
   steps:
     - uses: DeterminateSystems/nix-installer-action@v22
+
+    - if: inputs.cachix-cache != '' && inputs.cachix-auth-token == ''
+      uses: cachix/cachix-action@v14
+      with:
+        name: ${{ inputs.cachix-cache }}
+
+    - if: inputs.cachix-cache != '' && inputs.cachix-auth-token != ''
+      uses: cachix/cachix-action@v14
+      with:
+        name: ${{ inputs.cachix-cache }}
+        authToken: ${{ inputs.cachix-auth-token }}
 
     - if: inputs.cache-key != ''
       uses: nix-community/cache-nix-action@v7.0.2
