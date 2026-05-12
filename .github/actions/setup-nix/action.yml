@@ -25,18 +25,18 @@ runs:
     - uses: DeterminateSystems/nix-installer-action@v22
 
     - if: inputs.cachix-cache != '' && inputs.cachix-auth-token == ''
-      uses: cachix/cachix-action@v14
+      uses: cachix/cachix-action@v17
       with:
         name: ${{ inputs.cachix-cache }}
 
     - if: inputs.cachix-cache != '' && inputs.cachix-auth-token != ''
-      uses: cachix/cachix-action@v14
+      uses: cachix/cachix-action@v17
       with:
         name: ${{ inputs.cachix-cache }}
         authToken: ${{ inputs.cachix-auth-token }}
 
     - if: inputs.cache-key != ''
-      uses: nix-community/cache-nix-action@v7.0.2
+      uses: nix-community/cache-nix-action@v7
       with:
         primary-key: nix-${{ runner.os }}-${{ inputs.cache-key }}-${{ hashFiles(inputs.cache-hash-files) }}
         restore-prefixes-first-match: nix-${{ runner.os }}-${{ inputs.cache-key }}-
