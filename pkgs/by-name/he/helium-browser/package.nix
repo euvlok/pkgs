@@ -3,6 +3,7 @@
   stdenvNoCC,
   fetchurl,
   _7zz,
+  makeWrapper,
   autoPatchelfHook ? null,
   gtk3 ? null,
   atk ? null,
@@ -22,6 +23,9 @@
   libglvnd ? null,
   udev ? null,
   glibc ? null,
+
+  # command line arguments which are always set e.g. "--disable-gpu"
+  commandLineArgs ? "",
 }:
 
 let
@@ -58,7 +62,10 @@ if stdenvNoCC.hostPlatform.isDarwin then
 
     sourceRoot = "Helium.app";
 
-    nativeBuildInputs = [ _7zz ];
+    nativeBuildInputs = [
+      _7zz
+      makeWrapper
+    ];
 
     unpackPhase = ''
       7zz x "$src" -snld
@@ -68,8 +75,13 @@ if stdenvNoCC.hostPlatform.isDarwin then
 
     installPhase = ''
       runHook preInstall
-      mkdir -p "$out/Applications"
+      mkdir -p "$out/Applications" "$out/bin"
       cp -R . "$out/Applications/Helium.app"
+
+      makeWrapper "$out/Applications/Helium.app/Contents/MacOS/Helium" "$out/bin/helium-browser" \
+        --add-flags ${lib.escapeShellArg commandLineArgs}
+      ln -s helium-browser "$out/bin/helium"
+
       runHook postInstall
     '';
   }
@@ -89,7 +101,10 @@ else
     dontBuild = true;
     dontStrip = true;
 
-    nativeBuildInputs = lib.optionals stdenvNoCC.hostPlatform.isLinux [ autoPatchelfHook ];
+    nativeBuildInputs = lib.optionals stdenvNoCC.hostPlatform.isLinux [
+      autoPatchelfHook
+      makeWrapper
+    ];
     buildInputs = lib.optionals stdenvNoCC.hostPlatform.isLinux [
       glibc
       gtk3
@@ -123,11 +138,8 @@ else
       mkdir -p "$out/libexec/helium" "$out/bin"
       tar -xJf "$src" -C "$out/libexec/helium" --strip-components=1
 
-      cat > "$out/bin/helium-browser" <<'EOF'
-      #!/bin/sh
-      exec "$out/libexec/helium/helium-wrapper" "$@"
-      EOF
-      chmod +x "$out/bin/helium-browser"
+      makeWrapper "$out/libexec/helium/helium-wrapper" "$out/bin/helium-browser" \
+        --add-flags ${lib.escapeShellArg commandLineArgs}
       ln -s helium-browser "$out/bin/helium"
 
       runHook postInstall
