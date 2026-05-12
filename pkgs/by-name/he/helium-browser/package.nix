@@ -184,7 +184,8 @@ if stdenvNoCC.hostPlatform.isDarwin then
       cp -R . "$out/Applications/Helium.app"
 
       makeWrapper "$out/Applications/Helium.app/Contents/MacOS/Helium" "$out/bin/helium-browser" \
-        --add-flags ${lib.escapeShellArg commandLineArgs}
+        --add-flags ${lib.escapeShellArg commandLineArgs} \
+        --add-flags "--extension-mime-request-handling=always-prompt-for-install"
       ln -s helium-browser "$out/bin/helium"
 
       runHook postInstall
@@ -236,6 +237,7 @@ else
 
       makeWrapper "$out/libexec/helium/helium-wrapper" "$out/bin/helium-browser" \
         --add-flags ${lib.escapeShellArg commandLineArgs} \
+        --add-flags "--extension-mime-request-handling=always-prompt-for-install" \
         --add-flags "\''${NIXOS_OZONE_WL:+\''${WAYLAND_DISPLAY:+--ozone-platform-hint=auto}}" \
         --set-default CHROME_VERSION_EXTRA nix \
         --set FONTCONFIG_FILE "${fontsConf}" \
