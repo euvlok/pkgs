@@ -1,6 +1,6 @@
-From d19d55c78c6a5429948d97109d089a9a53513d7b Mon Sep 17 00:00:00 2001
+From 590bdfa884c51ff4c24635e4506abbf317667312 Mon Sep 17 00:00:00 2001
 From: FlameFlag <git@ps1.sh>
-Date: Thu, 23 Apr 2026 14:52:28 +0300
+Date: Tue, 12 May 2026 17:44:42 +0300
 Subject: [PATCH 4/4] Add richer status-line command telemetry
 
 ---
@@ -11,18 +11,18 @@ Subject: [PATCH 4/4] Add richer status-line command telemetry
  4 files changed, 118 insertions(+), 4 deletions(-)
 
 diff --git a/codex-rs/tui/src/chatwidget.rs b/codex-rs/tui/src/chatwidget.rs
-index acafc18..8f649e9 100644
+index f61639f..bfdc26b 100644
 --- a/codex-rs/tui/src/chatwidget.rs
 +++ b/codex-rs/tui/src/chatwidget.rs
-@@ -408,6 +408,7 @@ mod side;
+@@ -348,6 +348,7 @@ mod side;
  mod status_surfaces;
  use self::status_surfaces::CachedProjectRootName;
  use self::status_surfaces::TerminalTitleStatusKind;
 +use self::status_surfaces::status_line_diff_stats_from_unified_diff;
- use crate::streaming::chunking::AdaptiveChunkingPolicy;
- use crate::streaming::commit_tick::CommitTickScope;
- use crate::streaming::commit_tick::run_commit_tick;
-@@ -781,6 +782,12 @@ impl PendingGuardianReviewStatus {
+ mod user_messages;
+ use self::user_messages::PendingSteerCompareKey;
+ use self::user_messages::UserMessageDisplay;
+@@ -731,6 +732,12 @@ impl PendingGuardianReviewStatus {
      }
  }
  
@@ -35,15 +35,15 @@ index acafc18..8f649e9 100644
  /// Maintains the per-session UI state and interaction state machines for the chat screen.
  ///
  /// `ChatWidget` owns the state derived from the protocol event stream (history cells, streaming
-@@ -825,6 +832,7 @@ pub(crate) struct ChatWidget {
-     status_account_display: Option<StatusAccountDisplay>,
+@@ -777,6 +784,7 @@ pub(crate) struct ChatWidget {
+     runtime_model_provider_base_url: Option<String>,
      token_info: Option<TokenUsageInfo>,
      rate_limit_snapshots_by_limit_id: BTreeMap<String, RateLimitSnapshotDisplay>,
 +    status_line_diff_stats: Option<StatusLineDiffStats>,
      refreshing_status_outputs: Vec<(u64, StatusHistoryHandle)>,
      next_status_refresh_request_id: u64,
      plan_type: Option<PlanType>,
-@@ -2765,6 +2773,7 @@ impl ChatWidget {
+@@ -2461,6 +2469,7 @@ impl ChatWidget {
          self.adaptive_chunking.reset();
          self.plan_stream_controller = None;
          self.turn_runtime_metrics = RuntimeMetricsSummary::default();
@@ -51,7 +51,7 @@ index acafc18..8f649e9 100644
          self.session_telemetry.reset_runtime_metrics();
          self.bottom_pane.clear_quit_shortcut_hint();
          self.quit_shortcut_expires_at = None;
-@@ -4510,6 +4519,8 @@ impl ChatWidget {
+@@ -4060,6 +4069,8 @@ impl ChatWidget {
  
      fn on_turn_diff(&mut self, unified_diff: String) {
          debug!("TurnDiffEvent: {unified_diff}");
@@ -60,8 +60,8 @@ index acafc18..8f649e9 100644
          self.refresh_status_line();
      }
  
-@@ -5324,6 +5335,7 @@ impl ChatWidget {
-             status_account_display,
+@@ -4948,6 +4959,7 @@ impl ChatWidget {
+             runtime_model_provider_base_url,
              token_info: None,
              rate_limit_snapshots_by_limit_id: BTreeMap::new(),
 +            status_line_diff_stats: None,
@@ -69,10 +69,10 @@ index acafc18..8f649e9 100644
              next_status_refresh_request_id: 0,
              plan_type: initial_plan_type,
 diff --git a/codex-rs/tui/src/chatwidget/status_surfaces.rs b/codex-rs/tui/src/chatwidget/status_surfaces.rs
-index 96b76af..1bc8baf 100644
+index ae35d4a..114da54 100644
 --- a/codex-rs/tui/src/chatwidget/status_surfaces.rs
 +++ b/codex-rs/tui/src/chatwidget/status_surfaces.rs
-@@ -924,6 +924,15 @@ struct StatusLineCommandRateLimits {
+@@ -1016,6 +1016,15 @@ struct StatusLineCommandRateLimits {
      seven_day: StatusLineCommandRateLimitWindow,
  }
  
@@ -88,7 +88,7 @@ index 96b76af..1bc8baf 100644
  #[derive(Serialize)]
  struct StatusLineCommandPayload {
      workspace: StatusLineCommandWorkspace,
-@@ -932,6 +941,22 @@ struct StatusLineCommandPayload {
+@@ -1024,6 +1033,22 @@ struct StatusLineCommandPayload {
      model: StatusLineCommandModel,
      context_window: StatusLineCommandContextWindow,
      rate_limits: StatusLineCommandRateLimits,
@@ -111,7 +111,7 @@ index 96b76af..1bc8baf 100644
  }
  
  fn build_status_line_command_payload(chat: &ChatWidget) -> String {
-@@ -970,15 +995,26 @@ fn build_status_line_command_payload(chat: &ChatWidget) -> String {
+@@ -1063,15 +1088,26 @@ fn build_status_line_command_payload(chat: &ChatWidget) -> String {
                  used_percentage: limit_snapshot
                      .and_then(|snapshot| snapshot.primary.as_ref())
                      .map(|window| window.used_percent),
@@ -140,7 +140,7 @@ index 96b76af..1bc8baf 100644
      };
  
      serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string())
-@@ -1078,6 +1114,30 @@ mod tests {
+@@ -1171,6 +1207,30 @@ mod tests {
              last_token_usage: TokenUsage::default(),
              model_context_window: Some(272_000),
          });
@@ -171,7 +171,7 @@ index 96b76af..1bc8baf 100644
  
          let payload = build_status_line_command_payload(&chat);
          let value: serde_json::Value = serde_json::from_str(&payload).expect("payload json");
-@@ -1093,6 +1153,41 @@ mod tests {
+@@ -1186,6 +1246,41 @@ mod tests {
              value["context_window"]["current_usage"]["cache_read_input_tokens"],
              25
          );
@@ -214,11 +214,11 @@ index 96b76af..1bc8baf 100644
  
      #[tokio::test]
 diff --git a/codex-rs/tui/src/chatwidget/tests/helpers.rs b/codex-rs/tui/src/chatwidget/tests/helpers.rs
-index a825319..3617bea 100644
+index 14f856b..bfe95ad 100644
 --- a/codex-rs/tui/src/chatwidget/tests/helpers.rs
 +++ b/codex-rs/tui/src/chatwidget/tests/helpers.rs
-@@ -194,6 +194,7 @@ pub(crate) async fn make_chatwidget_manual(
-         status_account_display: None,
+@@ -206,6 +206,7 @@ pub(super) async fn make_chatwidget_manual(
+         runtime_model_provider_base_url: None,
          token_info: None,
          rate_limit_snapshots_by_limit_id: BTreeMap::new(),
 +        status_line_diff_stats: None,
@@ -226,7 +226,7 @@ index a825319..3617bea 100644
          next_status_refresh_request_id: 0,
          plan_type: None,
 diff --git a/codex-rs/tui/src/status/rate_limits.rs b/codex-rs/tui/src/status/rate_limits.rs
-index 559da21..82078c3 100644
+index 3be813b..548121a 100644
 --- a/codex-rs/tui/src/status/rate_limits.rs
 +++ b/codex-rs/tui/src/status/rate_limits.rs
 @@ -66,14 +66,16 @@ pub(crate) struct RateLimitWindowDisplay {
@@ -250,10 +250,10 @@ index 559da21..82078c3 100644
          let resets_at = resets_at_utc.map(|dt| format_reset_timestamp(dt, captured_at));
 @@ -81,6 +83,7 @@ impl RateLimitWindowDisplay {
          Self {
-             used_percent: window.used_percent,
+             used_percent: f64::from(window.used_percent),
              resets_at,
 +            resets_at_unix,
-             window_minutes: window.window_minutes,
+             window_minutes: window.window_duration_mins,
          }
      }
 @@ -358,6 +361,7 @@ mod tests {
@@ -278,6 +278,3 @@ index 559da21..82078c3 100644
                  window_minutes: None,
              }),
              credits: None,
--- 
-2.53.0
-
