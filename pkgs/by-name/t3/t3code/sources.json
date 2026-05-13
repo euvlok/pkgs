@@ -1,0 +1,16 @@
+{
+  "stable": {
+    "version": "0.0.23",
+    "tag": "v0.0.23",
+    "rev": "3c32bc8fd1f5970e65988e36937cb8e2921437f9",
+    "srcHash": "sha256-gsDHogGnzKVwypGwK1PzYBXpBYBFQHIbXMpWVUGzKU8=",
+    "nodeModulesHash": "sha256-Z7LE/+rwhFObxM+l5kKDA6qTIX6lNAyZ3nwtOPQIFL8="
+  },
+  "nightly": {
+    "version": "0.0.24-nightly.20260513.277",
+    "tag": "v0.0.24-nightly.20260513.277",
+    "rev": "556c42452c5ac94ae8d8698d64fcd372c1680955",
+    "srcHash": "sha256-dWNPdWTH89dhCdBvT9DroSdx1CFh2seSjDX1PsjmAVg=",
+    "nodeModulesHash": "sha256-TcTEP1bpi7/ZfX37VwiBK9OSHP63CJEZuhHMl1hlhOM="
+  }
+}
