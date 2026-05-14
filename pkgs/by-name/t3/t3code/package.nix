@@ -133,8 +133,9 @@ stdenv.mkDerivation (finalAttrs: {
   noAuditTmpdir = true;
 
   patches = [
-    ./patches/0001-add-catppuccin-theme-selector.patch
-    ./patches/0002-add-generated-catppuccin-theme-css.patch
+    ./patches/0001-add-split-catppuccin-theme-controls.patch
+    ./patches/0002-remove-desktop-update-surfacing.patch
+    ./patches/0003-add-made-in-eu-composer-badge.patch
   ];
 
   postPatch = ''

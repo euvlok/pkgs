@@ -1,6 +1,12 @@
+From 1b148daf13a58ee706d64ac78f34119f6cdc2322 Mon Sep 17 00:00:00 2001
+From: FlameFlag <git@ps1.sh>
+Date: Thu, 14 May 2026 04:27:48 +0300
+Subject: [PATCH 1/3] Add split Catppuccin theme controls
+
+
 diff --git a/apps/web/src/catppuccin-theme.css b/apps/web/src/catppuccin-theme.css
 new file mode 100644
-index 00000000..6c06a0b4
+index 0000000..6c06a0b
 --- /dev/null
 +++ b/apps/web/src/catppuccin-theme.css
 @@ -0,0 +1,1681 @@
@@ -1685,3 +1691,987 @@ index 00000000..6c06a0b4
 +  --warning: #f9e2af;
 +  --warning-foreground: #f9e2af;
 +}
+diff --git a/apps/web/src/components/settings/SettingsPanels.browser.tsx b/apps/web/src/components/settings/SettingsPanels.browser.tsx
+index ae8bc48..b4aea72 100644
+--- a/apps/web/src/components/settings/SettingsPanels.browser.tsx
++++ b/apps/web/src/components/settings/SettingsPanels.browser.tsx
+@@ -236,6 +236,19 @@ function createBaseServerConfig(): ServerConfig {
+   };
+ }
+ 
++function stubSystemColorScheme(isDark: boolean) {
++  vi.stubGlobal("matchMedia", (query: string) => ({
++    matches: query === "(prefers-color-scheme: dark)" ? isDark : false,
++    media: query,
++    onchange: null,
++    addEventListener: vi.fn(),
++    removeEventListener: vi.fn(),
++    addListener: vi.fn(),
++    removeListener: vi.fn(),
++    dispatchEvent: vi.fn(),
++  }));
++}
++
+ function createOutdatedProvider(
+   driver: string,
+   updateCommand = "npm install -g openai/codex@latest",
+@@ -746,6 +759,92 @@ describe("GeneralSettingsPanel observability", () => {
+       .toBeInTheDocument();
+   });
+ 
++  it("shows split theme controls and only built-in theme modes in the Theme select", async () => {
++    stubSystemColorScheme(false);
++    setServerConfigSnapshot(createBaseServerConfig());
++
++    mounted = await renderWithTestRouter(
++      <AppAtomRegistryProvider>
++        <GeneralSettingsPanel />
++      </AppAtomRegistryProvider>,
++    );
++
++    await expect
++      .element(page.getByRole("combobox", { name: "Theme preference" }))
++      .toHaveTextContent("System");
++    await expect
++      .element(page.getByRole("combobox", { name: "Accent color" }))
++      .toHaveTextContent("Blue");
++    expect(document.documentElement.dataset.catppuccinTheme).toBe("latte-blue");
++    await expect
++      .element(page.getByRole("combobox", { name: "Dark theme" }))
++      .not.toBeInTheDocument();
++
++    await page.getByRole("combobox", { name: "Theme preference" }).click();
++    await expect.element(page.getByRole("option", { name: "System" })).toBeInTheDocument();
++    await expect.element(page.getByRole("option", { name: "Light" })).toBeInTheDocument();
++    await expect.element(page.getByRole("option", { name: "Dark" })).toBeInTheDocument();
++    await expect.element(page.getByRole("option", { name: "Mocha" })).not.toBeInTheDocument();
++  });
++
++  it("shows the dark flavor select when dark mode is selected", async () => {
++    stubSystemColorScheme(false);
++    setServerConfigSnapshot(createBaseServerConfig());
++
++    mounted = await renderWithTestRouter(
++      <AppAtomRegistryProvider>
++        <GeneralSettingsPanel />
++      </AppAtomRegistryProvider>,
++    );
++
++    await page.getByRole("combobox", { name: "Theme preference" }).click();
++    await page.getByRole("option", { name: "Dark" }).click();
++
++    await expect
++      .element(page.getByRole("combobox", { name: "Dark theme" }))
++      .toHaveTextContent("Mocha");
++    expect(document.documentElement.dataset.catppuccinTheme).toBe("mocha-blue");
++  });
++
++  it("shows the dark flavor select when system resolves to dark", async () => {
++    stubSystemColorScheme(true);
++    setServerConfigSnapshot(createBaseServerConfig());
++
++    mounted = await renderWithTestRouter(
++      <AppAtomRegistryProvider>
++        <GeneralSettingsPanel />
++      </AppAtomRegistryProvider>,
++    );
++
++    await expect
++      .element(page.getByRole("combobox", { name: "Dark theme" }))
++      .toHaveTextContent("Mocha");
++    expect(document.documentElement.dataset.catppuccinTheme).toBe("mocha-blue");
++  });
++
++  it("migrates old bundled Catppuccin theme values", async () => {
++    stubSystemColorScheme(false);
++    localStorage.setItem("t3code:theme", "catppuccin-frappe-teal");
++    setServerConfigSnapshot(createBaseServerConfig());
++
++    mounted = await renderWithTestRouter(
++      <AppAtomRegistryProvider>
++        <GeneralSettingsPanel />
++      </AppAtomRegistryProvider>,
++    );
++
++    await expect
++      .element(page.getByRole("combobox", { name: "Theme preference" }))
++      .toHaveTextContent("Dark");
++    await expect
++      .element(page.getByRole("combobox", { name: "Accent color" }))
++      .toHaveTextContent("Teal");
++    await expect
++      .element(page.getByRole("combobox", { name: "Dark theme" }))
++      .toHaveTextContent("Frappe");
++    expect(document.documentElement.dataset.catppuccinTheme).toBe("frappe-teal");
++  });
++
+   it("creates and shows a pairing link when network access is enabled", async () => {
+     window.desktopBridge = createDesktopBridgeStub({
+       serverExposureState: {
+diff --git a/apps/web/src/components/settings/SettingsPanels.tsx b/apps/web/src/components/settings/SettingsPanels.tsx
+index e7f21da..9ec1d86 100644
+--- a/apps/web/src/components/settings/SettingsPanels.tsx
++++ b/apps/web/src/components/settings/SettingsPanels.tsx
+@@ -1,10 +1,8 @@
+ import { ArchiveIcon, ArchiveX, LoaderIcon, PlusIcon, RefreshCwIcon } from "lucide-react";
+-import { useQueryClient } from "@tanstack/react-query";
+ import { Link } from "@tanstack/react-router";
+ import { useCallback, useMemo, useRef, useState } from "react";
+ import {
+   defaultInstanceIdForDriver,
+-  type DesktopUpdateChannel,
+   PROVIDER_DISPLAY_NAMES,
+   ProviderDriverKind,
+   type ProviderInstanceConfig,
+@@ -16,25 +14,19 @@ import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
+ import { createModelSelection } from "@t3tools/shared/model";
+ import * as Duration from "effect/Duration";
+ import * as Equal from "effect/Equal";
+-import { APP_VERSION, HOSTED_APP_CHANNEL, HOSTED_APP_CHANNEL_LABEL } from "../../branding";
+-import {
+-  canCheckForUpdate,
+-  getDesktopUpdateButtonTooltip,
+-  getDesktopUpdateInstallConfirmationMessage,
+-  isDesktopUpdateButtonDisabled,
+-  resolveDesktopUpdateButtonAction,
+-} from "../../components/desktopUpdate.logic";
++import { APP_VERSION } from "../../branding";
+ import { ProviderModelPicker } from "../chat/ProviderModelPicker";
+ import { TraitsPicker } from "../chat/TraitsPicker";
+-import { isElectron } from "../../env";
+-import { buildHostedChannelSelectionUrl, type HostedAppChannel } from "../../hostedPairing";
+-import { useTheme } from "../../hooks/useTheme";
++import {
++  CATPPUCCIN_ACCENTS,
++  CATPPUCCIN_DARK_FLAVORS,
++  type CatppuccinAccent,
++  type CatppuccinDarkFlavor,
++  THEME_MODE_OPTIONS,
++  useTheme,
++} from "../../hooks/useTheme";
+ import { useSettings, useUpdateSettings } from "../../hooks/useSettings";
+ import { useThreadActions } from "../../hooks/useThreadActions";
+-import {
+-  setDesktopUpdateStateQueryData,
+-  useDesktopUpdateState,
+-} from "../../lib/desktopUpdateReactQuery";
+ import {
+   getCustomModelOptionsByInstance,
+   resolveAppModelSelectionState,
+@@ -78,21 +70,6 @@ import {
+ import { ProjectFavicon } from "../ProjectFavicon";
+ import { useServerObservability, useServerProviders } from "../../rpc/serverState";
+ 
+-const THEME_OPTIONS = [
+-  {
+-    value: "system",
+-    label: "System",
+-  },
+-  {
+-    value: "light",
+-    label: "Light",
+-  },
+-  {
+-    value: "dark",
+-    label: "Dark",
+-  },
+-] as const;
+-
+ const TIMESTAMP_FORMAT_LABELS = {
+   locale: "System default",
+   "12-hour": "12-hour",
+@@ -121,6 +98,10 @@ const PROVIDER_SETTINGS = DRIVER_OPTIONS.map((definition) => ({
+   provider: definition.value,
+ }));
+ 
++function formatThemeOptionLabel(value: string) {
++  return value[0] ? value[0].toUpperCase() + value.slice(1) : value;
++}
++
+ function ProviderLastChecked({ lastCheckedAt }: { lastCheckedAt: string | null }) {
+   useRelativeTimeTick();
+   const lastCheckedRelative = lastCheckedAt ? formatRelativeTime(lastCheckedAt) : null;
+@@ -153,232 +134,13 @@ function AboutVersionTitle() {
+ }
+ 
+ function AboutVersionSection() {
+-  const queryClient = useQueryClient();
+-  const updateStateQuery = useDesktopUpdateState();
+-  const [isChangingUpdateChannel, setIsChangingUpdateChannel] = useState(false);
+-
+-  const updateState = updateStateQuery.data ?? null;
+-  const hasDesktopBridge = typeof window !== "undefined" && Boolean(window.desktopBridge);
+-  const selectedUpdateChannel = updateState?.channel ?? "latest";
+-  const selectedHostedAppChannel = hasDesktopBridge ? null : HOSTED_APP_CHANNEL;
+-
+-  const handleUpdateChannelChange = useCallback(
+-    (channel: DesktopUpdateChannel) => {
+-      const bridge = window.desktopBridge;
+-      if (
+-        !bridge ||
+-        typeof bridge.setUpdateChannel !== "function" ||
+-        channel === selectedUpdateChannel
+-      ) {
+-        return;
+-      }
+-
+-      setIsChangingUpdateChannel(true);
+-      void bridge
+-        .setUpdateChannel(channel)
+-        .then((state) => {
+-          setDesktopUpdateStateQueryData(queryClient, state);
+-        })
+-        .catch((error: unknown) => {
+-          toastManager.add(
+-            stackedThreadToast({
+-              type: "error",
+-              title: "Could not change update track",
+-              description: error instanceof Error ? error.message : "Update track change failed.",
+-            }),
+-          );
+-        })
+-        .finally(() => {
+-          setIsChangingUpdateChannel(false);
+-        });
+-    },
+-    [queryClient, selectedUpdateChannel],
+-  );
+-
+-  const handleButtonClick = useCallback(() => {
+-    const bridge = window.desktopBridge;
+-    if (!bridge) return;
+-
+-    const action = updateState ? resolveDesktopUpdateButtonAction(updateState) : "none";
+-
+-    if (action === "download") {
+-      void bridge
+-        .downloadUpdate()
+-        .then((result) => {
+-          setDesktopUpdateStateQueryData(queryClient, result.state);
+-        })
+-        .catch((error: unknown) => {
+-          toastManager.add(
+-            stackedThreadToast({
+-              type: "error",
+-              title: "Could not download update",
+-              description: error instanceof Error ? error.message : "Download failed.",
+-            }),
+-          );
+-        });
+-      return;
+-    }
+-
+-    if (action === "install") {
+-      const confirmed = window.confirm(
+-        getDesktopUpdateInstallConfirmationMessage(
+-          updateState ?? { availableVersion: null, downloadedVersion: null },
+-        ),
+-      );
+-      if (!confirmed) return;
+-      void bridge
+-        .installUpdate()
+-        .then((result) => {
+-          setDesktopUpdateStateQueryData(queryClient, result.state);
+-        })
+-        .catch((error: unknown) => {
+-          toastManager.add(
+-            stackedThreadToast({
+-              type: "error",
+-              title: "Could not install update",
+-              description: error instanceof Error ? error.message : "Install failed.",
+-            }),
+-          );
+-        });
+-      return;
+-    }
+-
+-    if (typeof bridge.checkForUpdate !== "function") return;
+-    void bridge
+-      .checkForUpdate()
+-      .then((result) => {
+-        setDesktopUpdateStateQueryData(queryClient, result.state);
+-        if (!result.checked) {
+-          toastManager.add(
+-            stackedThreadToast({
+-              type: "error",
+-              title: "Could not check for updates",
+-              description:
+-                result.state.message ?? "Automatic updates are not available in this build.",
+-            }),
+-          );
+-        }
+-      })
+-      .catch((error: unknown) => {
+-        toastManager.add(
+-          stackedThreadToast({
+-            type: "error",
+-            title: "Could not check for updates",
+-            description: error instanceof Error ? error.message : "Update check failed.",
+-          }),
+-        );
+-      });
+-  }, [queryClient, updateState]);
+-
+-  const action = updateState ? resolveDesktopUpdateButtonAction(updateState) : "none";
+-  const buttonTooltip = updateState ? getDesktopUpdateButtonTooltip(updateState) : null;
+-  const buttonDisabled =
+-    action === "none"
+-      ? !canCheckForUpdate(updateState)
+-      : isDesktopUpdateButtonDisabled(updateState);
+-
+-  const actionLabel: Record<string, string> = { download: "Download", install: "Install" };
+-  const statusLabel: Record<string, string> = {
+-    checking: "Checking…",
+-    downloading: "Downloading…",
+-    "up-to-date": "Up to Date",
+-  };
+-  const buttonLabel =
+-    actionLabel[action] ?? statusLabel[updateState?.status ?? ""] ?? "Check for Updates";
+-  const description =
+-    action === "download" || action === "install"
+-      ? "Update available."
+-      : "Current version of the application.";
+-
+   return (
+-    <>
+-      <SettingsRow
+-        title={<AboutVersionTitle />}
+-        description={description}
+-        control={
+-          <Tooltip>
+-            <TooltipTrigger
+-              render={
+-                <Button
+-                  size="xs"
+-                  variant={action === "install" ? "default" : "outline"}
+-                  disabled={buttonDisabled}
+-                  onClick={handleButtonClick}
+-                >
+-                  {buttonLabel}
+-                </Button>
+-              }
+-            />
+-            {buttonTooltip ? <TooltipPopup>{buttonTooltip}</TooltipPopup> : null}
+-          </Tooltip>
+-        }
+-      />
+-      {hasDesktopBridge ? (
+-        <SettingsRow
+-          title="Update track"
+-          description="Stable follows full releases. Nightly follows the nightly desktop channel and can switch back to stable immediately."
+-          control={
+-            <Select
+-              value={selectedUpdateChannel}
+-              onValueChange={(value) => {
+-                handleUpdateChannelChange(value as DesktopUpdateChannel);
+-              }}
+-            >
+-              <SelectTrigger
+-                className="w-full sm:w-40"
+-                aria-label="Update track"
+-                disabled={isChangingUpdateChannel}
+-              >
+-                <SelectValue>
+-                  {selectedUpdateChannel === "nightly" ? "Nightly" : "Stable"}
+-                </SelectValue>
+-              </SelectTrigger>
+-              <SelectPopup align="end" alignItemWithTrigger={false}>
+-                <SelectItem hideIndicator value="latest">
+-                  Stable
+-                </SelectItem>
+-                <SelectItem hideIndicator value="nightly">
+-                  Nightly
+-                </SelectItem>
+-              </SelectPopup>
+-            </Select>
+-          }
+-        />
+-      ) : selectedHostedAppChannel ? (
+-        <SettingsRow
+-          title="Update track"
+-          description="Switches the hosted app release channel."
+-          control={
+-            <Select
+-              value={selectedHostedAppChannel}
+-              onValueChange={(value) => {
+-                if (value === selectedHostedAppChannel) return;
+-                window.location.assign(
+-                  buildHostedChannelSelectionUrl({ channel: value as HostedAppChannel }),
+-                );
+-              }}
+-            >
+-              <SelectTrigger className="w-full sm:w-40" aria-label="Update track">
+-                <SelectValue>{HOSTED_APP_CHANNEL_LABEL}</SelectValue>
+-              </SelectTrigger>
+-              <SelectPopup align="end" alignItemWithTrigger={false}>
+-                <SelectItem hideIndicator value="latest">
+-                  Latest
+-                </SelectItem>
+-                <SelectItem hideIndicator value="nightly">
+-                  Nightly
+-                </SelectItem>
+-              </SelectPopup>
+-            </Select>
+-          }
+-        />
+-      ) : null}
+-    </>
++    <SettingsRow title={<AboutVersionTitle />} description="Current version of the application." />
+   );
+ }
+ 
+ export function useSettingsRestore(onRestored?: () => void) {
+-  const { theme, setTheme } = useTheme();
++  const { themeMode, setThemeMode, accent, setAccent, darkFlavor, setDarkFlavor } = useTheme();
+   const settings = useSettings();
+   const { updateSettings } = useUpdateSettings();
+ 
+@@ -389,7 +151,9 @@ export function useSettingsRestore(onRestored?: () => void) {
+ 
+   const changedSettingLabels = useMemo(
+     () => [
+-      ...(theme !== "system" ? ["Theme"] : []),
++      ...(themeMode !== "system" ? ["Theme"] : []),
++      ...(accent !== "blue" ? ["Accent"] : []),
++      ...(darkFlavor !== "mocha" ? ["Dark theme"] : []),
+       ...(settings.timestampFormat !== DEFAULT_UNIFIED_SETTINGS.timestampFormat
+         ? ["Time format"]
+         : []),
+@@ -439,7 +203,9 @@ export function useSettingsRestore(onRestored?: () => void) {
+       settings.enableAssistantStreaming,
+       settings.sidebarThreadPreviewCount,
+       settings.timestampFormat,
+-      theme,
++      accent,
++      darkFlavor,
++      themeMode,
+     ],
+   );
+ 
+@@ -453,7 +219,9 @@ export function useSettingsRestore(onRestored?: () => void) {
+     );
+     if (!confirmed) return;
+ 
+-    setTheme("system");
++    setThemeMode("system");
++    setAccent("blue");
++    setDarkFlavor("mocha");
+     updateSettings({
+       timestampFormat: DEFAULT_UNIFIED_SETTINGS.timestampFormat,
+       diffWordWrap: DEFAULT_UNIFIED_SETTINGS.diffWordWrap,
+@@ -469,7 +237,7 @@ export function useSettingsRestore(onRestored?: () => void) {
+       textGenerationModelSelection: DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection,
+     });
+     onRestored?.();
+-  }, [changedSettingLabels, onRestored, setTheme, updateSettings]);
++  }, [changedSettingLabels, onRestored, setAccent, setDarkFlavor, setThemeMode, updateSettings]);
+ 
+   return {
+     changedSettingLabels,
+@@ -478,7 +246,15 @@ export function useSettingsRestore(onRestored?: () => void) {
+ }
+ 
+ export function GeneralSettingsPanel() {
+-  const { theme, setTheme } = useTheme();
++  const {
++    themeMode,
++    setThemeMode,
++    accent,
++    setAccent,
++    darkFlavor,
++    setDarkFlavor,
++    isDarkThemeActive,
++  } = useTheme();
+   const settings = useSettings();
+   const { updateSettings } = useUpdateSettings();
+   const observability = useServerObservability();
+@@ -513,6 +289,10 @@ export function GeneralSettingsPanel() {
+     settings.textGenerationModelSelection ?? null,
+     DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection ?? null,
+   );
++  const selectedThemeModeLabel =
++    THEME_MODE_OPTIONS.find((option) => option.value === themeMode)?.label ?? "System";
++  const selectedDarkFlavorLabel =
++    CATPPUCCIN_DARK_FLAVORS.find((option) => option.value === darkFlavor)?.label ?? "Mocha";
+ 
+   return (
+     <SettingsPageContainer>
+@@ -521,26 +301,25 @@ export function GeneralSettingsPanel() {
+           title="Theme"
+           description="Choose how T3 Code looks across the app."
+           resetAction={
+-            theme !== "system" ? (
+-              <SettingResetButton label="theme" onClick={() => setTheme("system")} />
++            themeMode !== "system" ? (
++              <SettingResetButton label="theme" onClick={() => setThemeMode("system")} />
+             ) : null
+           }
+           control={
+             <Select
+-              value={theme}
++              value={themeMode}
+               onValueChange={(value) => {
+-                if (value === "system" || value === "light" || value === "dark") {
+-                  setTheme(value);
++                const option = THEME_MODE_OPTIONS.find((candidate) => candidate.value === value);
++                if (option) {
++                  setThemeMode(option.value);
+                 }
+               }}
+             >
+               <SelectTrigger className="w-full sm:w-40" aria-label="Theme preference">
+-                <SelectValue>
+-                  {THEME_OPTIONS.find((option) => option.value === theme)?.label ?? "System"}
+-                </SelectValue>
++                <SelectValue>{selectedThemeModeLabel}</SelectValue>
+               </SelectTrigger>
+               <SelectPopup align="end" alignItemWithTrigger={false}>
+-                {THEME_OPTIONS.map((option) => (
++                {THEME_MODE_OPTIONS.map((option) => (
+                   <SelectItem hideIndicator key={option.value} value={option.value}>
+                     {option.label}
+                   </SelectItem>
+@@ -549,6 +328,71 @@ export function GeneralSettingsPanel() {
+             </Select>
+           }
+         />
++        <SettingsRow
++          title="Accent"
++          description="Choose the Catppuccin accent color."
++          resetAction={
++            accent !== "blue" ? (
++              <SettingResetButton label="accent" onClick={() => setAccent("blue")} />
++            ) : null
++          }
++          control={
++            <Select
++              value={accent}
++              onValueChange={(value) => {
++                if (CATPPUCCIN_ACCENTS.includes(value as CatppuccinAccent)) {
++                  setAccent(value as CatppuccinAccent);
++                }
++              }}
++            >
++              <SelectTrigger className="w-full sm:w-40" aria-label="Accent color">
++                <SelectValue>{formatThemeOptionLabel(accent)}</SelectValue>
++              </SelectTrigger>
++              <SelectPopup align="end" alignItemWithTrigger={false}>
++                {CATPPUCCIN_ACCENTS.map((option) => (
++                  <SelectItem hideIndicator key={option} value={option}>
++                    {formatThemeOptionLabel(option)}
++                  </SelectItem>
++                ))}
++              </SelectPopup>
++            </Select>
++          }
++        />
++        {isDarkThemeActive ? (
++          <SettingsRow
++            title="Dark theme"
++            description="Choose the Catppuccin flavor used in dark mode."
++            resetAction={
++              darkFlavor !== "mocha" ? (
++                <SettingResetButton label="dark theme" onClick={() => setDarkFlavor("mocha")} />
++              ) : null
++            }
++            control={
++              <Select
++                value={darkFlavor}
++                onValueChange={(value) => {
++                  const option = CATPPUCCIN_DARK_FLAVORS.find(
++                    (candidate) => candidate.value === value,
++                  );
++                  if (option) {
++                    setDarkFlavor(option.value as CatppuccinDarkFlavor);
++                  }
++                }}
++              >
++                <SelectTrigger className="w-full sm:w-40" aria-label="Dark theme">
++                  <SelectValue>{selectedDarkFlavorLabel}</SelectValue>
++                </SelectTrigger>
++                <SelectPopup align="end" alignItemWithTrigger={false}>
++                  {CATPPUCCIN_DARK_FLAVORS.map((option) => (
++                    <SelectItem hideIndicator key={option.value} value={option.value}>
++                      {option.label}
++                    </SelectItem>
++                  ))}
++                </SelectPopup>
++              </Select>
++            }
++          />
++        ) : null}
+ 
+         <SettingsRow
+           title="Time format"
+@@ -892,14 +736,7 @@ export function GeneralSettingsPanel() {
+       </SettingsSection>
+ 
+       <SettingsSection title="About">
+-        {isElectron || HOSTED_APP_CHANNEL ? (
+-          <AboutVersionSection />
+-        ) : (
+-          <SettingsRow
+-            title={<AboutVersionTitle />}
+-            description="Current version of the application."
+-          />
+-        )}
++        <AboutVersionSection />
+         <SettingsRow
+           title="Diagnostics"
+           description={diagnosticsDescription}
+diff --git a/apps/web/src/hooks/useTheme.ts b/apps/web/src/hooks/useTheme.ts
+index cd254c9..026dddb 100644
+--- a/apps/web/src/hooks/useTheme.ts
++++ b/apps/web/src/hooks/useTheme.ts
+@@ -1,23 +1,82 @@
+ import { useCallback, useEffect, useSyncExternalStore } from "react";
+ 
+-type Theme = "light" | "dark" | "system";
++export type ThemeMode = "system" | "light" | "dark";
++export type CatppuccinAccent =
++  | "rosewater"
++  | "flamingo"
++  | "pink"
++  | "mauve"
++  | "red"
++  | "maroon"
++  | "peach"
++  | "yellow"
++  | "green"
++  | "teal"
++  | "sky"
++  | "sapphire"
++  | "blue"
++  | "lavender";
++export type CatppuccinDarkFlavor = "frappe" | "macchiato" | "mocha";
++
++export const THEME_MODE_OPTIONS: Array<{ label: string; value: ThemeMode }> = [
++  { label: "System", value: "system" },
++  { label: "Light", value: "light" },
++  { label: "Dark", value: "dark" },
++];
++
++export const CATPPUCCIN_ACCENTS: ReadonlyArray<CatppuccinAccent> = [
++  "rosewater",
++  "flamingo",
++  "pink",
++  "mauve",
++  "red",
++  "maroon",
++  "peach",
++  "yellow",
++  "green",
++  "teal",
++  "sky",
++  "sapphire",
++  "blue",
++  "lavender",
++];
++
++export const CATPPUCCIN_DARK_FLAVORS: Array<{ label: string; value: CatppuccinDarkFlavor }> = [
++  { label: "Frappe", value: "frappe" },
++  { label: "Macchiato", value: "macchiato" },
++  { label: "Mocha", value: "mocha" },
++];
++
++const THEME_MODE_STORAGE_KEY = "t3code:theme-mode";
++const THEME_ACCENT_STORAGE_KEY = "t3code:theme-accent";
++const THEME_DARK_FLAVOR_STORAGE_KEY = "t3code:theme-dark-flavor";
++const LEGACY_THEME_STORAGE_KEY = "t3code:theme";
++const MEDIA_QUERY = "(prefers-color-scheme: dark)";
++const DEFAULT_THEME_MODE: ThemeMode = "system";
++const DEFAULT_ACCENT: CatppuccinAccent = "blue";
++const DEFAULT_DARK_FLAVOR: CatppuccinDarkFlavor = "mocha";
++const THEME_COLOR_META_NAME = "theme-color";
++const DYNAMIC_THEME_COLOR_SELECTOR = `meta[name="${THEME_COLOR_META_NAME}"][data-dynamic-theme-color="true"]`;
++
+ type ThemeSnapshot = {
+-  theme: Theme;
++  themeMode: ThemeMode;
++  accent: CatppuccinAccent;
++  darkFlavor: CatppuccinDarkFlavor;
+   systemDark: boolean;
+ };
+ 
+-const STORAGE_KEY = "t3code:theme";
+-const MEDIA_QUERY = "(prefers-color-scheme: dark)";
++type StoredTheme = Omit<ThemeSnapshot, "systemDark">;
++
+ const DEFAULT_THEME_SNAPSHOT: ThemeSnapshot = {
+-  theme: "system",
++  themeMode: DEFAULT_THEME_MODE,
++  accent: DEFAULT_ACCENT,
++  darkFlavor: DEFAULT_DARK_FLAVOR,
+   systemDark: false,
+ };
+-const THEME_COLOR_META_NAME = "theme-color";
+-const DYNAMIC_THEME_COLOR_SELECTOR = `meta[name="${THEME_COLOR_META_NAME}"][data-dynamic-theme-color="true"]`;
+ 
+ let listeners: Array<() => void> = [];
+ let lastSnapshot: ThemeSnapshot | null = null;
+-let lastDesktopTheme: Theme | null = null;
++let lastDesktopTheme: ThemeMode | null = null;
+ 
+ function emitChange() {
+   for (const listener of listeners) listener();
+@@ -31,11 +90,79 @@ function getSystemDark() {
+   return typeof window !== "undefined" && window.matchMedia(MEDIA_QUERY).matches;
+ }
+ 
+-function getStored(): Theme {
+-  if (!hasThemeStorage()) return DEFAULT_THEME_SNAPSHOT.theme;
+-  const raw = localStorage.getItem(STORAGE_KEY);
+-  if (raw === "light" || raw === "dark" || raw === "system") return raw;
+-  return DEFAULT_THEME_SNAPSHOT.theme;
++function isThemeMode(value: string | null): value is ThemeMode {
++  return value === "system" || value === "light" || value === "dark";
++}
++
++function isCatppuccinAccent(value: string | null | undefined): value is CatppuccinAccent {
++  return CATPPUCCIN_ACCENTS.includes(value as CatppuccinAccent);
++}
++
++function isCatppuccinDarkFlavor(value: string | null | undefined): value is CatppuccinDarkFlavor {
++  return value === "frappe" || value === "macchiato" || value === "mocha";
++}
++
++function parseLegacyTheme(value: string | null): StoredTheme | null {
++  if (isThemeMode(value)) {
++    return {
++      themeMode: value,
++      accent: DEFAULT_ACCENT,
++      darkFlavor: DEFAULT_DARK_FLAVOR,
++    };
++  }
++
++  if (!value?.startsWith("catppuccin-")) return null;
++  const [, flavor, accent] = value.split("-");
++  if (!isCatppuccinAccent(accent)) return null;
++  if (flavor === "latte") {
++    return {
++      themeMode: "light",
++      accent,
++      darkFlavor: DEFAULT_DARK_FLAVOR,
++    };
++  }
++  if (!isCatppuccinDarkFlavor(flavor)) return null;
++  return {
++    themeMode: "dark",
++    accent,
++    darkFlavor: flavor,
++  };
++}
++
++function readStoredTheme(): StoredTheme {
++  if (!hasThemeStorage()) return DEFAULT_THEME_SNAPSHOT;
++
++  const storedMode = localStorage.getItem(THEME_MODE_STORAGE_KEY);
++  const storedAccent = localStorage.getItem(THEME_ACCENT_STORAGE_KEY);
++  const storedDarkFlavor = localStorage.getItem(THEME_DARK_FLAVOR_STORAGE_KEY);
++  const hasNewStorage = storedMode !== null || storedAccent !== null || storedDarkFlavor !== null;
++
++  if (hasNewStorage) {
++    return {
++      themeMode: isThemeMode(storedMode) ? storedMode : DEFAULT_THEME_MODE,
++      accent: isCatppuccinAccent(storedAccent) ? storedAccent : DEFAULT_ACCENT,
++      darkFlavor: isCatppuccinDarkFlavor(storedDarkFlavor) ? storedDarkFlavor : DEFAULT_DARK_FLAVOR,
++    };
++  }
++
++  const migrated = parseLegacyTheme(localStorage.getItem(LEGACY_THEME_STORAGE_KEY));
++  if (migrated) {
++    localStorage.setItem(THEME_MODE_STORAGE_KEY, migrated.themeMode);
++    localStorage.setItem(THEME_ACCENT_STORAGE_KEY, migrated.accent);
++    localStorage.setItem(THEME_DARK_FLAVOR_STORAGE_KEY, migrated.darkFlavor);
++    return migrated;
++  }
++
++  return DEFAULT_THEME_SNAPSHOT;
++}
++
++function resolveTheme(themeMode: ThemeMode) {
++  return themeMode === "system" ? (getSystemDark() ? "dark" : "light") : themeMode;
++}
++
++function resolveCatppuccinDatasetValue({ themeMode, accent, darkFlavor }: StoredTheme): string {
++  const resolvedTheme = resolveTheme(themeMode);
++  return resolvedTheme === "dark" ? `${darkFlavor}-${accent}` : `latte-${accent}`;
+ }
+ 
+ function ensureThemeColorMetaTag(): HTMLMetaElement {
+@@ -87,17 +214,18 @@ export function syncBrowserChromeTheme() {
+   ensureThemeColorMetaTag().setAttribute("content", backgroundColor);
+ }
+ 
+-function applyTheme(theme: Theme, suppressTransitions = false) {
++function applyTheme(storedTheme: StoredTheme, suppressTransitions = false) {
+   if (typeof document === "undefined" || typeof window === "undefined") return;
+   if (suppressTransitions) {
+     document.documentElement.classList.add("no-transitions");
+   }
+-  const isDark = theme === "dark" || (theme === "system" && getSystemDark());
+-  document.documentElement.classList.toggle("dark", isDark);
++  const resolvedTheme = resolveTheme(storedTheme.themeMode);
++  document.documentElement.classList.toggle("dark", resolvedTheme === "dark");
++  document.documentElement.dataset.catppuccinTheme = resolveCatppuccinDatasetValue(storedTheme);
+   syncBrowserChromeTheme();
+-  syncDesktopTheme(theme);
++  syncDesktopTheme(storedTheme.themeMode);
+   if (suppressTransitions) {
+-    // Force a reflow so the no-transitions class takes effect before removal
++    // Force a reflow so the no-transitions class takes effect before removal.
+     // oxlint-disable-next-line no-unused-expressions
+     document.documentElement.offsetHeight;
+     requestAnimationFrame(() => {
+@@ -106,36 +234,42 @@ function applyTheme(theme: Theme, suppressTransitions = false) {
+   }
+ }
+ 
+-function syncDesktopTheme(theme: Theme) {
++function syncDesktopTheme(themeMode: ThemeMode) {
+   if (typeof window === "undefined") return;
+   const bridge = window.desktopBridge;
+-  if (!bridge || lastDesktopTheme === theme) {
++  if (!bridge || lastDesktopTheme === themeMode) {
+     return;
+   }
+ 
+-  lastDesktopTheme = theme;
+-  void bridge.setTheme(theme).catch(() => {
+-    if (lastDesktopTheme === theme) {
++  lastDesktopTheme = themeMode;
++  void bridge.setTheme(themeMode).catch(() => {
++    if (lastDesktopTheme === themeMode) {
+       lastDesktopTheme = null;
+     }
+   });
+ }
+ 
+-// Apply immediately on module load to prevent flash
++// Apply immediately on module load to prevent flash.
+ if (typeof document !== "undefined" && hasThemeStorage()) {
+-  applyTheme(getStored());
++  applyTheme(readStoredTheme());
+ }
+ 
+ function getSnapshot(): ThemeSnapshot {
+   if (!hasThemeStorage()) return DEFAULT_THEME_SNAPSHOT;
+-  const theme = getStored();
+-  const systemDark = theme === "system" ? getSystemDark() : false;
++  const storedTheme = readStoredTheme();
++  const systemDark = storedTheme.themeMode === "system" ? getSystemDark() : false;
+ 
+-  if (lastSnapshot && lastSnapshot.theme === theme && lastSnapshot.systemDark === systemDark) {
++  if (
++    lastSnapshot &&
++    lastSnapshot.themeMode === storedTheme.themeMode &&
++    lastSnapshot.accent === storedTheme.accent &&
++    lastSnapshot.darkFlavor === storedTheme.darkFlavor &&
++    lastSnapshot.systemDark === systemDark
++  ) {
+     return lastSnapshot;
+   }
+ 
+-  lastSnapshot = { theme, systemDark };
++  lastSnapshot = { ...storedTheme, systemDark };
+   return lastSnapshot;
+ }
+ 
+@@ -147,18 +281,22 @@ function subscribe(listener: () => void): () => void {
+   if (typeof window === "undefined") return () => {};
+   listeners.push(listener);
+ 
+-  // Listen for system preference changes
+   const mq = window.matchMedia(MEDIA_QUERY);
+   const handleChange = () => {
+-    if (getStored() === "system") applyTheme("system", true);
++    const storedTheme = readStoredTheme();
++    if (storedTheme.themeMode === "system") applyTheme(storedTheme, true);
+     emitChange();
+   };
+   mq.addEventListener("change", handleChange);
+ 
+-  // Listen for storage changes from other tabs
+   const handleStorage = (e: StorageEvent) => {
+-    if (e.key === STORAGE_KEY) {
+-      applyTheme(getStored(), true);
++    if (
++      e.key === THEME_MODE_STORAGE_KEY ||
++      e.key === THEME_ACCENT_STORAGE_KEY ||
++      e.key === THEME_DARK_FLAVOR_STORAGE_KEY ||
++      e.key === LEGACY_THEME_STORAGE_KEY
++    ) {
++      applyTheme(readStoredTheme(), true);
+       emitChange();
+     }
+   };
+@@ -171,24 +309,48 @@ function subscribe(listener: () => void): () => void {
+   };
+ }
+ 
++function writeThemePatch(patch: Partial<StoredTheme>) {
++  if (!hasThemeStorage()) return;
++  const next = { ...readStoredTheme(), ...patch };
++  localStorage.setItem(THEME_MODE_STORAGE_KEY, next.themeMode);
++  localStorage.setItem(THEME_ACCENT_STORAGE_KEY, next.accent);
++  localStorage.setItem(THEME_DARK_FLAVOR_STORAGE_KEY, next.darkFlavor);
++  applyTheme(next, true);
++  emitChange();
++}
++
+ export function useTheme() {
+   const snapshot = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+-  const theme = snapshot.theme;
++  const { themeMode, accent, darkFlavor } = snapshot;
+ 
+   const resolvedTheme: "light" | "dark" =
+-    theme === "system" ? (snapshot.systemDark ? "dark" : "light") : theme;
++    themeMode === "system" ? (snapshot.systemDark ? "dark" : "light") : themeMode;
++  const isDarkThemeActive = resolvedTheme === "dark";
+ 
+-  const setTheme = useCallback((next: Theme) => {
+-    if (!hasThemeStorage()) return;
+-    localStorage.setItem(STORAGE_KEY, next);
+-    applyTheme(next, true);
+-    emitChange();
++  const setThemeMode = useCallback((next: ThemeMode) => {
++    writeThemePatch({ themeMode: next });
++  }, []);
++
++  const setAccent = useCallback((next: CatppuccinAccent) => {
++    writeThemePatch({ accent: next });
++  }, []);
++
++  const setDarkFlavor = useCallback((next: CatppuccinDarkFlavor) => {
++    writeThemePatch({ darkFlavor: next });
+   }, []);
+ 
+-  // Keep DOM in sync on mount/change
+   useEffect(() => {
+-    applyTheme(theme);
+-  }, [theme]);
++    applyTheme({ themeMode, accent, darkFlavor });
++  }, [accent, darkFlavor, themeMode]);
+ 
+-  return { theme, setTheme, resolvedTheme } as const;
++  return {
++    themeMode,
++    setThemeMode,
++    accent,
++    setAccent,
++    darkFlavor,
++    setDarkFlavor,
++    resolvedTheme,
++    isDarkThemeActive,
++  } as const;
+ }
+diff --git a/apps/web/src/index.css b/apps/web/src/index.css
+index 0f0417d..84a785a 100644
+--- a/apps/web/src/index.css
++++ b/apps/web/src/index.css
+@@ -1,4 +1,5 @@
+ @import "tailwindcss";
++@import "./catppuccin-theme.css";
+ 
+ @custom-variant dark (&:is(.dark, .dark *));
+ /* Window Controls Overlay: active when Electron exposes native titlebar control geometry. */
