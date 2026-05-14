@@ -139,8 +139,15 @@ stdenv.mkDerivation (finalAttrs: {
   ];
 
   postPatch = ''
-    jq '.version = "${source.version}"' apps/server/package.json > apps/server/package.json.tmp
-    mv apps/server/package.json.tmp apps/server/package.json
+    for packageJson in \
+      apps/server/package.json \
+      apps/desktop/package.json \
+      apps/web/package.json \
+      packages/contracts/package.json
+    do
+      jq '.version = "${source.version}"' "$packageJson" > "$packageJson.tmp"
+      mv "$packageJson.tmp" "$packageJson"
+    done
   '';
 
   configurePhase = ''
@@ -188,6 +195,12 @@ stdenv.mkDerivation (finalAttrs: {
     cp -R --no-preserve=mode apps/server/node_modules apps/server/dist "$out/libexec/t3code/apps/server/"
     cp -R --no-preserve=mode apps/desktop/node_modules apps/desktop/dist-electron "$out/libexec/t3code/apps/desktop/"
 
+    # node-pty launches POSIX shells via its spawn-helper executable. The
+    # --no-preserve=mode copies above normalize it to non-executable; restore
+    # it before the output becomes read-only in the Nix store.
+    find "$out/libexec/t3code" -path '*/node-pty/*/spawn-helper' -exec chmod 755 {} +
+    find "$out/libexec/t3code" -path '*/node-pty/*/pty.node' -exec chmod 644 {} +
+
     mkdir -p "$out/libexec/t3code/apps/desktop/prod-resources"
     install -m444 ${desktopIcon} "$out/libexec/t3code/apps/desktop/prod-resources/icon.png"
 
@@ -207,6 +220,7 @@ stdenv.mkDerivation (finalAttrs: {
 
     makeWrapper ${lib.getExe electron} "$out/bin/${desktopBinName}" \
       --add-flags "$out/libexec/t3code/apps/desktop/dist-electron/main.cjs" \
+      --set T3CODE_DISABLE_AUTO_UPDATE 1 \
       --inherit-argv0
 
     ${lib.optionalString (channel == "stable") ''
