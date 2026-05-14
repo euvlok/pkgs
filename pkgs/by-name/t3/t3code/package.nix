@@ -168,6 +168,10 @@ stdenv.mkDerivation (finalAttrs: {
 
     export HOME="$TMPDIR"
     export PATH="$PWD/node_modules/.bin:$PATH"
+    # Vite resolves the dev-server/HMR host while loading config, even for
+    # production builds. Darwin sandboxes do not always provide a localhost
+    # hosts entry, so use the numeric loopback address to keep builds pure.
+    export HOST=127.0.0.1
 
     bun run --cwd apps/web build
     bun run --cwd apps/server build
