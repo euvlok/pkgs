@@ -1,4 +1,8 @@
-{ yt-dlp, fetchFromGitHub, lib }:
+{
+  yt-dlp,
+  fetchFromGitHub,
+  lib,
+}:
 let
   upstreamVersion = "2026.03.17-unstable-2026-05-16";
 in

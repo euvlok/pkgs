@@ -1,4 +1,8 @@
-{ opencode, fetchFromGitHub, lib }:
+{
+  opencode,
+  fetchFromGitHub,
+  lib,
+}:
 let
   upstreamVersion = "1.14.19-unstable-2026-04-21";
   upstreamSrc = fetchFromGitHub {

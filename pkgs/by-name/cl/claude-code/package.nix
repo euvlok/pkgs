@@ -33,7 +33,8 @@ let
     nativeBuildInputs = [
       makeBinaryWrapper
       versionCheckHook
-    ] ++ lib.optionals stdenvNoCC.hostPlatform.isLinux [ autoPatchelfHook ];
+    ]
+    ++ lib.optionals stdenvNoCC.hostPlatform.isLinux [ autoPatchelfHook ];
 
     buildInputs = lib.optionals stdenvNoCC.hostPlatform.isLinux [ glibc ];
 
@@ -45,7 +46,12 @@ let
         --set-default FORCE_AUTOUPDATE_PLUGINS 1 \
         --set DISABLE_INSTALLATION_CHECKS 1 \
         --set USE_BUILTIN_RIPGREP 0 \
-        --prefix PATH : ${lib.makeBinPath [ procps ripgrep ]}
+        --prefix PATH : ${
+          lib.makeBinPath [
+            procps
+            ripgrep
+          ]
+        }
       runHook postInstall
     '';
 
