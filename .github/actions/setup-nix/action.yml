@@ -18,6 +18,10 @@ inputs:
     description: 'Cachix auth token used to push build results (leave empty for read-only cache access)'
     required: false
     default: ''
+  cachix-skip-push:
+    description: 'Only use Cachix as a substituter without pushing build results'
+    required: false
+    default: 'false'
 
 runs:
   using: 'composite'
@@ -28,12 +32,14 @@ runs:
       uses: cachix/cachix-action@v17
       with:
         name: ${{ inputs.cachix-cache }}
+        skipPush: ${{ inputs.cachix-skip-push }}
 
     - if: inputs.cachix-cache != '' && inputs.cachix-auth-token != ''
       uses: cachix/cachix-action@v17
       with:
         name: ${{ inputs.cachix-cache }}
         authToken: ${{ inputs.cachix-auth-token }}
+        skipPush: ${{ inputs.cachix-skip-push }}
 
     - if: inputs.cache-key != ''
       uses: nix-community/cache-nix-action@v7
