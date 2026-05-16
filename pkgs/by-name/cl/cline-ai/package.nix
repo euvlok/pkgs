@@ -3,6 +3,7 @@
   fetchFromGitHub,
   runCommand,
   buildNpmPackage,
+  biome,
   nodejs_22,
   protobuf,
   vscode-utils,
@@ -69,6 +70,8 @@ let
 
     buildPhase = ''
       runHook preBuild
+
+      export BIOME_BINARY=${biome}/bin/biome
 
       cp -R ${webviewNodeModules} webview-ui/node_modules
       chmod -R u+w webview-ui/node_modules
