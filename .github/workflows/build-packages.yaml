@@ -1,0 +1,109 @@
+name: Build Packages
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - "flake.nix"
+      - "flake.lock"
+      - "default.nix"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "pkgs/**"
+      - ".github/actions/setup-nix/action.yml"
+      - ".github/workflows/build-packages.yaml"
+  pull_request:
+    paths:
+      - "flake.nix"
+      - "flake.lock"
+      - "default.nix"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "pkgs/**"
+      - ".github/actions/setup-nix/action.yml"
+      - ".github/workflows/build-packages.yaml"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: build-packages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-packages:
+    name: Build Packages (${{ matrix.platform }})
+    runs-on: ${{ matrix.runs-on }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux
+            runs-on: ubuntu-latest
+          - platform: darwin
+            runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6.0.2
+
+      - name: Install Nix
+        uses: ./.github/actions/setup-nix
+        with:
+          cachix-cache: ${{ vars.CACHIX_CACHE_NAME || 'eupkgs' }}
+          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          cache-key: build-packages-${{ matrix.platform }}
+
+      - name: Build by-name packages
+        shell: bash
+        env:
+          NIXPKGS_ALLOW_UNFREE: "1"
+        run: |-
+          set -euo pipefail
+
+          system="$(nix eval --accept-flake-config --impure --raw --expr builtins.currentSystem)"
+          package_names=()
+          while IFS= read -r package_name || [[ -n "$package_name" ]]; do
+            if [[ -n "$package_name" ]]; then
+              package_names+=("$package_name")
+            fi
+          done < <(nix eval --accept-flake-config --impure --raw --expr '
+            let
+              flake = builtins.getFlake (toString ./.);
+              system = builtins.currentSystem;
+              pkgs = builtins.getAttr system flake.legacyPackages;
+              byName = ./pkgs/by-name;
+              shards = builtins.readDir byName;
+              packageNames = builtins.concatLists (
+                map (
+                  shard:
+                    if builtins.getAttr shard shards != "directory" then
+                      [ ]
+                    else
+                      builtins.attrNames (builtins.readDir (byName + "/${shard}"))
+                ) (builtins.attrNames shards)
+              );
+              supported = builtins.filter (
+                name:
+                  let
+                    pkg = builtins.getAttr name pkgs;
+                    platforms = pkg.meta.platforms or [ ];
+                  in
+                    platforms == [ ] || builtins.elem system platforms
+              ) packageNames;
+            in
+              builtins.concatStringsSep "\n" supported
+          ')
+          build_attrs=("${package_names[@]/#/.#legacyPackages.${system}.}")
+
+          if (( ${#build_attrs[@]} == 0 )); then
+            printf "::error::No by-name packages found for %s\n" "$system"
+            exit 1
+          fi
+
+          printf "Building %d packages for %s:\n" "${#build_attrs[@]}" "$system"
+          printf "  %s\n" "${build_attrs[@]}"
+
+          nix build --accept-flake-config --impure --keep-going --print-build-logs --no-link "${build_attrs[@]}"

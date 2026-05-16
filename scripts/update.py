@@ -40,9 +40,23 @@ from _common import (
 
 app = typer.Typer(add_completion=False, help=__doc__)
 
+_failure_annotation_kind = "error"
+
 
 def log_error(msg: str, file: str | None = None) -> None:
-    gha("error", msg, file)
+    gha(_failure_annotation_kind, msg, file)
+
+
+@contextlib.contextmanager
+def tolerated_failure_annotations():
+    """Downgrade per-package failures while the all-packages updater keeps going."""
+    global _failure_annotation_kind
+    previous = _failure_annotation_kind
+    _failure_annotation_kind = "warning"
+    try:
+        yield
+    finally:
+        _failure_annotation_kind = previous
 
 
 def log_info(msg: str) -> None:
@@ -386,14 +400,15 @@ def cmd_all(
                 continue
 
             try:
-                update_one(nixfile, version)
+                with tolerated_failure_annotations():
+                    update_one(nixfile, version)
             except typer.Exit:
-                gha("error", f"Update failed for {name}", file=str(nixfile))
+                gha("warning", f"Update failed for {name}", file=str(nixfile))
                 revert(pkg_dir)
                 continue
 
             if not build_pkg(nixfile):
-                gha("error", f"Build failed for {name} after update", file=str(nixfile))
+                gha("warning", f"Build failed for {name} after update", file=str(nixfile))
                 revert(pkg_dir)
                 continue
 
