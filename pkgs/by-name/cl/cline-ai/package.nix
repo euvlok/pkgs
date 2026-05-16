@@ -59,6 +59,8 @@ let
     npmRebuildFlags = [ "--ignore-scripts" ];
 
     postPatch = ''
+      npm pkg delete scripts.prepare
+
       substituteInPlace scripts/build-proto.mjs \
         --replace-fail \
           'const GRPC_TOOLS_PROTOC = path.join(require.resolve("grpc-tools"), "../bin", isWindows ? "protoc.exe" : "protoc")' \
