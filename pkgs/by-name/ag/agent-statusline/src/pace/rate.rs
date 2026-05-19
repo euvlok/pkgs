@@ -66,7 +66,7 @@ impl RateEstimate {
     ///   rate instead of stalling for the entire lookback.
     /// * Equal-`pct` runs collapse to `[first, last]` to keep flat
     ///   stretches from injecting N² zero-slope pairs into the median.
-    /// * If the post-dedup count is below [`MIN_POINTS`] **or** the
+    /// * If the post-dedup count is below `MIN_POINTS` **or** the
     ///   span is below `max(60s, lookback/10)`, we return empty.
     /// * Negative slopes (server rolled `used_percentage` back) clamp to
     ///   zero. We never advertise a negative burn rate.

@@ -2,6 +2,10 @@
 name = "agent-statusline"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.91"
+description = "Fast agent statusline using gix + jj-lib"
+license = "MIT"
+publish = false
 
 [dependencies]
 anstream = "1.0.0"

@@ -129,9 +129,9 @@ fn projection(state: PaceState, projected: f64, current: f64) -> Projection {
         rate_pct_per_min: 0.3,
         fair_share_pct_per_min: 0.5,
         projected_pct_at_reset: projected,
-        remaining: Duration::from_secs(2 * 3600),
-        cap_eta: Some(Duration::from_secs(47 * 60)),
-        rest_to_safe: Some(Duration::from_secs(32 * 60)),
+        remaining: Duration::from_hours(2),
+        cap_eta: Some(Duration::from_mins(47)),
+        rest_to_safe: Some(Duration::from_mins(32)),
     }
 }
 

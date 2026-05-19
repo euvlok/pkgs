@@ -23,9 +23,6 @@ rustPlatform.buildRustPackage {
   preBuild = ''
     find . -name rust-toolchain.toml -delete 2>/dev/null || true
   '';
-
-  doCheck = false;
-
   meta = {
     description = "Fast agent statusline using gix + jj-lib";
     mainProgram = "agent-statusline";

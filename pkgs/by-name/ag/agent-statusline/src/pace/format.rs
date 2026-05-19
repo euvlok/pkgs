@@ -131,7 +131,7 @@ mod tests {
             rate_pct_per_min: 0.3,
             fair_share_pct_per_min: 0.5,
             projected_pct_at_reset: projected,
-            remaining: Duration::from_secs(2 * 3600),
+            remaining: Duration::from_hours(2),
             cap_eta: None,
             rest_to_safe: None,
         }
@@ -169,7 +169,7 @@ mod tests {
             rate_pct_per_min: 3.0,
             fair_share_pct_per_min: 1.5,
             projected_pct_at_reset: 142.0,
-            remaining: Duration::from_secs(2 * 3600),
+            remaining: Duration::from_hours(2),
             cap_eta,
             rest_to_safe: rest,
         }
@@ -177,10 +177,7 @@ mod tests {
 
     #[test]
     fn hot_body_includes_cap_and_rest_when_finite() {
-        let p = proj_with_advisory(
-            Some(Duration::from_secs(47 * 60)),
-            Some(Duration::from_secs(32 * 60)),
-        );
+        let p = proj_with_advisory(Some(Duration::from_mins(47)), Some(Duration::from_mins(32)));
         let body = body_text(&p);
         assert!(body.contains("→ 142%"), "got {body}");
         assert!(body.contains("· cap 47m"), "got {body}");
@@ -189,7 +186,7 @@ mod tests {
 
     #[test]
     fn hot_body_omits_cap_when_none() {
-        let p = proj_with_advisory(None, Some(Duration::from_secs(15 * 60)));
+        let p = proj_with_advisory(None, Some(Duration::from_mins(15)));
         let body = body_text(&p);
         assert!(!body.contains("cap"), "got {body}");
         assert!(body.contains("· rest 15m"));
@@ -197,7 +194,7 @@ mod tests {
 
     #[test]
     fn hot_body_omits_rest_when_none() {
-        let p = proj_with_advisory(Some(Duration::from_secs(20 * 60)), None);
+        let p = proj_with_advisory(Some(Duration::from_mins(20)), None);
         let body = body_text(&p);
         assert!(body.contains("· cap 20m"));
         assert!(!body.contains("rest"), "got {body}");
@@ -212,10 +209,8 @@ mod tests {
 
     #[test]
     fn cool_body_ignores_advisory_fields() {
-        let mut p = proj_with_advisory(
-            Some(Duration::from_secs(47 * 60)),
-            Some(Duration::from_secs(32 * 60)),
-        );
+        let mut p =
+            proj_with_advisory(Some(Duration::from_mins(47)), Some(Duration::from_mins(32)));
         p.state = PaceState::Cool;
         let body = body_text(&p);
         assert_eq!(body, "→ 142%");

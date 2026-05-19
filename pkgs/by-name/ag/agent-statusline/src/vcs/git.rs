@@ -11,15 +11,7 @@ use crate::config::schema::VcsSegmentConfig;
 use crate::vcs::{Operation, Tracking, VcsInfo, VcsProvider, WorktreeStatus};
 
 pub(super) fn collect(dir: &Path, config: &VcsSegmentConfig) -> Option<VcsInfo> {
-    // Disable optional file locks - read-only operations shouldn't
-    // contend with concurrent git processes.
-    // SAFETY: single-threaded init time, called before any threads are spawned.
-    #[expect(unsafe_code)]
-    unsafe {
-        std::env::set_var("GIT_OPTIONAL_LOCKS", "0");
-    }
-
-    let repo = gix::open(dir).ok()?;
+    let repo = open_repo(dir)?;
 
     let head_ref = repo.head_ref().ok().flatten();
     let head_id = repo.head_id().ok();
@@ -60,6 +52,15 @@ pub(super) fn collect(dir: &Path, config: &VcsSegmentConfig) -> Option<VcsInfo> 
         },
         ..VcsInfo::default()
     })
+}
+
+fn open_repo(dir: &Path) -> Option<gix::Repository> {
+    gix::open_opts(
+        dir,
+        gix::open::Options::default()
+            .config_overrides(["core.filesRefLockTimeout=0", "core.packedRefsTimeout=0"]),
+    )
+    .ok()
 }
 
 #[expect(clippy::literal_string_with_formatting_args)]
