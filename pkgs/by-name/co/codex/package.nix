@@ -40,6 +40,7 @@ codex.overrideAttrs (
       ./0002-trust-projects-by-default.patch
       ./0003-shift-empty-placeholder-off-cursor-cell.patch
       ./0004-add-richer-status-line-command-telemetry.patch
+      ./0005-refresh-terminal-palette-while-focused.patch
     ];
 
     patchFlags = [ "-p2" ];

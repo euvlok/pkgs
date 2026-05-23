@@ -1,0 +1,76 @@
+diff --git a/codex-rs/tui/src/tui/event_stream.rs b/codex-rs/tui/src/tui/event_stream.rs
+index dcc6e17..633827b 100644
+--- a/codex-rs/tui/src/tui/event_stream.rs
++++ b/codex-rs/tui/src/tui/event_stream.rs
+@@ -24,10 +24,14 @@ use std::sync::atomic::AtomicBool;
+ use std::sync::atomic::Ordering;
+ use std::task::Context;
+ use std::task::Poll;
++use std::time::Duration;
+ 
+ use crossterm::event::Event;
+ use tokio::sync::broadcast;
+ use tokio::sync::watch;
++use tokio::time::Instant;
++use tokio::time::Interval;
++use tokio::time::MissedTickBehavior;
+ use tokio_stream::Stream;
+ use tokio_stream::wrappers::BroadcastStream;
+ use tokio_stream::wrappers::WatchStream;
+@@ -140,6 +144,7 @@ pub struct TuiEventStream<S: EventSource + Default + Unpin = CrosstermEventSourc
+     broker: Arc<EventBroker<S>>,
+     draw_stream: BroadcastStream<()>,
+     resume_stream: WatchStream<()>,
++    theme_refresh: Interval,
+     terminal_focused: Arc<AtomicBool>,
+     poll_draw_first: bool,
+     #[cfg(unix)]
+@@ -157,10 +162,16 @@ impl<S: EventSource + Default + Unpin> TuiEventStream<S> {
+         #[cfg(unix)] alt_screen_active: Arc<AtomicBool>,
+     ) -> Self {
+         let resume_stream = WatchStream::from_changes(broker.resume_events_rx());
++        let mut theme_refresh = tokio::time::interval_at(
++            Instant::now() + Duration::from_secs(1),
++            Duration::from_secs(1),
++        );
++        theme_refresh.set_missed_tick_behavior(MissedTickBehavior::Skip);
+         Self {
+             broker,
+             draw_stream: BroadcastStream::new(draw_rx),
+             resume_stream,
++            theme_refresh,
+             terminal_focused,
+             poll_draw_first: false,
+             #[cfg(unix)]
+@@ -258,6 +269,20 @@ impl<S: EventSource + Default + Unpin> TuiEventStream<S> {
+             _ => None,
+         }
+     }
++
++    fn poll_theme_refresh(&mut self, cx: &mut Context<'_>) -> Poll<Option<TuiEvent>> {
++        match self.theme_refresh.poll_tick(cx) {
++            Poll::Ready(_) => {
++                if self.terminal_focused.load(Ordering::Relaxed) {
++                    crate::terminal_palette::requery_default_colors();
++                    Poll::Ready(Some(TuiEvent::Draw))
++                } else {
++                    Poll::Pending
++                }
++            }
++            Poll::Pending => Poll::Pending,
++        }
++    }
+ }
+ 
+ impl<S: EventSource + Default + Unpin> Unpin for TuiEventStream<S> {}
+@@ -286,6 +311,10 @@ impl<S: EventSource + Default + Unpin> Stream for TuiEventStream<S> {
+             }
+         }
+ 
++        if let Poll::Ready(event) = self.poll_theme_refresh(cx) {
++            return Poll::Ready(event);
++        }
++
+         Poll::Pending
+     }
+ }
