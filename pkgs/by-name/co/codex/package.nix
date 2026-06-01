@@ -37,10 +37,8 @@ codex.overrideAttrs (
 
     patches = (prevAttrs.patches or [ ]) ++ [
       ./0001-add-external-tui-status-line-command-support.patch
-      ./0002-trust-projects-by-default.patch
-      ./0003-shift-empty-placeholder-off-cursor-cell.patch
-      ./0004-add-richer-status-line-command-telemetry.patch
-      ./0005-refresh-terminal-palette-while-focused.patch
+      ./0002-shift-empty-placeholder-off-cursor-cell.patch
+      ./0003-refresh-terminal-palette-while-focused.patch
     ];
 
     patchFlags = [ "-p2" ];

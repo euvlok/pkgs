@@ -54,8 +54,12 @@ cat >"$tmp_pkg/sources.json" <<EOF
 EOF
 cp package.nix ./*.patch "$tmp_pkg/"
 
+# Force the package override path while deriving the vendor hash.  If nixpkgs
+# already carries the same Codex version, package.nix would otherwise skip the
+# sources.json override, the fake cargo hash would never be used, and the updater
+# would fail to find the expected hash mismatch.
 build_log=$(NIXPKGS_ALLOW_UNFREE=1 nix build --impure --no-link --print-build-logs \
-  --expr "with import <nixpkgs> {}; callPackage $tmp_pkg/package.nix {}" 2>&1 || true)
+  --expr "with import <nixpkgs> {}; callPackage $tmp_pkg/package.nix { codex = codex.overrideAttrs (_: { version = \"0.0.0\"; }); }" 2>&1 || true)
 cargo_hash=$(echo "$build_log" | awk '/got: +sha256-/ {print $2; exit}')
 
 if [[ -z "$cargo_hash" ]]; then
