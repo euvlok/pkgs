@@ -4,8 +4,21 @@ import { modeFor, modelFor } from "./src/config";
 import { DEFAULT_MODEL, FLAG_CACHED, FLAG_DISABLE, FLAG_MODEL } from "./src/constants";
 import { callOpenAIWebSearch } from "./src/openai";
 import { resultBox } from "./src/render";
-import { type WebSearchDetails, webSearchSchema } from "./src/schema";
+import { type WebSearchAction, type WebSearchDetails, webSearchSchema } from "./src/schema";
 import { debug, errorMessage } from "./src/util";
+
+const actionDetail = (action: WebSearchAction): string => {
+	if (action.type === "search") {
+		const first = action.query || action.queries?.[0] || "";
+		return action.queries && action.queries.length > 1 && first ? `${first} ...` : first;
+	}
+	if (action.type === "open_page") return action.url || "";
+	if (action.type === "find_in_page") {
+		if (action.pattern && action.url) return `'${action.pattern}' in ${action.url}`;
+		return action.pattern || action.url || "";
+	}
+	return action.url || action.query || action.queries?.[0] || "";
+};
 
 export default function webSearchExtension(pi: ExtensionAPI): void {
 	pi.registerFlag(FLAG_DISABLE, { type: "boolean", default: false, description: "Disable the web_search tool" });
@@ -42,17 +55,19 @@ export default function webSearchExtension(pi: ExtensionAPI): void {
 			setStatus(`🌐 Searching the web (${model})...`);
 			try {
 				const result = await callOpenAIWebSearch(params, mode, model, ctx, signal ?? ctx.signal);
-				const answer = result.text || "No text result returned from OpenAI web search.";
 				const details: WebSearchDetails = {
 					query: params.query,
 					provider: result.provider,
 					model: result.model,
 					mode,
 					urls: result.urls,
+					actions: result.actions,
 					responseId: result.responseId,
 				};
+				const answer = result.text || "No text result returned from OpenAI web search.";
+				const sources = details.urls.length > 0 ? `\n\nSources:\n${details.urls.map((url) => `- ${url}`).join("\n")}` : "";
 				debug("completed", details);
-				return { content: [{ type: "text", text: answer }], details };
+				return { content: [{ type: "text", text: `${answer}${sources}` }], details };
 			} catch (error) {
 				debug("failed", errorMessage(error));
 				throw error;
@@ -64,13 +79,21 @@ export default function webSearchExtension(pi: ExtensionAPI): void {
 			const query = typeof args.query === "string" ? args.query : "...";
 			return new Text(`${theme.fg("toolTitle", theme.bold("web_search"))} ${theme.fg("accent", query)}`, 0, 0);
 		},
-		renderResult(result, _options, theme) {
+		renderResult(result, { expanded, isPartial }, theme) {
+			if (isPartial) return resultBox([theme.fg("accent", "Searching the web...")]);
 			const details = result.details;
 			const lines = [
 				`${theme.fg("success", "✓ Web search complete")} ${theme.fg("dim", `[${details.provider}/${details.model}, ${details.mode}]`)}`,
 			];
 			if (details.urls.length > 0) {
-				lines.push(theme.fg("dim", `Sources: ${details.urls.slice(0, 5).join(" · ")}`));
+				const shown = expanded ? details.urls : details.urls.slice(0, 5);
+				lines.push(theme.fg("dim", `Sources: ${shown.join(" · ")}`));
+				if (!expanded && details.urls.length > shown.length)
+					lines.push(theme.fg("dim", `+${details.urls.length - shown.length} more sources`));
+			} else if (details.actions.length > 0) {
+				const actions = details.actions.map(actionDetail).filter(Boolean);
+				if (actions.length > 0)
+					lines.push(theme.fg("dim", `Search actions: ${actions.slice(0, expanded ? actions.length : 5).join(" · ")}`));
 			}
 			return resultBox(lines);
 		},

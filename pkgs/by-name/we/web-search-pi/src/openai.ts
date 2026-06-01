@@ -1,9 +1,10 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { CHATGPT_CODEX_BASE_URL } from "./constants";
-import type { Mode, WebSearchInput } from "./schema";
+import type { Mode, WebSearchAction, WebSearchInput } from "./schema";
 import { array, isDict, str, unique } from "./util";
 
 type OpenAITextAnnotation = { type?: string; url?: string; title?: string };
+type ParsedOpenAIResponse = { response: unknown; urls: string[]; actions: WebSearchAction[] };
 type ResolvedOpenAIRequest = {
 	provider: "openai-codex";
 	model: string;
@@ -11,17 +12,60 @@ type ResolvedOpenAIRequest = {
 	url: string;
 };
 
-function parseOpenAIResponseText(text: string): unknown {
+const webSearchAction = (value: unknown): WebSearchAction | undefined => {
+	if (!isDict(value)) return undefined;
+	const type = str(value.type);
+	if (!type) return undefined;
+	const action: WebSearchAction = { type };
+	const query = str(value.query);
+	const url = str(value.url);
+	const pattern = str(value.pattern);
+	const queries = array(value.queries).map(str).filter(Boolean);
+	if (query) action.query = query;
+	if (queries.length > 0) action.queries = queries;
+	if (url) action.url = url;
+	if (pattern) action.pattern = pattern;
+	return action;
+};
+
+const urlsInText = (text: string): string[] =>
+	Array.from(text.matchAll(/https?:\/\/[^\s)\]}>"']+/g), (match) => match[0].replace(/[.,;:]+$/, ""));
+
+const collectWebSearchMetadata = (value: unknown, urls: string[], actions: WebSearchAction[]): void => {
+	if (Array.isArray(value)) {
+		for (const item of value) collectWebSearchMetadata(item, urls, actions);
+		return;
+	}
+	if (!isDict(value)) return;
+
+	const url = str(value.url);
+	if (url) urls.push(url);
+	if (value.type === "web_search_call") {
+		const action = webSearchAction(value.action);
+		if (action) actions.push(action);
+	}
+	for (const item of Object.values(value)) collectWebSearchMetadata(item, urls, actions);
+};
+
+function parseOpenAIResponseText(text: string): ParsedOpenAIResponse {
 	try {
-		return text ? JSON.parse(text) : undefined;
+		const response = text ? JSON.parse(text) : undefined;
+		const urls: string[] = [];
+		const actions: WebSearchAction[] = [];
+		collectWebSearchMetadata(response, urls, actions);
+		return { response, urls: unique(urls), actions };
 	} catch {
 		// Codex responses require streaming. Decode basic SSE frames and return the
 		// completed response object when available, or synthesize output_text from
-		// text deltas.
+		// text deltas. While doing so, copy Codex's web_search_call action details
+		// (search query, opened page URL, find-in-page URL) so the UI can show what
+		// web sites/actions were actually used.
 	}
 
 	let completed: unknown;
 	const deltas: string[] = [];
+	const urls: string[] = [];
+	const actions: WebSearchAction[] = [];
 	const frames = text.replaceAll("\r\n", "\n").replaceAll("\r", "\n").split("\n\n");
 	for (const frame of frames) {
 		const data = frame
@@ -35,6 +79,7 @@ function parseOpenAIResponseText(text: string): unknown {
 		try {
 			const event = JSON.parse(data);
 			if (!isDict(event)) continue;
+			collectWebSearchMetadata(event, urls, actions);
 			if (event.type === "response.output_text.delta") {
 				const delta = str(event.delta);
 				if (delta) deltas.push(delta);
@@ -46,7 +91,8 @@ function parseOpenAIResponseText(text: string): unknown {
 		}
 	}
 
-	return completed ?? (deltas.length > 0 ? { output_text: deltas.join("") } : undefined);
+	const response = completed ?? (deltas.length > 0 ? { output_text: deltas.join("") } : undefined);
+	return { response, urls: unique(urls), actions };
 }
 
 function extractOpenAIText(response: unknown): { text: string; urls: string[]; responseId?: string } {
@@ -71,9 +117,10 @@ function extractOpenAIText(response: unknown): { text: string; urls: string[]; r
 		}
 	}
 
+	const text = parts.join("\n\n").trim();
 	return {
-		text: parts.join("\n\n").trim(),
-		urls: unique(urls),
+		text,
+		urls: unique([...urls, ...urlsInText(text)]),
 		responseId: str(root.id) || undefined,
 	};
 }
@@ -160,12 +207,20 @@ export async function callOpenAIWebSearch(
 	});
 
 	const text = await response.text();
-	const json = parseOpenAIResponseText(text);
+	const parsed = parseOpenAIResponseText(text);
+	const json = parsed.response;
 
 	if (!response.ok) {
 		const message = isDict(json) && isDict(json.error) ? str(json.error.message) : text;
 		throw new Error(`OpenAI web search failed (${response.status}): ${message || response.statusText}`);
 	}
 
-	return { ...extractOpenAIText(json), provider: request.provider, model: request.model };
+	const extracted = extractOpenAIText(json);
+	return {
+		...extracted,
+		urls: unique([...extracted.urls, ...parsed.urls, ...parsed.actions.flatMap((action) => (action.url ? [action.url] : []))]),
+		actions: parsed.actions,
+		provider: request.provider,
+		model: request.model,
+	};
 }
