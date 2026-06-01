@@ -6,9 +6,9 @@
   "description": "Type-checking scaffold for TypeScript files in eupkgs (pi-mono extensions etc.). Not part of any Nix output.",
   "scripts": {
     "typecheck": "tsgo --noEmit",
-    "lint": "biome check pkgs/by-name/ag/agent-statusline-pi/extension.ts",
-    "format": "biome format --write pkgs/by-name/ag/agent-statusline-pi/extension.ts",
-    "format:check": "biome format pkgs/by-name/ag/agent-statusline-pi/extension.ts"
+    "lint": "biome check pkgs",
+    "format": "biome format --write pkgs",
+    "format:check": "biome format pkgs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.15",
