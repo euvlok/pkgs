@@ -14,24 +14,26 @@ stdenvNoCC.mkDerivation (finalAttrs: {
   dontBuild = true;
 
   postPatch = ''
-    substituteInPlace index.ts \
-      --replace-fail 'const SSH_COMMAND = "ssh";' \
-        'const SSH_COMMAND = "${lib.getExe' openssh "ssh"}";' \
-      --replace-fail 'const TAILSCALE_COMMAND = "tailscale";' \
-        'const TAILSCALE_COMMAND = "${lib.getExe tailscale}";'
+    substituteInPlace src/constants.ts \
+      --replace-fail 'export const SSH_COMMAND = "ssh";' \
+        'export const SSH_COMMAND = "${lib.getExe' openssh "ssh"}";' \
+      --replace-fail 'export const TAILSCALE_COMMAND = "tailscale";' \
+        'export const TAILSCALE_COMMAND = "${lib.getExe tailscale}";'
   '';
 
   installPhase = ''
     runHook preInstall
-    install -Dm644 index.ts "$out/share/pi/extensions/pi-ssh-tools.ts"
+    install -Dm644 index.ts "$out/share/pi/extensions/pi-ssh-tools/index.ts"
+    cp -R src "$out/share/pi/extensions/pi-ssh-tools/src"
     # NixOS/nix-darwin system profiles link bin/ by default, but not arbitrary
     # share/ subdirectories. Keep a stable profile-visible path for settings.json.
-    install -Dm644 index.ts "$out/bin/pi-ssh-tools.ts"
+    install -Dm644 index.ts "$out/bin/pi-ssh-tools/index.ts"
+    cp -R src "$out/bin/pi-ssh-tools/src"
     runHook postInstall
   '';
 
   passthru = {
-    extensionPath = "${finalAttrs.finalPackage}/share/pi/extensions/pi-ssh-tools.ts";
+    extensionPath = "${finalAttrs.finalPackage}/share/pi/extensions/pi-ssh-tools";
   };
 
   meta = {
