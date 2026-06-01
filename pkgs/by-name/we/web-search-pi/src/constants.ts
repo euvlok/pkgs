@@ -6,7 +6,7 @@ export const ENV_MODE = "PI_WEB_SEARCH";
 export const ENV_MODEL = "PI_WEB_SEARCH_MODEL";
 export const ENV_DEBUG = "PI_WEB_SEARCH_DEBUG";
 
-export const DEFAULT_MODEL = "gpt-4.1-mini";
-export const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
+export const DEFAULT_MODEL = "gpt-5.5";
+export const CHATGPT_CODEX_BASE_URL = "https://chatgpt.com/backend-api";
 export const OFF_MODES = new Set(["0", "false", "no", "off"]);
 export const DEBUG = ["1", "true", "yes"].includes(process.env[ENV_DEBUG]?.toLowerCase() ?? "");

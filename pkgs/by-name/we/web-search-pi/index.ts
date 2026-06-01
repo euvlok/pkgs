@@ -27,7 +27,7 @@ export default function webSearchExtension(pi: ExtensionAPI): void {
 			const mode = modeFor(pi);
 			if (mode === "off") throw new Error("web_search is disabled by --no-web-search or PI_WEB_SEARCH=off.");
 
-			const model = modelFor(pi);
+			const model = modelFor(pi, ctx);
 			const setStatus = (text: string) => {
 				if (!ctx.hasUI) return;
 				ctx.ui.setStatus("web-search", ctx.ui.theme.fg("accent", text));
@@ -43,7 +43,14 @@ export default function webSearchExtension(pi: ExtensionAPI): void {
 			try {
 				const result = await callOpenAIWebSearch(params, mode, model, ctx, signal ?? ctx.signal);
 				const answer = result.text || "No text result returned from OpenAI web search.";
-				const details: WebSearchDetails = { query: params.query, model, mode, urls: result.urls, responseId: result.responseId };
+				const details: WebSearchDetails = {
+					query: params.query,
+					provider: result.provider,
+					model: result.model,
+					mode,
+					urls: result.urls,
+					responseId: result.responseId,
+				};
 				debug("completed", details);
 				return { content: [{ type: "text", text: answer }], details };
 			} catch (error) {
@@ -59,7 +66,9 @@ export default function webSearchExtension(pi: ExtensionAPI): void {
 		},
 		renderResult(result, _options, theme) {
 			const details = result.details;
-			const lines = [`${theme.fg("success", "✓ Web search complete")} ${theme.fg("dim", `[${details.model}, ${details.mode}]`)}`];
+			const lines = [
+				`${theme.fg("success", "✓ Web search complete")} ${theme.fg("dim", `[${details.provider}/${details.model}, ${details.mode}]`)}`,
+			];
 			if (details.urls.length > 0) {
 				lines.push(theme.fg("dim", `Sources: ${details.urls.slice(0, 5).join(" · ")}`));
 			}

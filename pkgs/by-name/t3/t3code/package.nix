@@ -135,7 +135,6 @@ stdenv.mkDerivation (finalAttrs: {
   patches = [
     ./patches/0001-add-split-catppuccin-theme-controls.patch
     ./patches/0002-remove-desktop-update-surfacing.patch
-    ./patches/0003-add-made-in-eu-composer-badge.patch
   ];
 
   postPatch = ''

@@ -8,6 +8,7 @@ export type Mode = "off" | "live" | "cached";
 export type WebSearchInput = Static<typeof webSearchSchema>;
 export type WebSearchDetails = {
 	query: string;
+	provider: string;
 	model: string;
 	mode: Exclude<Mode, "off">;
 	urls: string[];
