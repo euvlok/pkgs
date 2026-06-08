@@ -3,13 +3,6 @@
 {
   description = "EUVlok Packages - overlay for Nixpkgs";
 
-  nixConfig = {
-    extra-substituters = [ "https://eupkgs.cachix.org" ];
-    extra-trusted-public-keys = [
-      "eupkgs.cachix.org-1:V9Y0HdASNNSU9U6EkXhR1j85bZGRtNgW7wSyTiQrwGU="
-    ];
-  };
-
   inputs.nixpkgs.url = "github:NixOS/nixpkgs";
 
   outputs =

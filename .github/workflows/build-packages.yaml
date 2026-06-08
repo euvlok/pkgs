@@ -26,34 +26,15 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: build-packages-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  cachix:
-    name: Cachix Auth
-    runs-on: ubuntu-latest
-    outputs:
-      skip-push: ${{ steps.auth.outputs.skip-push }}
-    steps:
-      - name: Check Cachix token availability
-        id: auth
-        env:
-          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
-        run: |
-          if [ -n "${CACHIX_AUTH_TOKEN}" ]; then
-            echo "skip-push=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "skip-push=true" >> "$GITHUB_OUTPUT"
-          fi
-
   build-packages:
     name: Build Packages (${{ matrix.platform }})
     runs-on: ${{ matrix.runs-on }}
-    needs: cachix
     strategy:
       fail-fast: false
       matrix:
@@ -70,9 +51,6 @@ jobs:
       - name: Install Nix
         uses: ./.github/actions/setup-nix
         with:
-          cachix-cache: ${{ vars.CACHIX_CACHE_NAME || 'eupkgs' }}
-          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
-          cachix-skip-push: ${{ needs.cachix.outputs.skip-push }}
           cache-key: build-packages-${{ matrix.platform }}
 
       - name: Build by-name packages

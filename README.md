@@ -7,21 +7,8 @@ although it can be used by other repos as well too
 
 ### Binary cache
 
-This flake advertises the public `eupkgs` Cachix cache through `nixConfig`:
-
-```nix
-extra-substituters = [ "https://eupkgs.cachix.org" ];
-extra-trusted-public-keys = [
-  "eupkgs.cachix.org-1:V9Y0HdASNNSU9U6EkXhR1j85bZGRtNgW7wSyTiQrwGU="
-];
-```
-
-When you use this flake directly, Nix may ask whether to accept these settings.
-Accepting them lets Nix download prebuilt packages from Cachix instead of
-building everything locally.
-
-For non-interactive use, add the same substituter and trusted public key to your
-Nix configuration.
+This flake does not configure a project binary cache. Builds use the substituters
+from your local Nix configuration.
 
 ### Add as a flake input
 

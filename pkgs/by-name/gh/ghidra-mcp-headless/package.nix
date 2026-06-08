@@ -1,7 +1,6 @@
 {
   lib,
   ghidra,
-  stdenv,
   fetchFromGitHub,
   runCommand,
   symlinkJoin,
@@ -100,6 +99,11 @@ let
     '') requiredGhidraJarPaths}
   '';
 
+  normalizeGhidraMavenMetadata = repo: ''
+    find "${repo}/ghidra" -name maven-metadata-local.xml -exec \
+      sed -i 's#<lastUpdated>.*</lastUpdated>#<lastUpdated>19700101000000</lastUpdated>#' {} +
+  '';
+
   server = maven.buildMavenPackage (finalAttrs: {
     pname = "ghidra-mcp-headless-server";
     version = jarVersion;
@@ -110,11 +114,7 @@ let
     doCheck = false;
     buildOffline = true;
     strictDeps = true;
-    mvnHash =
-      if stdenv.hostPlatform.isDarwin then
-        "sha256-25lJJrbKzPexKQklKBwzq6w8uSOK9Sv4tw8/eL6NDSc="
-      else
-        "sha256-AXdWwQmxqNzw4Eice/WmdytMj3Q0yVu5nInakBAQLm0=";
+    mvnHash = "sha256-Nf4Xm57YO2g/AYOp89CUsBKb5GpKIk77vRUVYqPJTLs=";
     inherit mvnParameters;
     mvnDepsParameters = mvnParameters;
 
@@ -130,6 +130,7 @@ let
 
     mvnFetchExtraArgs = {
       preBuild = installGhidraMavenDeps "$out/.m2";
+      postInstall = normalizeGhidraMavenMetadata "$out/.m2";
     };
 
     afterDepsSetup = installGhidraMavenDeps "$mvnDeps/.m2";
