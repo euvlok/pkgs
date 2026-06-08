@@ -4,6 +4,7 @@
   stdenv,
   fetchFromGitHub,
   runCommand,
+  symlinkJoin,
   python313,
   maven,
   jdk21,
@@ -187,16 +188,27 @@ let
     description = "Pinned upstream bethington Ghidra MCP headless HTTP backend and MCP bridge launchers";
     homepage = "https://github.com/bethington/ghidra-mcp";
     license = lib.licenses.asl20;
+    mainProgram = "ghidra-mcp-bridge";
     platforms = lib.platforms.unix;
   };
 in
-{
-  inherit
+symlinkJoin {
+  name = "ghidra-mcp-headless-${jarVersion}";
+
+  paths = [
     bridge
-    ghidra
     httpd
-    meta
-    server
-    src
-    ;
+  ];
+
+  passthru = {
+    inherit
+      bridge
+      ghidra
+      httpd
+      server
+      src
+      ;
+  };
+
+  inherit meta;
 }
