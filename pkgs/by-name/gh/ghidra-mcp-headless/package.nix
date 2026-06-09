@@ -4,6 +4,7 @@
   fetchFromGitHub,
   runCommand,
   symlinkJoin,
+  patch,
   python313,
   maven,
   jdk21,
@@ -15,27 +16,34 @@
 let
   inherit (lib.strings) concatMapStringsSep concatStringsSep removeSuffix;
 
-  upstreamRev = "5b3bfab00799a64c80b81aac673e964981b94a4f";
+  jarVersion = "5.13.1";
   mvnParameters = lib.escapeShellArgs [ "-Pheadless" ];
 
-  src = fetchFromGitHub {
+  upstreamSrc = fetchFromGitHub {
     owner = "bethington";
     repo = "ghidra-mcp";
-    rev = upstreamRev;
-    hash = "sha256-WitLLnKZ3qTLpZjkIUaPOtJ7+Aki/ycXTWFqiGH/Wyo=";
+    rev = "v${jarVersion}";
+    hash = "sha256-fxUY+RKmDkPjCYXz7Fj/TWRBd0IeDap1VZ2NdqbbiJI=";
   };
+
+  src = runCommand "ghidra-mcp-${jarVersion}-patched" { nativeBuildInputs = [ patch ]; } ''
+    cp -R "${upstreamSrc}/." "$out"
+    chmod -R u+w "$out"
+    patch -d "$out" -p1 < "${./bridge-auth-token.patch}"
+  '';
 
   python = python313.withPackages (ps: [
     ps.mcp
     ps.requests
   ]);
-  jarVersion = "5.12.0";
   stateDefault = "$HOME/.local/state/ghidra-mcp-headless";
 
   requiredGhidraJarPaths =
     map (name: "Features/${name}/lib/${name}.jar") [
       "Base"
       "Decompiler"
+      "FunctionID"
+      "PDB"
     ]
     ++ map (name: "Framework/${name}/lib/${name}.jar") [
       "DB"
@@ -43,6 +51,7 @@ let
       "Emulation"
       "FileSystem"
       "Generic"
+      "Graph"
       "Gui"
       "Help"
       "Project"
@@ -114,7 +123,7 @@ let
     doCheck = false;
     buildOffline = true;
     strictDeps = true;
-    mvnHash = "sha256-Nf4Xm57YO2g/AYOp89CUsBKb5GpKIk77vRUVYqPJTLs=";
+    mvnHash = "sha256-Vaj51PmXnRtIUnoPjxav0kM9TX5huE5AAJIxmcP+4UY=";
     inherit mvnParameters;
     mvnDepsParameters = mvnParameters;
 
@@ -163,6 +172,9 @@ let
       --set-default GHIDRA_MCP_PORT "8089" \
       --set-default GHIDRA_MCP_ALLOW_SCRIPTS "1" \
       --set-default GHIDRA_MCP_AUTH_TOKEN "" \
+      --set-default GHIDRA_MCP_ARCHIVE_URL "" \
+      --set-default GHIDRA_MCP_FILE_ROOT "" \
+      --set-default GHIDRA_MCP_PROJECT_FOLDER "" \
       --set-default GHIDRA_USER "" \
       --set JAVA_HOME "${jdk21.home}" \
       --run 'export GHIDRA_MCP_STATE="''${GHIDRA_MCP_STATE:-${stateDefault}}"' \
@@ -176,6 +188,7 @@ let
     makeWrapper "${lib.getExe' python "python"}" "$out/bin/ghidra-mcp-bridge" \
       --set-default GHIDRA_MCP_BIND "127.0.0.1" \
       --set-default GHIDRA_MCP_PORT "8089" \
+      --set-default GHIDRA_DEBUGGER_URL "http://127.0.0.1:8099" \
       --run 'export GHIDRA_MCP_STATE="''${GHIDRA_MCP_STATE:-${stateDefault}}"' \
       --set-default GHIDRA_MCP_BRIDGE_HOST "127.0.0.1" \
       --set-default GHIDRA_MCP_BRIDGE_PORT "8090" \
@@ -208,6 +221,7 @@ symlinkJoin {
       httpd
       server
       src
+      upstreamSrc
       ;
   };
 

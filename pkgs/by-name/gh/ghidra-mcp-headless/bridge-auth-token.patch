@@ -1,0 +1,16 @@
+diff --git a/bridge_mcp_ghidra.py b/bridge_mcp_ghidra.py
+--- a/bridge_mcp_ghidra.py
++++ b/bridge_mcp_ghidra.py
+@@ -87,0 +88,6 @@ logger = logging.getLogger(__name__)
++
++def ghidra_auth_headers() -> dict[str, str]:
++    token = os.getenv("GHIDRA_MCP_AUTH_TOKEN")
++    return {"Authorization": f"Bearer {token}"} if token else {}
++
++
+@@ -367 +373 @@ def uds_request(
+-    headers = {}
++    headers = ghidra_auth_headers()
+@@ -408 +414 @@ def tcp_request(
+-    headers = {}
++    headers = ghidra_auth_headers()
