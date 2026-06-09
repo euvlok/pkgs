@@ -12,12 +12,11 @@
   curl,
   coreutils,
   makeWrapper,
+  writeShellApplication,
 }:
 let
-  inherit (lib.strings) concatMapStringsSep concatStringsSep removeSuffix;
-
   jarVersion = "5.13.1";
-  mvnParameters = lib.escapeShellArgs [ "-Pheadless" ];
+  mvnParameters = lib.strings.escapeShellArgs [ "-Pheadless" ];
 
   upstreamSrc = fetchFromGitHub {
     owner = "bethington";
@@ -38,31 +37,46 @@ let
   ]);
   stateDefault = "$HOME/.local/state/ghidra-mcp-headless";
 
-  requiredGhidraJarPaths =
-    map (name: "Features/${name}/lib/${name}.jar") [
-      "Base"
-      "Decompiler"
-      "FunctionID"
-      "PDB"
-    ]
-    ++ map (name: "Framework/${name}/lib/${name}.jar") [
-      "DB"
-      "Docking"
-      "Emulation"
-      "FileSystem"
-      "Generic"
-      "Graph"
-      "Gui"
-      "Help"
-      "Project"
-      "SoftwareModeling"
-      "Utility"
-    ]
-    ++ map (name: "Debug/${name}/lib/${name}.jar") [
-      "Debugger-api"
-      "Debugger-rmi-trace"
-      "Framework-TraceModeling"
-    ];
+  requiredGhidraJarGroups = [
+    {
+      root = "Features";
+      names = [
+        "Base"
+        "Decompiler"
+        "FunctionID"
+        "PDB"
+      ];
+    }
+    {
+      root = "Framework";
+      names = [
+        "DB"
+        "Docking"
+        "Emulation"
+        "FileSystem"
+        "Generic"
+        "Graph"
+        "Gui"
+        "Help"
+        "Project"
+        "SoftwareModeling"
+        "Utility"
+      ];
+    }
+    {
+      root = "Debug";
+      names = [
+        "Debugger-api"
+        "Debugger-rmi-trace"
+        "Framework-TraceModeling"
+      ];
+    }
+  ];
+
+  requiredGhidraJarPaths = lib.lists.concatMap (
+    { root, names }:
+    map (name: "${root}/${name}/lib/${name}.jar") names
+  ) requiredGhidraJarGroups;
 
   ghidraClasspathRoots = [
     "Debug"
@@ -71,9 +85,10 @@ let
     "Processors"
   ];
 
-  httpdFlags = concatStringsSep " " [
+  httpdFlags = lib.strings.concatStringsSep " " [
     "\${JAVA_OPTS:-}"
     "\${GHIDRA_USER:+-Duser.name=\"$GHIDRA_USER\"}"
+    "-Duser.home=\"$GHIDRA_MCP_STATE/home\""
     "-Dghidra.home=\"$GHIDRA_HOME\""
     "-Dapplication.name=GhidraMCP"
     "-classpath @classpath@"
@@ -86,7 +101,7 @@ let
     "\${GHIDRA_MCP_EXTRA_ARGS:-}"
   ];
 
-  bridgeFlags = concatStringsSep " " [
+  bridgeFlags = lib.strings.concatStringsSep " " [
     "${src}/bridge_mcp_ghidra.py"
     "--transport \"$GHIDRA_MCP_BRIDGE_TRANSPORT\""
     "--mcp-host \"$GHIDRA_MCP_BRIDGE_HOST\""
@@ -96,12 +111,12 @@ let
 
   installGhidraMavenDeps = repo: ''
     mkdir -p "${repo}"
-    ${concatMapStringsSep "\n" (path: ''
+    ${lib.strings.concatMapStringsSep "\n" (path: ''
       mvn install:install-file \
         -Dmaven.repo.local="${repo}" \
         -Dfile="${ghidra}/lib/ghidra/Ghidra/${path}" \
         -DgroupId="ghidra" \
-        -DartifactId="${removeSuffix ".jar" (baseNameOf path)}" \
+        -DartifactId="${lib.strings.removeSuffix ".jar" (baseNameOf path)}" \
         -Dversion="${ghidra.version}" \
         -Dpackaging="jar" \
         -DgeneratePom="true"
@@ -156,21 +171,21 @@ let
 
   httpd = runCommand "ghidra-mcp-httpd" { nativeBuildInputs = [ makeWrapper ]; } ''
     classpath="${server}/share/java/GhidraMCP-${jarVersion}.jar"
-    for root in ${lib.escapeShellArgs ghidraClasspathRoots}; do
+    for root in ${lib.strings.escapeShellArgs ghidraClasspathRoots}; do
       for jar in "${ghidra}/lib/ghidra/Ghidra/$root"/*/lib/*.jar; do
         classpath="$classpath:$jar"
       done
     done
 
-    flags=${lib.escapeShellArg httpdFlags}
+    flags=${lib.strings.escapeShellArg httpdFlags}
     flags="''${flags//@classpath@/$classpath}"
 
     mkdir -p "$out/bin"
-    makeWrapper "${lib.getExe' jdk21 "java"}" "$out/bin/ghidra-mcp-httpd" \
+    makeWrapper "${lib.meta.getExe' jdk21 "java"}" "$out/bin/ghidra-mcp-httpd" \
       --set GHIDRA_HOME "${ghidra}/lib/ghidra" \
-      --set-default GHIDRA_MCP_BIND "127.0.0.1" \
+      --set-default GHIDRA_MCP_BIND_ADDRESS "127.0.0.1" \
       --set-default GHIDRA_MCP_PORT "8089" \
-      --set-default GHIDRA_MCP_ALLOW_SCRIPTS "1" \
+      --set-default GHIDRA_MCP_ALLOW_SCRIPTS "" \
       --set-default GHIDRA_MCP_AUTH_TOKEN "" \
       --set-default GHIDRA_MCP_ARCHIVE_URL "" \
       --set-default GHIDRA_MCP_FILE_ROOT "" \
@@ -178,32 +193,89 @@ let
       --set-default GHIDRA_USER "" \
       --set JAVA_HOME "${jdk21.home}" \
       --run 'export GHIDRA_MCP_STATE="''${GHIDRA_MCP_STATE:-${stateDefault}}"' \
-      --run '${coreutils}/bin/mkdir -p "$GHIDRA_MCP_STATE/home"' \
+      --run 'export GHIDRA_MCP_BIND="''${GHIDRA_MCP_BIND:-$GHIDRA_MCP_BIND_ADDRESS}"' \
+      --run '${coreutils}/bin/mkdir -p "$GHIDRA_MCP_STATE/home" "$GHIDRA_MCP_STATE/tmp"' \
       --run 'export HOME="$GHIDRA_MCP_STATE/home"' \
       --add-flags "$flags"
   '';
 
   bridge = runCommand "ghidra-mcp-bridge" { nativeBuildInputs = [ makeWrapper ]; } ''
     mkdir -p "$out/bin"
-    makeWrapper "${lib.getExe' python "python"}" "$out/bin/ghidra-mcp-bridge" \
-      --set-default GHIDRA_MCP_BIND "127.0.0.1" \
+    makeWrapper "${lib.meta.getExe' python "python"}" "$out/bin/ghidra-mcp-bridge" \
+      --set-default GHIDRA_MCP_BIND_ADDRESS "127.0.0.1" \
       --set-default GHIDRA_MCP_PORT "8089" \
       --set-default GHIDRA_DEBUGGER_URL "http://127.0.0.1:8099" \
       --run 'export GHIDRA_MCP_STATE="''${GHIDRA_MCP_STATE:-${stateDefault}}"' \
+      --run 'export GHIDRA_MCP_BIND="''${GHIDRA_MCP_BIND:-$GHIDRA_MCP_BIND_ADDRESS}"' \
       --set-default GHIDRA_MCP_BRIDGE_HOST "127.0.0.1" \
       --set-default GHIDRA_MCP_BRIDGE_PORT "8090" \
-      --set-default GHIDRA_MCP_BRIDGE_TRANSPORT "streamable-http" \
+      --set-default GHIDRA_MCP_BRIDGE_TRANSPORT "stdio" \
       --run 'export GHIDRA_MCP_URL="''${GHIDRA_MCP_URL:-http://$GHIDRA_MCP_BIND:$GHIDRA_MCP_PORT}"' \
-      --run '${lib.getExe' curl "curl"} -fsS --retry 1800 --retry-delay 1 --retry-connrefused "$GHIDRA_MCP_URL/check_connection" >/dev/null' \
-      --add-flags ${lib.escapeShellArg bridgeFlags}
+      --run 'case " $* " in *" --help "*|*" -h "*) GHIDRA_MCP_SKIP_WAIT=1 ;; esac' \
+      --run 'if [ "''${GHIDRA_MCP_SKIP_WAIT:-0}" != 1 ]; then ${lib.meta.getExe' curl "curl"} -fsS --retry 1800 --retry-delay 1 --retry-connrefused "$GHIDRA_MCP_URL/check_connection" >/dev/null; fi' \
+      --add-flags ${lib.strings.escapeShellArg bridgeFlags}
   '';
 
+  launcher = writeShellApplication {
+    name = "ghidra-mcp-headless";
+    runtimeInputs = [
+      coreutils
+    ];
+    text = ''
+      set -euo pipefail
+
+      export GHIDRA_MCP_STATE="''${GHIDRA_MCP_STATE:-${stateDefault}}"
+      mkdir -p "$GHIDRA_MCP_STATE"
+
+      start_httpd="''${GHIDRA_MCP_START_HTTPD:-1}"
+      case " $* " in
+        *" --help "*|*" -h "*) start_httpd=0 ;;
+      esac
+
+      httpd_pid=""
+      bridge_pid=""
+      cleanup() {
+        if [[ -n "$bridge_pid" ]] && kill -0 "$bridge_pid" 2>/dev/null; then
+          kill "$bridge_pid" 2>/dev/null || true
+          wait "$bridge_pid" 2>/dev/null || true
+        fi
+        if [[ -n "$httpd_pid" ]] && kill -0 "$httpd_pid" 2>/dev/null; then
+          kill "$httpd_pid" 2>/dev/null || true
+          wait "$httpd_pid" 2>/dev/null || true
+        fi
+      }
+      trap cleanup EXIT INT TERM
+
+      if [[ "$start_httpd" != "0" ]]; then
+        log="''${GHIDRA_MCP_HTTPD_LOG:-$GHIDRA_MCP_STATE/httpd.log}"
+        mkdir -p "$(dirname "$log")"
+        ${lib.meta.getExe' httpd "ghidra-mcp-httpd"} >> "$log" 2>&1 &
+        httpd_pid=$!
+      fi
+
+      ${lib.meta.getExe' bridge "ghidra-mcp-bridge"} "$@" &
+      bridge_pid=$!
+      set +e
+      wait "$bridge_pid"
+      status=$?
+      set -e
+      trap - EXIT INT TERM
+      cleanup
+      exit "$status"
+    '';
+  };
+
   meta = {
-    description = "Pinned upstream bethington Ghidra MCP headless HTTP backend and MCP bridge launchers";
+    description = "Pinned upstream bethington Ghidra MCP headless backend and bridge launcher";
     homepage = "https://github.com/bethington/ghidra-mcp";
+    changelog = "https://github.com/bethington/ghidra-mcp/releases/tag/v${jarVersion}";
     license = lib.licenses.asl20;
-    mainProgram = "ghidra-mcp-bridge";
-    platforms = lib.platforms.unix;
+    mainProgram = "ghidra-mcp-headless";
+    inherit (ghidra.meta) platforms;
+    sourceProvenance = with lib.sourceTypes; [
+      fromSource
+      binaryBytecode
+    ];
   };
 in
 symlinkJoin {
@@ -212,6 +284,7 @@ symlinkJoin {
   paths = [
     bridge
     httpd
+    launcher
   ];
 
   passthru = {
@@ -219,6 +292,7 @@ symlinkJoin {
       bridge
       ghidra
       httpd
+      launcher
       server
       src
       upstreamSrc
