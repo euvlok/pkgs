@@ -15,7 +15,7 @@
   writeShellApplication,
 }:
 let
-  sources = lib.importJSON ./sources.json;
+  sources = lib.importJSON ./source.json;
   jarVersion = sources.version;
   mvnParameters = lib.strings.escapeShellArgs [ "-Pheadless" ];
 
@@ -184,6 +184,8 @@ let
       runHook postInstall
     '';
 
+    passthru.upstreamVersion = jarVersion;
+
     meta = commonMeta // {
       description = "Ghidra MCP headless Java server jar";
     };
@@ -192,7 +194,9 @@ let
   httpd =
     runCommand "ghidra-mcp-httpd"
       {
+        version = jarVersion;
         nativeBuildInputs = [ makeWrapper ];
+        passthru.upstreamVersion = jarVersion;
         meta = commonMeta // {
           description = "Ghidra MCP headless HTTP daemon";
           mainProgram = "ghidra-mcp-httpd";
@@ -231,7 +235,9 @@ let
   bridge =
     runCommand "ghidra-mcp-bridge"
       {
+        version = jarVersion;
         nativeBuildInputs = [ makeWrapper ];
+        passthru.upstreamVersion = jarVersion;
         meta = commonMeta // {
           description = "Ghidra MCP Python bridge";
           mainProgram = "ghidra-mcp-bridge";
@@ -341,6 +347,7 @@ let
 in
 symlinkJoin {
   name = "ghidra-mcp-headless-${jarVersion}";
+  version = jarVersion;
 
   paths = [
     bridge
@@ -361,6 +368,7 @@ symlinkJoin {
       tests
       upstreamSrc
       ;
+    upstreamVersion = jarVersion;
     components = {
       inherit
         bridge

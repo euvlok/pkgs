@@ -1,9 +1,14 @@
-#!/usr/bin/env nix
-#!nix shell .#bash .#cacert .#coreutils .#curl .#gawk .#gnugrep .#jq .#nix .#nix-prefetch-github --command bash
+#!/usr/bin/env bash
+# shellcheck shell=bash
+#!nix-shell -i bash -p bash cacert coreutils curl gawk gnugrep jq nix nix-prefetch-github
 
 set -euo pipefail
 
-cd "$(dirname "${BASH_SOURCE[0]}")"
+if [[ -n "${UPDATE_FILE:-}" ]]; then
+  cd "$(dirname "$UPDATE_FILE")"
+else
+  cd "$(dirname "${BASH_SOURCE[0]}")"
+fi
 
 repo_owner="bethington"
 repo_name="ghidra-mcp"
@@ -31,7 +36,7 @@ if [[ -z "$latest_tag" ]]; then
 fi
 
 version="${latest_tag#v}"
-current_version=$(jq -r .version sources.json)
+current_version=$(jq -r .version source.json)
 
 if [[ "$current_version" == "$version" ]]; then
   echo "ghidra-mcp-headless already at latest stable: $version"
@@ -48,7 +53,7 @@ jq -n \
   --arg srcHash "$src_hash" \
   --arg mvnHash "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" \
   '{version: $version, srcHash: $srcHash, mvnHash: $mvnHash}' \
-  >"$tmp_pkg/sources.json"
+  >"$tmp_pkg/source.json"
 cp package.nix bridge-auth-token.patch update.sh "$tmp_pkg/"
 
 repo_root=$(realpath ../../../..)
@@ -67,6 +72,6 @@ jq -n \
   --arg srcHash "$src_hash" \
   --arg mvnHash "$mvn_hash" \
   '{version: $version, srcHash: $srcHash, mvnHash: $mvnHash}' \
-  >sources.json
+  >source.json
 
 echo "ghidra-mcp-headless: $current_version -> $version"
