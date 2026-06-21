@@ -1,6 +1,6 @@
-#!/usr/bin/env nix-shell
-#!nix-shell -i bash -p curl jq common-updater-scripts
+#!/usr/bin/env bash
 # shellcheck shell=bash
+#!nix-shell -i bash -p bash cacert common-updater-scripts coreutils curl jq nix
 
 set -euo pipefail
 
@@ -46,31 +46,29 @@ darwin_hash=$(prefetch_url "https://github.com/imputnet/helium-macos/releases/do
 linux_arm_hash=$(prefetch_url "https://github.com/imputnet/helium-linux/releases/download/$latest_version/helium-${latest_version}-arm64_linux.tar.xz")
 linux_x86_hash=$(prefetch_url "https://github.com/imputnet/helium-linux/releases/download/$latest_version/helium-${latest_version}-x86_64_linux.tar.xz")
 
-cat > sources.nix << EOF
-{ fetchurl }:
-{
-  aarch64-darwin = {
-    version = "$latest_version";
-    src = fetchurl {
-      url = "https://github.com/imputnet/helium-macos/releases/download/$latest_version/helium_${latest_version}_arm64-macos.dmg";
-      hash = "$darwin_hash";
-    };
-  };
-  aarch64-linux = {
-    version = "$latest_version";
-    src = fetchurl {
-      url = "https://github.com/imputnet/helium-linux/releases/download/$latest_version/helium-${latest_version}-arm64_linux.tar.xz";
-      hash = "$linux_arm_hash";
-    };
-  };
-  x86_64-linux = {
-    version = "$latest_version";
-    src = fetchurl {
-      url = "https://github.com/imputnet/helium-linux/releases/download/$latest_version/helium-${latest_version}-x86_64_linux.tar.xz";
-      hash = "$linux_x86_hash";
-    };
-  };
-}
-EOF
+jq -n \
+    --arg version "$latest_version" \
+    --arg darwin_hash "$darwin_hash" \
+    --arg linux_arm_hash "$linux_arm_hash" \
+    --arg linux_x86_hash "$linux_x86_hash" \
+    '{
+      platforms: {
+        "aarch64-darwin": {
+          version: $version,
+          url: "https://github.com/imputnet/helium-macos/releases/download/\($version)/helium_\($version)_arm64-macos.dmg",
+          hash: $darwin_hash
+        },
+        "aarch64-linux": {
+          version: $version,
+          url: "https://github.com/imputnet/helium-linux/releases/download/\($version)/helium-\($version)-arm64_linux.tar.xz",
+          hash: $linux_arm_hash
+        },
+        "x86_64-linux": {
+          version: $version,
+          url: "https://github.com/imputnet/helium-linux/releases/download/\($version)/helium-\($version)-x86_64_linux.tar.xz",
+          hash: $linux_x86_hash
+        }
+      }
+    }' > source.json
 
-printf "Updated sources.nix to version %s\n" "$latest_version"
+printf "Updated source.json to version %s\n" "$latest_version"

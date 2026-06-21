@@ -72,10 +72,14 @@
 
 let
   inherit (stdenvNoCC.hostPlatform) system;
-  sources = import ./sources.nix { inherit fetchurl; };
+  sources = lib.importJSON ./source.json;
 
   pname = "helium-browser";
-  inherit (sources.${system}) version src;
+  source = sources.platforms.${system} or (throw "helium-browser: unsupported system ${system}");
+  inherit (source) version;
+  src = fetchurl {
+    inherit (source) url hash;
+  };
 
   linuxDeps = [
     glibc
@@ -163,7 +167,10 @@ if stdenvNoCC.hostPlatform.isDarwin then
       meta
       ;
 
-    passthru.updateScript = ./update.sh;
+    passthru = {
+      updateScript = ./update.sh;
+      upstreamVersion = version;
+    };
 
     sourceRoot = "Helium.app";
 
@@ -200,7 +207,10 @@ else
       meta
       ;
 
-    passthru.updateScript = ./update.sh;
+    passthru = {
+      updateScript = ./update.sh;
+      upstreamVersion = version;
+    };
 
     dontUnpack = true;
     dontConfigure = true;
