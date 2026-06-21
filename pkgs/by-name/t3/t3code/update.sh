@@ -1,9 +1,14 @@
-#!/usr/bin/env nix
-#!nix shell .#bash .#cacert .#coreutils .#gh .#jq .#nix --command bash
+#!/usr/bin/env bash
+# shellcheck shell=bash
+#!nix-shell -i bash -p bash cacert coreutils gh jq nix
 
 set -euo pipefail
 
-cd "$(dirname "${BASH_SOURCE[0]}")"
+if [[ -n "${UPDATE_FILE:-}" ]]; then
+  cd "$(dirname "$UPDATE_FILE")"
+else
+  cd "$(dirname "${BASH_SOURCE[0]}")"
+fi
 repo_root="$(cd ../../../.. && pwd -P)"
 
 repo="pingdotgg/t3code"
@@ -86,18 +91,18 @@ write_sources() {
     }' > sources.json
 }
 
-refresh_node_modules_hash() {
+refresh_pnpm_deps_hash() {
   local attr="$1"
   local label="$2"
   local system build_log status hash
 
   system="$(nix eval --impure --raw --expr builtins.currentSystem)"
-  echo "Refreshing ${label} nodeModulesHash..." >&2
+  echo "Refreshing ${label} pnpmDeps hash..." >&2
 
   set +e
   build_log="$(
     nix build --impure --no-link --print-build-logs \
-      ".#legacyPackages.${system}.${attr}.nodeModules" \
+      ".#legacyPackages.${system}.${attr}.pnpmDeps" \
       --option sandbox true \
       2>&1
   )"
@@ -107,7 +112,7 @@ refresh_node_modules_hash() {
   hash="$(awk '/got: +sha256-/ { print $2; exit }' <<<"$build_log")"
   if [[ -z "$hash" ]]; then
     printf '%s\n' "$build_log" >&2
-    echo "Failed to determine ${label} nodeModulesHash" >&2
+    echo "Failed to determine ${label} pnpmDeps hash" >&2
     exit "$status"
   fi
 
@@ -137,7 +142,7 @@ write_sources "$stable_node_modules_hash" "$nightly_node_modules_hash"
 
 if [[ "$stable_changed" == "true" ]]; then
   write_sources "$fake_hash" "$nightly_node_modules_hash"
-  if ! new_hash="$(cd "$repo_root" && refresh_node_modules_hash t3code stable)"; then
+  if ! new_hash="$(cd "$repo_root" && refresh_pnpm_deps_hash t3code stable)"; then
     write_sources "$stable_node_modules_hash" "$nightly_node_modules_hash"
     exit 1
   fi
@@ -147,7 +152,7 @@ fi
 
 if [[ "$nightly_changed" == "true" ]]; then
   write_sources "$stable_node_modules_hash" "$fake_hash"
-  if ! new_hash="$(cd "$repo_root" && refresh_node_modules_hash t3code-nightly nightly)"; then
+  if ! new_hash="$(cd "$repo_root" && refresh_pnpm_deps_hash t3code-nightly nightly)"; then
     write_sources "$stable_node_modules_hash" "$nightly_node_modules_hash"
     exit 1
   fi

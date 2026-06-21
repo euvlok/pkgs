@@ -1,28 +1,49 @@
 {
   lib,
   stdenv,
-  stdenvNoCC,
   fetchFromGitHub,
-  bun,
   cctools,
   copyDesktopItems,
   electron_40,
+  fetchPnpmDeps,
   installShellFiles,
   libicns,
-  nodejs_24,
   makeBinaryWrapper,
   makeDesktopItem,
   node-gyp,
+  nodejs_24,
+  pnpm_10,
+  pnpmBuildHook,
+  pnpmConfigHook,
   python3,
-  writableTmpDirAsHomeHook,
+  versionCheckHook,
   writeDarwinBundle,
   xcbuild,
-  jq,
-  versionCheckHook,
-  gh,
+  cacert,
   coreutils,
+  enableAzureDevOps ? false,
+  azure-cli,
+  azure-cli-extensions,
+  enableBitbucket ? false,
+  bitbucket-cli,
+  enableClaude ? false,
+  claude-code,
+  enableCodex ? true,
+  codex,
+  enableCursor ? false,
+  code-cursor,
+  enableCursorCli ? false,
+  cursor-cli,
+  enableGit ? true,
   git,
-  openssh,
+  enableGitHub ? true,
+  gh,
+  enableGitLab ? false,
+  glab,
+  enableJujutsu ? false,
+  jujutsu,
+  enableOpencode ? false,
+  opencode,
   t3code ? null,
   channel ? "stable",
 }:
@@ -37,6 +58,7 @@ let
   appName = if channel == "nightly" then "T3 Code Nightly (Alpha)" else "T3 Code (Alpha)";
   electron = electron_40;
   nodejs = nodejs_24;
+  pnpm = pnpm_10;
   desktopIcon =
     if stdenv.hostPlatform.isDarwin then
       "assets/prod/black-macos-1024.png"
@@ -50,73 +72,61 @@ let
     hash = source.srcHash;
   };
 
-  nodeModules = stdenvNoCC.mkDerivation {
-    pname = "${pname}-node_modules";
-    version = source.version;
-    inherit src;
+  runtimePackages = [
+    coreutils
+  ]
+  ++ lib.optionals enableAzureDevOps [
+    (azure-cli.withExtensions [ azure-cli-extensions.azure-devops ])
+  ]
+  ++ lib.optionals enableBitbucket [ bitbucket-cli ]
+  ++ lib.optionals enableClaude [ claude-code ]
+  ++ lib.optionals enableCodex [ codex ]
+  ++ lib.optionals enableCursor [ code-cursor ]
+  ++ lib.optionals enableCursorCli [ cursor-cli ]
+  ++ lib.optionals enableGit [ git ]
+  ++ lib.optionals enableGitHub [ gh ]
+  ++ lib.optionals enableGitLab [ glab ]
+  ++ lib.optionals enableJujutsu [ jujutsu ]
+  ++ lib.optionals enableOpencode [ opencode ];
 
-    impureEnvVars = lib.fetchers.proxyImpureEnvVars ++ [
-      "GIT_PROXY_COMMAND"
-      "SOCKS_SERVER"
-    ];
-
-    nativeBuildInputs = [
-      bun
-      writableTmpDirAsHomeHook
-    ];
-
-    dontConfigure = true;
-    dontFixup = true;
-    dontPatchShebangs = true;
-
-    buildPhase = ''
-      runHook preBuild
-
-      export BUN_INSTALL_CACHE_DIR=$(mktemp -d)
-
-      bun install \
-        --cpu="*" \
-        --force \
-        --frozen-lockfile \
-        --ignore-scripts \
-        --no-progress \
-        --os="*"
-
-      runHook postBuild
-    '';
-
-    installPhase = ''
-      runHook preInstall
-
-      mkdir -p "$out"
-      find . -type d -name node_modules -prune -exec cp -R --parents {} "$out" \;
-
-      runHook postInstall
-    '';
-
-    outputHash = source.nodeModulesHash;
-    outputHashAlgo = "sha256";
-    outputHashMode = "recursive";
-  };
+  runtimePathWrapperArgs = lib.optionalString (runtimePackages != [ ]) ''
+    \
+      --prefix PATH : ${lib.makeBinPath runtimePackages}
+  '';
 in
 stdenv.mkDerivation (finalAttrs: {
-  inherit
-    pname
-    src
-    nodeModules
-    ;
+  inherit pname src;
 
   version = source.version;
 
+  strictDeps = true;
+  __structuredAttrs = true;
+  dontPatchELF = true;
+  dontStrip = true;
+  noAuditTmpdir = true;
+
+  patches =
+    if channel == "stable" then
+      [
+        ./patches/0001-add-split-catppuccin-theme-controls.patch
+        ./patches/0002-suppress-disabled-desktop-update-surfacing.patch
+      ]
+    else
+      [
+        ./patches/0003-add-split-catppuccin-theme-controls-nightly.patch
+        ./patches/0004-suppress-disabled-desktop-update-surfacing-nightly.patch
+      ];
+
   nativeBuildInputs = [
-    bun
-    jq
+    cacert
     installShellFiles
     makeBinaryWrapper
     node-gyp
     nodejs
+    pnpm
+    pnpmBuildHook
+    pnpmConfigHook
     python3
-    writableTmpDirAsHomeHook
   ]
   ++ lib.optionals stdenv.hostPlatform.isLinux [ copyDesktopItems ]
   ++ lib.optionals stdenv.hostPlatform.isDarwin [
@@ -126,64 +136,48 @@ stdenv.mkDerivation (finalAttrs: {
     xcbuild
   ];
 
-  strictDeps = true;
-  __structuredAttrs = true;
-  dontPatchELF = true;
-  dontStrip = true;
-  noAuditTmpdir = true;
-
-  patches = [
-    ./patches/0001-add-split-catppuccin-theme-controls.patch
-    ./patches/0002-remove-desktop-update-surfacing.patch
+  pnpmWorkspaces = [
+    # `...` also includes workspace packages depended on by these packages.
+    "@t3tools/monorepo"
+    "t3..."
+    "@t3tools/desktop..."
+    "@t3tools/scripts..."
   ];
 
-  postPatch = ''
-    for packageJson in \
-      apps/server/package.json \
-      apps/desktop/package.json \
-      apps/web/package.json \
-      packages/contracts/package.json
-    do
-      jq '.version = "${source.version}"' "$packageJson" > "$packageJson.tmp"
-      mv "$packageJson.tmp" "$packageJson"
-    done
+  pnpmDeps = fetchPnpmDeps {
+    inherit pnpm;
+    inherit (finalAttrs)
+      pname
+      version
+      src
+      pnpmWorkspaces
+      ;
+
+    fetcherVersion = 4;
+    hash = source.nodeModulesHash;
+  };
+
+  # TODO: remove when pnpmConfigHook supports __structuredAttrs = true.
+  # https://github.com/NixOS/nixpkgs/issues/528547
+  preConfigure = ''
+    __pnpmWorkspaces="''${pnpmWorkspaces[@]}"
+    unset pnpmWorkspaces
+    declare -g pnpmWorkspaces="$__pnpmWorkspaces"
   '';
 
-  configurePhase = ''
-    runHook preConfigure
-
-    cp -R ${finalAttrs.nodeModules}/node_modules node_modules
-    [ -d ${finalAttrs.nodeModules}/apps ] && cp -R ${finalAttrs.nodeModules}/apps/. apps/
-    [ -d ${finalAttrs.nodeModules}/packages ] && cp -R ${finalAttrs.nodeModules}/packages/. packages/
-    [ -d ${finalAttrs.nodeModules}/scripts ] && cp -R ${finalAttrs.nodeModules}/scripts/. scripts/
-    [ -d ${finalAttrs.nodeModules}/oxlint-plugin-t3code ] && cp -R ${finalAttrs.nodeModules}/oxlint-plugin-t3code/. oxlint-plugin-t3code/
-    chmod -R u+rw node_modules apps/*/node_modules packages/*/node_modules scripts/node_modules oxlint-plugin-t3code/node_modules 2>/dev/null || true
-    patchShebangs node_modules apps/*/node_modules packages/*/node_modules scripts/node_modules oxlint-plugin-t3code/node_modules 2>/dev/null || true
+  preBuild = ''
+    node scripts/update-release-package-versions.ts ${source.version}
 
     export npm_config_nodedir=${nodejs}
-    cd node_modules/.bun/node-pty@*/node_modules/node-pty
-    node-gyp rebuild
-    node scripts/post-install.js
-    cd -
-
-    runHook postConfigure
+    export ELECTRON_SKIP_BINARY_DOWNLOAD=1
+    # Exclude @t3tools/monorepo from the pending rebuild since vp config needs git.
+    pnpm rebuild --pending "''${pnpmInstallFlags[@]}" --filter '!@t3tools/monorepo'
   '';
 
-  buildPhase = ''
-    runHook preBuild
+  pnpmBuildScript = "build:desktop";
 
-    export HOME="$TMPDIR"
-    export PATH="$PWD/node_modules/.bin:$PATH"
-    # Vite resolves the dev-server/HMR host while loading config, even for
-    # production builds. Darwin sandboxes do not always provide a localhost
-    # hosts entry, so use the numeric loopback address to keep builds pure.
-    export HOST=127.0.0.1
-
-    bun run --cwd apps/web build
-    bun run --cwd apps/server build
-    bun run --cwd apps/desktop build
-
-    runHook postBuild
+  postBuild = ''
+    pnpm vp cache clean
   '';
 
   installPhase = ''
@@ -194,12 +188,6 @@ stdenv.mkDerivation (finalAttrs: {
     cp -R --no-preserve=mode apps/server/node_modules apps/server/dist "$out/libexec/t3code/apps/server/"
     cp -R --no-preserve=mode apps/desktop/node_modules apps/desktop/dist-electron "$out/libexec/t3code/apps/desktop/"
 
-    # node-pty launches POSIX shells via its spawn-helper executable. The
-    # --no-preserve=mode copies above normalize it to non-executable; restore
-    # it before the output becomes read-only in the Nix store.
-    find "$out/libexec/t3code" -path '*/node-pty/*/spawn-helper' -exec chmod 755 {} +
-    find "$out/libexec/t3code" -path '*/node-pty/*/pty.node' -exec chmod 644 {} +
-
     mkdir -p "$out/libexec/t3code/apps/desktop/prod-resources"
     install -m444 ${desktopIcon} "$out/libexec/t3code/apps/desktop/prod-resources/icon.png"
 
@@ -208,19 +196,12 @@ stdenv.mkDerivation (finalAttrs: {
     makeWrapper ${lib.getExe nodejs} "$out/bin/${binName}" \
       --add-flags "$out/libexec/t3code/apps/server/dist/bin.mjs" \
       --set-default NODE_ENV production \
-      --prefix PATH : ${
-        lib.makeBinPath [
-          coreutils
-          git
-          gh
-          openssh
-        ]
-      }
+      ${runtimePathWrapperArgs}
 
     makeWrapper ${lib.getExe electron} "$out/bin/${desktopBinName}" \
       --add-flags "$out/libexec/t3code/apps/desktop/dist-electron/main.cjs" \
       --set T3CODE_DISABLE_AUTO_UPDATE 1 \
-      --inherit-argv0
+      --inherit-argv0 ${runtimePathWrapperArgs}
 
     ${lib.optionalString (channel == "stable") ''
       ln -s ${binName} "$out/bin/t3code"
@@ -261,8 +242,9 @@ stdenv.mkDerivation (finalAttrs: {
   ];
 
   passthru = {
-    inherit nodeModules;
+    inherit (finalAttrs) pnpmDeps;
     updateScript = ./update.sh;
+    upstreamVersion = source.version;
   };
 
   nativeInstallCheckInputs = [

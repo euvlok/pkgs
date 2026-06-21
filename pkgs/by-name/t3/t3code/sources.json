@@ -1,16 +1,16 @@
 {
   "stable": {
-    "version": "0.0.24",
-    "tag": "v0.0.24",
-    "rev": "ea20e800216417c8d3b5dfc54a863bbd9e0b3e20",
-    "srcHash": "sha256-7mqRuWft9h9MAEVzuwC6K1aj2UUAcjheWrwncXhpbro=",
-    "nodeModulesHash": "sha256-yU1QQ0Txh9eTwrMk2CIgFpig+8WR89np8v+K3AD3UFM="
+    "version": "0.0.27",
+    "tag": "v0.0.27",
+    "rev": "a3422a9bb51d73724b9b665ae0ef1fb756f753d1",
+    "srcHash": "sha256-KwiF6A7pTlkzr43FJ9XM+oEXBOEtw3vrazVOjBaD5lU=",
+    "nodeModulesHash": "sha256-vpL0kjDAtxnBpm+izcJ06KXuzX888yxmzrcEc9yKtm0="
   },
   "nightly": {
-    "version": "0.0.25-nightly.20260603.451",
-    "tag": "v0.0.25-nightly.20260603.451",
-    "rev": "d78e02cd0b01faa48db4009de2a5497e95c14636",
-    "srcHash": "sha256-sFdTgZqVkh340CmljllpscVkhJG11QRX1q6uVh9yIxE=",
-    "nodeModulesHash": "sha256-N41eJ6rBtpkKNxnPjhrEzyQSRMv30mzsCQe0CoFr4CY="
+    "version": "0.0.28-nightly.20260621.614",
+    "tag": "v0.0.28-nightly.20260621.614",
+    "rev": "82a9bcc7f4e1c96bfb9cdc5acdd5be67151c707c",
+    "srcHash": "sha256-6xts3jaUsFq4mVcyk0DzIxXK/CdHP9Enon/n+uePljc=",
+    "nodeModulesHash": "sha256-6ld/c6PIeJ/jp1RmkMDmIye9TGflez6d2emcf0zgdl4="
   }
 }

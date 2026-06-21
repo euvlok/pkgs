@@ -1,0 +1,242 @@
+From 8d4e0254299b584f761bc9275d721a932efd3bd1 Mon Sep 17 00:00:00 2001
+From: FlameFlag <git@ps1.sh>
+Date: Sun, 21 Jun 2026 17:42:00 +0300
+Subject: [PATCH 2/2] Suppress disabled desktop update surfacing
+
+---
+ .../src/window/DesktopApplicationMenu.test.ts | 40 +++------
+ .../src/window/DesktopApplicationMenu.ts      | 82 +------------------
+ .../web/src/components/desktopUpdate.logic.ts |  2 +-
+ 3 files changed, 13 insertions(+), 111 deletions(-)
+
+diff --git a/apps/desktop/src/window/DesktopApplicationMenu.test.ts b/apps/desktop/src/window/DesktopApplicationMenu.test.ts
+index 62d619fe1..78c19059b 100644
+--- a/apps/desktop/src/window/DesktopApplicationMenu.test.ts
++++ b/apps/desktop/src/window/DesktopApplicationMenu.test.ts
+@@ -3,17 +3,14 @@ import { assert, describe, it } from "@effect/vitest";
+ import * as Deferred from "effect/Deferred";
+ import * as Effect from "effect/Effect";
+ import * as Layer from "effect/Layer";
+-import * as Option from "effect/Option";
+ 
+ import type * as Electron from "electron";
+ 
+ import * as ElectronApp from "../electron/ElectronApp.ts";
+-import * as ElectronDialog from "../electron/ElectronDialog.ts";
+ import * as ElectronMenu from "../electron/ElectronMenu.ts";
+ import * as DesktopApplicationMenu from "./DesktopApplicationMenu.ts";
+ import * as DesktopConfig from "../app/DesktopConfig.ts";
+ import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
+-import * as DesktopUpdates from "../updates/DesktopUpdates.ts";
+ import * as DesktopWindow from "./DesktopWindow.ts";
+ 
+ const environmentInput = {
+@@ -48,24 +45,6 @@ const electronAppLayer = Layer.succeed(ElectronApp.ElectronApp, {
+   on: () => Effect.void,
+ } satisfies ElectronApp.ElectronAppShape);
+ 
+-const electronDialogLayer = Layer.succeed(ElectronDialog.ElectronDialog, {
+-  pickFolder: () => Effect.succeed(Option.none()),
+-  confirm: () => Effect.succeed(false),
+-  showMessageBox: () => Effect.succeed({ response: 0, checkboxChecked: false }),
+-  showErrorBox: () => Effect.void,
+-} satisfies ElectronDialog.ElectronDialogShape);
+-
+-const desktopUpdatesLayer = Layer.succeed(DesktopUpdates.DesktopUpdates, {
+-  getState: Effect.die("unexpected getState"),
+-  emitState: Effect.void,
+-  disabledReason: Effect.succeed(Option.none()),
+-  configure: Effect.void,
+-  setChannel: () => Effect.die("unexpected setChannel"),
+-  check: () => Effect.die("unexpected check"),
+-  download: Effect.die("unexpected download"),
+-  install: Effect.die("unexpected install"),
+-} satisfies DesktopUpdates.DesktopUpdatesShape);
+-
+ const makeDesktopWindowLayer = (selectedAction: Deferred.Deferred<string>) =>
+   Layer.succeed(DesktopWindow.DesktopWindow, {
+     createMain: Effect.die("unexpected createMain"),
+@@ -100,14 +79,12 @@ describe("DesktopApplicationMenu", () => {
+         yield* menu.configure;
+       }).pipe(
+         Effect.provide(
+-          DesktopApplicationMenu.layer.pipe(
+-            Layer.provideMerge(makeElectronMenuLayer(applicationMenuTemplate)),
+-            Layer.provideMerge(makeDesktopWindowLayer(selectedAction)),
+-            Layer.provideMerge(desktopUpdatesLayer),
+-            Layer.provideMerge(electronDialogLayer),
+-            Layer.provideMerge(electronAppLayer),
+-            Layer.provideMerge(
+-              DesktopEnvironment.layer(environmentInput).pipe(
++            DesktopApplicationMenu.layer.pipe(
++              Layer.provideMerge(makeElectronMenuLayer(applicationMenuTemplate)),
++              Layer.provideMerge(makeDesktopWindowLayer(selectedAction)),
++              Layer.provideMerge(electronAppLayer),
++              Layer.provideMerge(
++                DesktopEnvironment.layer(environmentInput).pipe(
+                 Layer.provide(Layer.mergeAll(NodeServices.layer, DesktopConfig.layerTest({}))),
+               ),
+             ),
+@@ -116,6 +93,11 @@ describe("DesktopApplicationMenu", () => {
+       );
+ 
+       const template = yield* Deferred.await(applicationMenuTemplate);
++      assert.isUndefined(
++        template
++          .flatMap((item) => (Array.isArray(item.submenu) ? item.submenu : []))
++          .find((item) => item.label === "Check for Updates..."),
++      );
+       const fileMenu = template.find((item) => item.label === "File");
+       assert.isDefined(fileMenu);
+       if (!Array.isArray(fileMenu.submenu)) {
+diff --git a/apps/desktop/src/window/DesktopApplicationMenu.ts b/apps/desktop/src/window/DesktopApplicationMenu.ts
+index 2d41fa9db..0feb737a9 100644
+--- a/apps/desktop/src/window/DesktopApplicationMenu.ts
++++ b/apps/desktop/src/window/DesktopApplicationMenu.ts
+@@ -2,16 +2,13 @@ import * as Cause from "effect/Cause";
+ import * as Context from "effect/Context";
+ import * as Effect from "effect/Effect";
+ import * as Layer from "effect/Layer";
+-import * as Option from "effect/Option";
+ 
+ import type * as Electron from "electron";
+ 
+ import * as DesktopObservability from "../app/DesktopObservability.ts";
+ import * as ElectronApp from "../electron/ElectronApp.ts";
+-import * as ElectronDialog from "../electron/ElectronDialog.ts";
+ import * as ElectronMenu from "../electron/ElectronMenu.ts";
+ import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
+-import * as DesktopUpdates from "../updates/DesktopUpdates.ts";
+ import * as DesktopWindow from "./DesktopWindow.ts";
+ 
+ export interface DesktopApplicationMenuShape {
+@@ -23,12 +20,7 @@ export class DesktopApplicationMenu extends Context.Service<
+   DesktopApplicationMenuShape
+ >()("@t3tools/desktop/window/DesktopApplicationMenu") {}
+ 
+-type DesktopApplicationMenuRuntimeServices =
+-  | DesktopUpdates.DesktopUpdates
+-  | DesktopWindow.DesktopWindow
+-  | ElectronDialog.ElectronDialog;
+-
+-const { logInfo: logUpdaterInfo } = DesktopObservability.makeComponentLogger("desktop-updater");
++type DesktopApplicationMenuRuntimeServices = DesktopWindow.DesktopWindow;
+ 
+ const { logError: logMenuError } = DesktopObservability.makeComponentLogger("desktop-menu");
+ 
+@@ -39,61 +31,6 @@ const dispatchMenuAction = Effect.fn("desktop.menu.dispatchMenuAction")(function
+   yield* desktopWindow.dispatchMenuAction(action);
+ });
+ 
+-const checkForUpdatesFromMenu: Effect.Effect<
+-  void,
+-  never,
+-  DesktopUpdates.DesktopUpdates | ElectronDialog.ElectronDialog
+-> = Effect.gen(function* () {
+-  const updates = yield* DesktopUpdates.DesktopUpdates;
+-  const electronDialog = yield* ElectronDialog.ElectronDialog;
+-  const result = yield* updates.check("menu");
+-  const updateState = result.state;
+-
+-  if (updateState.status === "up-to-date") {
+-    yield* electronDialog.showMessageBox({
+-      type: "info",
+-      title: "You're up to date!",
+-      message: `T3 Code ${updateState.currentVersion} is currently the newest version available.`,
+-      buttons: ["OK"],
+-    });
+-  } else if (updateState.status === "error") {
+-    yield* electronDialog.showMessageBox({
+-      type: "warning",
+-      title: "Update check failed",
+-      message: "Could not check for updates.",
+-      detail: updateState.message ?? "An unknown error occurred. Please try again later.",
+-      buttons: ["OK"],
+-    });
+-  }
+-}).pipe(Effect.withSpan("desktop.menu.checkForUpdates"));
+-
+-const handleCheckForUpdatesMenuClick: Effect.Effect<
+-  void,
+-  DesktopWindow.DesktopWindowError,
+-  DesktopUpdates.DesktopUpdates | ElectronDialog.ElectronDialog | DesktopWindow.DesktopWindow
+-> = Effect.gen(function* () {
+-  const updates = yield* DesktopUpdates.DesktopUpdates;
+-  const electronDialog = yield* ElectronDialog.ElectronDialog;
+-  const disabledReason = yield* updates.disabledReason;
+-  if (Option.isSome(disabledReason)) {
+-    yield* logUpdaterInfo("manual update check requested, but updates are disabled", {
+-      disabledReason: disabledReason.value,
+-    });
+-    yield* electronDialog.showMessageBox({
+-      type: "info",
+-      title: "Updates unavailable",
+-      message: "Automatic updates are not available right now.",
+-      detail: disabledReason.value,
+-      buttons: ["OK"],
+-    });
+-    return;
+-  }
+-
+-  const desktopWindow = yield* DesktopWindow.DesktopWindow;
+-  yield* desktopWindow.ensureMain;
+-  yield* checkForUpdatesFromMenu;
+-}).pipe(Effect.withSpan("desktop.menu.handleCheckForUpdatesClick"));
+-
+ const make = Effect.gen(function* () {
+   const electronApp = yield* ElectronApp.ElectronApp;
+   const electronMenu = yield* ElectronMenu.ElectronMenu;
+@@ -121,9 +58,6 @@ const make = Effect.gen(function* () {
+   };
+ 
+   const configure = Effect.gen(function* () {
+-    const checkForUpdatesClick = () => {
+-      runMenuEffect("check-for-updates", handleCheckForUpdatesMenuClick);
+-    };
+     const settingsClick = () => {
+       runMenuEffect("open-settings", dispatchMenuAction("open-settings"));
+     };
+@@ -134,11 +68,6 @@ const make = Effect.gen(function* () {
+         label: appName,
+         submenu: [
+           { role: "about" },
+-          {
+-            label: "Check for Updates...",
+-            click: checkForUpdatesClick,
+-          },
+-          { type: "separator" },
+           {
+             label: "Settings...",
+             accelerator: "CmdOrCtrl+,",
+@@ -190,15 +119,6 @@ const make = Effect.gen(function* () {
+         ],
+       },
+       { role: "windowMenu" },
+-      {
+-        role: "help",
+-        submenu: [
+-          {
+-            label: "Check for Updates...",
+-            click: checkForUpdatesClick,
+-          },
+-        ],
+-      },
+     );
+ 
+     yield* electronMenu.setApplicationMenu(template);
+diff --git a/apps/web/src/components/desktopUpdate.logic.ts b/apps/web/src/components/desktopUpdate.logic.ts
+index 38983c810..66beba28d 100644
+--- a/apps/web/src/components/desktopUpdate.logic.ts
++++ b/apps/web/src/components/desktopUpdate.logic.ts
+@@ -30,7 +30,7 @@ export function shouldShowDesktopUpdateButton(state: DesktopUpdateState | null):
+ }
+ 
+ export function shouldShowArm64IntelBuildWarning(state: DesktopUpdateState | null): boolean {
+-  return state?.hostArch === "arm64" && state.appArch === "x64";
++  return state?.enabled === true && state.hostArch === "arm64" && state.appArch === "x64";
+ }
+ 
+ export function isDesktopUpdateButtonDisabled(state: DesktopUpdateState | null): boolean {
+-- 
+2.54.0
+
