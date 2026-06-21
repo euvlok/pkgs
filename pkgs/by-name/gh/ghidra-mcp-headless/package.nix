@@ -15,14 +15,14 @@
   writeShellApplication,
 }:
 let
-  jarVersion = "5.13.1";
+  jarVersion = "5.14.1";
   mvnParameters = lib.strings.escapeShellArgs [ "-Pheadless" ];
 
   upstreamSrc = fetchFromGitHub {
     owner = "bethington";
     repo = "ghidra-mcp";
     rev = "v${jarVersion}";
-    hash = "sha256-fxUY+RKmDkPjCYXz7Fj/TWRBd0IeDap1VZ2NdqbbiJI=";
+    hash = "sha256-rMC4/SZP7TfjOzlNihxcPvmnGZ8pYTs5uHn09PdzJms=";
   };
 
   src = runCommand "ghidra-mcp-${jarVersion}-patched" { nativeBuildInputs = [ patch ]; } ''
@@ -138,7 +138,7 @@ let
     doCheck = false;
     buildOffline = true;
     strictDeps = true;
-    mvnHash = "sha256-Vaj51PmXnRtIUnoPjxav0kM9TX5huE5AAJIxmcP+4UY=";
+    mvnHash = "sha256-Il28fXew5KgzU6ivQzqLqaomAnwM7J6yr9DAH8Obh8M=";
     inherit mvnParameters;
     mvnDepsParameters = mvnParameters;
 
@@ -148,7 +148,7 @@ let
 
     postPatch = ''
       substituteInPlace pom.xml \
-        --replace-fail "<ghidra.version>12.1</ghidra.version>" \
+        --replace-fail "<ghidra.version>12.1.2</ghidra.version>" \
                        "<ghidra.version>${ghidra.version}</ghidra.version>"
     '';
 
@@ -210,7 +210,8 @@ let
       --set-default GHIDRA_MCP_BRIDGE_HOST "127.0.0.1" \
       --set-default GHIDRA_MCP_BRIDGE_PORT "8090" \
       --set-default GHIDRA_MCP_BRIDGE_TRANSPORT "stdio" \
-      --run 'export GHIDRA_MCP_URL="''${GHIDRA_MCP_URL:-http://$GHIDRA_MCP_BIND:$GHIDRA_MCP_PORT}"' \
+      --set-default GHIDRA_MCP_CONNECT_HOST "127.0.0.1" \
+      --run 'export GHIDRA_MCP_URL="''${GHIDRA_MCP_URL:-http://$GHIDRA_MCP_CONNECT_HOST:$GHIDRA_MCP_PORT}"' \
       --run 'case " $* " in *" --help "*|*" -h "*) GHIDRA_MCP_SKIP_WAIT=1 ;; esac' \
       --run 'if [ "''${GHIDRA_MCP_SKIP_WAIT:-0}" != 1 ]; then ${lib.meta.getExe' curl "curl"} -fsS --retry 1800 --retry-delay 1 --retry-connrefused "$GHIDRA_MCP_URL/check_connection" >/dev/null; fi' \
       --add-flags ${lib.strings.escapeShellArg bridgeFlags}
