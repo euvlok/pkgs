@@ -1,0 +1,21 @@
+{
+	"name": "catppuccin-system-theme-pi",
+	"private": true,
+	"version": "0.1.0",
+	"type": "module",
+	"scripts": {
+		"typecheck": "tsgo --noEmit",
+		"lint": "biome check .",
+		"format": "biome format --write .",
+		"format:check": "biome format ."
+	},
+	"dependencies": {
+		"@earendil-works/pi-coding-agent": "0.79.9"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.5.0",
+		"@types/node": "26.0.0",
+		"@typescript/native-preview": "7.0.0-dev.20260621.1",
+		"typescript": "6.0.3"
+	}
+}
