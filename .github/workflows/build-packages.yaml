@@ -2,6 +2,11 @@ name: Build Packages
 
 on:
   workflow_dispatch:
+    inputs:
+      packages:
+        description: "Package names to build, separated by commas or whitespace. Use 'all' explicitly for a full build."
+        required: false
+        default: ""
   push:
     branches: [master]
     paths:
@@ -32,8 +37,51 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  detect-packages:
+    name: Detect changed packages
+    runs-on: ubuntu-latest
+    outputs:
+      packages: ${{ steps.detect.outputs.packages }}
+      has_packages: ${{ steps.detect.outputs.has_packages }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Install Nix
+        uses: ./.github/actions/setup-nix
+        with:
+          cache-key: build-packages-detect
+
+      - name: Detect packages
+        id: detect
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          PACKAGES: ${{ github.event.inputs.packages || '' }}
+        run: nix develop --accept-flake-config --impure --command python3 ./scripts/changed-packages.py --packages "$PACKAGES"
+
+  flake-check:
+    name: Check flake evaluation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6.0.2
+
+      - name: Install Nix
+        uses: ./.github/actions/setup-nix
+        with:
+          cache-key: build-packages-flake-check
+
+      - name: Check flake outputs without building packages
+        run: nix flake check --accept-flake-config --impure --no-build
+
   build-packages:
     name: Build Packages (${{ matrix.platform }})
+    needs: detect-packages
+    if: needs.detect-packages.outputs.has_packages == 'true'
     runs-on: ${{ matrix.runs-on }}
     strategy:
       fail-fast: false
@@ -53,54 +101,43 @@ jobs:
         with:
           cache-key: build-packages-${{ matrix.platform }}
 
-      - name: Build by-name packages
+      - name: Build selected by-name packages
         shell: bash
         env:
           NIXPKGS_ALLOW_UNFREE: "1"
+          PACKAGES_JSON: ${{ needs.detect-packages.outputs.packages }}
         run: |-
           set -euo pipefail
 
           system="$(nix eval --accept-flake-config --impure --raw --expr builtins.currentSystem)"
           package_names=()
-          while IFS= read -r package_name || [[ -n "$package_name" ]]; do
-            if [[ -n "$package_name" ]]; then
+          while IFS= read -r package_name; do
+            supported="$(
+              nix eval --accept-flake-config --impure --raw --expr "
+              let
+                flake = builtins.getFlake (toString ./.);
+                system = builtins.currentSystem;
+                pkgs = builtins.getAttr system flake.legacyPackages;
+                pkg = builtins.getAttr \"$package_name\" pkgs;
+                platforms = pkg.meta.platforms or [ ];
+              in
+                if platforms == [ ] || builtins.elem system platforms then \"true\" else \"false\"
+            " < /dev/null
+            )"
+            if [[ "$supported" == "true" ]]; then
               package_names+=("$package_name")
+            else
+              printf "::notice::Skipping %s on %s because meta.platforms does not include this system\n" "$package_name" "$system"
             fi
-          done < <(nix eval --accept-flake-config --impure --raw --expr '
-            let
-              flake = builtins.getFlake (toString ./.);
-              system = builtins.currentSystem;
-              pkgs = builtins.getAttr system flake.legacyPackages;
-              byName = ./pkgs/by-name;
-              shards = builtins.readDir byName;
-              packageNames = builtins.concatLists (
-                map (
-                  shard:
-                    if builtins.getAttr shard shards != "directory" then
-                      [ ]
-                    else
-                      builtins.attrNames (builtins.readDir (byName + "/${shard}"))
-                ) (builtins.attrNames shards)
-              );
-              supported = builtins.filter (
-                name:
-                  let
-                    pkg = builtins.getAttr name pkgs;
-                    platforms = pkg.meta.platforms or [ ];
-                  in
-                    platforms == [ ] || builtins.elem system platforms
-              ) packageNames;
-            in
-              builtins.concatStringsSep "\n" supported
-          ')
+          done < <(python3 -c 'import json, os; print("\n".join(json.loads(os.environ["PACKAGES_JSON"])))')
           build_attrs=("${package_names[@]/#/.#legacyPackages.${system}.}")
 
           if (( ${#build_attrs[@]} == 0 )); then
-            printf "::error::No by-name packages found for %s\n" "$system"
-            exit 1
+            printf "::notice::No selected packages are supported on %s\n" "$system"
+            exit 0
           fi
 
-          printf "Building %d packages for %s:\n" "${#build_attrs[@]}" "$system"
+          printf "Building %d package(s) for %s:\n" "${#build_attrs[@]}" "$system"
           printf "  %s\n" "${build_attrs[@]}"
 
           nix build --accept-flake-config --impure --keep-going --print-build-logs --no-link "${build_attrs[@]}"

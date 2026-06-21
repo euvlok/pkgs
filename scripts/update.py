@@ -337,6 +337,11 @@ def revert(pkg_dir: Path) -> None:
     run(["git", "checkout", "--", pkg_dir], cwd=REPO_ROOT)
 
 
+def pkg_has_changes(pkg_dir: Path) -> bool:
+    r = run(["git", "status", "--porcelain", "--", pkg_dir], cwd=REPO_ROOT, capture=True)
+    return bool(r.stdout.strip())
+
+
 def commit_pkg(pkg_name: str, pkg_dir: Path) -> bool:
     run(["git", "add", pkg_dir], cwd=REPO_ROOT, check=True)
     if run(["git", "diff", "--staged", "--quiet"], cwd=REPO_ROOT).returncode == 0:
@@ -405,6 +410,10 @@ def cmd_all(
             except typer.Exit:
                 gha("warning", f"Update failed for {name}", file=str(nixfile))
                 revert(pkg_dir)
+                continue
+
+            if not pkg_has_changes(pkg_dir):
+                gha("notice", f"No changes for {name}", file=str(nixfile))
                 continue
 
             if not build_pkg(nixfile):

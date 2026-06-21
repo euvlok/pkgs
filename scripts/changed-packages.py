@@ -2,11 +2,10 @@
 #!nix-shell -i python3 -p "python3.withPackages (ps: [ ps.typer ps.rich ])" git
 """Emit the list of by-name packages touched between two git revisions.
 
-Used by build-package CI workflows. A change to any top-level infra file
-(flake.nix, flake.lock, default.nix, the workflow itself) rebuilds every
-package; otherwise the directories under pkgs/by-name/<shard>/<pkg>/ that
-still exist after the diff are emitted, along with any local packages that
-depend on them.
+Used by build-package CI workflows. The directories under
+pkgs/by-name/<shard>/<pkg>/ that still exist after the diff are emitted, along
+with any local packages that depend on them. Top-level infra changes are
+reported but do not automatically expand to every package unless requested.
 
 Writes `packages=<json>` and `has_packages=<bool>` to $GITHUB_OUTPUT when
 running in Actions, and prints the JSON list to stdout either way.
@@ -15,6 +14,7 @@ running in Actions, and prints the JSON list to stdout either way.
 from __future__ import annotations
 
 import json
+import re
 from collections import defaultdict, deque
 from pathlib import Path
 
@@ -95,6 +95,23 @@ def include_local_dependents(pkgs: list[str]) -> list[str]:
     return sorted(expanded)
 
 
+def parse_package_selection(packages: str) -> list[str]:
+    tokens = [token for token in re.split(r"[\s,]+", packages.strip()) if token]
+    if not tokens:
+        return []
+
+    package_files = package_nix_files()
+    if any(token == "all" for token in tokens):
+        return all_packages()
+
+    invalid = sorted(set(tokens) - set(package_files))
+    if invalid:
+        typer.echo(f"Unknown package(s): {', '.join(invalid)}", err=True)
+        raise typer.Exit(1)
+
+    return include_local_dependents(sorted(set(tokens)))
+
+
 def changed_packages(files: list[str]) -> list[str]:
     pkgs: set[str] = set()
     for f in files:
@@ -106,18 +123,43 @@ def changed_packages(files: list[str]) -> list[str]:
 
 @app.command()
 def main(
-    base: str = typer.Option(..., envvar="BASE_SHA", help="Base revision to diff from"),
-    head: str = typer.Option(..., envvar="HEAD_SHA", help="Head revision to diff to"),
+    base: str = typer.Option("", envvar="BASE_SHA", help="Base revision to diff from"),
+    head: str = typer.Option("HEAD", envvar="HEAD_SHA", help="Head revision to diff to"),
+    packages: str = typer.Option(
+        "",
+        "--packages",
+        envvar="PACKAGES",
+        help=(
+            "Explicit package names to emit, separated by commas or whitespace. "
+            "Use 'all' explicitly."
+        ),
+    ),
+    all_on_infra: bool = typer.Option(
+        False,
+        "--all-on-infra/--changed-only-on-infra",
+        envvar="ALL_ON_INFRA",
+        help="Build every package when an infra file changes.",
+    ),
 ) -> None:
-    base = resolve_base(base, head)
-    print(f"Diffing {base}..{head}")
-
-    files = git_diff_files(base, head)
-    if any(is_infra_file(f) for f in files):
-        print("Infra file changed, building all packages")
-        pkgs = all_packages()
+    if packages.strip():
+        print(f"Using explicit package selection: {packages}")
+        pkgs = parse_package_selection(packages)
     else:
-        pkgs = changed_packages(files)
+        base = resolve_base(base, head)
+        print(f"Diffing {base}..{head}")
+
+        files = git_diff_files(base, head)
+        infra_files = [f for f in files if is_infra_file(f)]
+        if infra_files and all_on_infra:
+            print("Infra file changed, building all packages")
+            pkgs = all_packages()
+        else:
+            if infra_files:
+                print(
+                    "Infra file changed, but automatic full builds are disabled; "
+                    "building only changed packages"
+                )
+            pkgs = changed_packages(files)
 
     payload = json.dumps(pkgs)
     print(f"Packages: {payload}")
