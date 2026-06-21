@@ -4,6 +4,7 @@
     "charliermarsh.ruff",
     "astral-sh.ty",
     "jnoortheen.nix-ide",
+    "rust-lang.rust-analyzer",
     "biomejs.biome"
   ]
 }

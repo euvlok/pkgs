@@ -43,6 +43,7 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use futures_util::TryStreamExt as _;
 use jj_lib::backend::ChangeId;
 use jj_lib::config::{ConfigLayer, ConfigSource, StackedConfig};
 use jj_lib::id_prefix::IdPrefixContext;
@@ -176,10 +177,14 @@ fn resolve_via_jj_lib(
         .resolve_user_expression(repo.as_ref(), &symbol_resolver)
         .ok()?;
     let revset = resolved.evaluate(repo.as_ref()).ok()?;
-    let mut change_ids: Vec<String> = Vec::new();
-    for (_, cid) in revset.commit_change_ids().flatten() {
-        change_ids.push(cid.reverse_hex());
-    }
+    let change_ids = pollster::block_on(async {
+        let mut stream = revset.commit_change_ids();
+        let mut change_ids: Vec<String> = Vec::new();
+        while let Some((_, cid)) = stream.try_next().await.ok()? {
+            change_ids.push(cid.reverse_hex());
+        }
+        Some(change_ids)
+    })?;
 
     Some((prefix_len, change_ids))
 }
@@ -240,7 +245,7 @@ fn load_revset_aliases(config: &StackedConfig) -> RevsetAliasesMap {
         };
         for (decl, item) in table.iter() {
             let Some(defn) = item.as_str() else { continue };
-            let _ = aliases_map.insert(decl, defn);
+            let _ = aliases_map.insert(decl, defn, None);
         }
     }
     aliases_map

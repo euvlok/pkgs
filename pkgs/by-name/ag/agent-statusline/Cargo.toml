@@ -7,21 +7,29 @@ description = "Fast agent statusline using gix + jj-lib"
 license = "MIT"
 publish = false
 
+[profile.release]
+# Cold start matters: Claude Code re-execs this binary on every statusline
+# refresh. `panic = "abort"` would be the biggest single win but main.rs
+# uses catch_unwind for the never-blank fallback, so it stays unwind.
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+
 [dependencies]
 anstream = "1.0.0"
 anstyle = "1.0.14"
-chrono = { version = "0.4.44", default-features = false, features = ["clock"] }
+chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
 clap = { version = "4.6.1", features = ["derive", "env"] }
-compact_str = "0.9.0"
+compact_str = "0.9.1"
 dirs = "6.0.0"
-gix = { version = "0.81.0", default-features = false, features = ["max-performance-safe", "status", "revision", "index", "sha1"] }
+gix = { version = "0.84.0", default-features = false, features = ["max-performance-safe", "status", "revision", "index", "sha1"] }
 # Pinned exactly: jj-lib is pre-1.0 and shifts API often. Bumping it requires
 # re-checking the snapshot-avoidance code path in src/jj.rs.
-jj-lib = "=0.40.0"
+jj-lib = "=0.42.0"
 nerd-font-symbols = "0.3.0"
 pollster = "0.4.0"
 serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.149"
+serde_json = "1.0.150"
 schemars = { version = "1.2.1", features = ["derive"] }
 strum = { version = "0.28", features = ["derive"] }
 tempfile = "3.27.0"
@@ -32,7 +40,8 @@ toml = "1.1.2"
 unicode-width = "0.2.2"
 postcard = { version = "1.1.3", features = ["alloc"] }
 anstyle-hyperlink = { version = "1.0.2", features = ["file"] }
-blake3 = "1.8.2"
+blake3 = "1.8.5"
+futures-util = "0.3.32"
 
 [lints.rust]
 # Hard errors
