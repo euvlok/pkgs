@@ -12,7 +12,9 @@
 }:
 runCommand "yt-dlp-script"
   {
+    version = yt-dlp.version;
     nativeBuildInputs = [ makeWrapper ];
+    passthru.upstreamVersion = yt-dlp.version;
     meta = {
       description = "yt-dlp download helper script";
       mainProgram = "yt-dlp-script";
