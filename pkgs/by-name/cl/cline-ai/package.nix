@@ -10,24 +10,24 @@
 }:
 
 let
-  version = "3.83.0";
+  version = "3.89.2";
   nodejs = nodejs_22;
 
   src = fetchFromGitHub {
     owner = "cline";
     repo = "cline";
     tag = "v${version}";
-    hash = "sha256-UqnYraAerFFC4VM9G1bLN1z8USjq2oxnvTHDu1fiSko=";
+    hash = "sha256-m7aJyKHFFvp71PWtbOPGWiiz04znk3Vh7pZjwGa/QPM=";
   };
 
   rootSrc = runCommand "cline-ai-src-${version}" { } ''
-    cp -R ${src} $out
+    cp -R ${src}/apps/vscode $out
     chmod -R u+w $out
     cp ${./package-lock.json} $out/package-lock.json
   '';
 
   webviewSrc = runCommand "cline-ai-webview-src-${version}" { } ''
-    cp -R ${src}/webview-ui $out
+    cp -R ${src}/apps/vscode/webview-ui $out
     chmod -R u+w $out
     cp ${./webview-package-lock.json} $out/package-lock.json
   '';
@@ -37,7 +37,7 @@ let
     inherit version nodejs;
     src = webviewSrc;
     npmDepsFetcherVersion = 2;
-    npmDepsHash = "sha256-eD6qDeqEnU1WYB5l1NnLWxpSHWzHG0YH678j4KfScgc=";
+    npmDepsHash = "sha256-GN+GqdCFO34t5A/XFlBdxkHb5/XZ83PRQi8guHYo8Xs=";
 
     dontNpmBuild = true;
 
@@ -56,11 +56,12 @@ let
     inherit version nodejs;
     src = rootSrc;
     npmDepsFetcherVersion = 2;
-    npmDepsHash = "sha256-Mn6j2+eqNiN76HPnkPJ3lT3dCAGfCxmh4ioP+/fHb0M=";
+    npmDepsHash = "sha256-vkRDwqMBbn/jG7psOJZj/XKR2UG4oCmIyIJL2nXkojw=";
     npmRebuildFlags = [ "--ignore-scripts" ];
 
     postPatch = ''
-      npm pkg delete scripts.prepare
+      substituteInPlace package.json \
+        --replace-fail '"prepare": "npx husky"' '"prepare": "true"'
 
       substituteInPlace scripts/build-proto.mjs \
         --replace-fail \
@@ -96,6 +97,11 @@ vscode-utils.buildVscodeExtension {
   vscodeExtPublisher = "saoudrizwan";
   vscodeExtName = "claude-dev";
   vscodeExtUniqueId = "saoudrizwan.claude-dev";
+
+  passthru = {
+    updateScript = ./update.sh;
+    upstreamVersion = version;
+  };
 
   meta = {
     description = "Autonomous coding agent for VS Code";
