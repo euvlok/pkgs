@@ -2,28 +2,34 @@
   lib,
   stdenvNoCC,
   fetchurl,
+  installShellFiles,
   makeBinaryWrapper,
   versionCheckHook,
   autoPatchelfHook ? null,
+  alsa-lib ? null,
   glibc ? null,
+  bubblewrap ? null,
+  socat ? null,
   ripgrep,
   procps,
+  writableTmpDirAsHomeHook ? null,
   claude-code ? null,
 }:
 let
-  manifest = lib.importJSON ./manifest.json;
+  manifest = lib.importJSON ./source.json;
   upstreamVersion = manifest.version;
-  baseUrl = "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/${upstreamVersion}";
-  source =
-    manifest.platforms.${stdenvNoCC.hostPlatform.system}
+  baseUrl = "https://downloads.claude.ai/claude-code-releases";
+  platformKey = "${stdenvNoCC.hostPlatform.node.platform}-${stdenvNoCC.hostPlatform.node.arch}";
+  platformManifestEntry =
+    manifest.platforms.${platformKey}
       or (throw "claude-code: unsupported system ${stdenvNoCC.hostPlatform.system}");
   standaloneBuild = stdenvNoCC.mkDerivation (finalAttrs: {
     pname = "claude-code";
     version = upstreamVersion;
 
     src = fetchurl {
-      url = "${baseUrl}/${source.url}";
-      hash = source.hash;
+      url = "${baseUrl}/${finalAttrs.version}/${platformKey}/claude";
+      sha256 = platformManifestEntry.checksum;
     };
 
     dontUnpack = true;
@@ -31,12 +37,19 @@ let
     dontStrip = true;
 
     nativeBuildInputs = [
+      installShellFiles
       makeBinaryWrapper
       versionCheckHook
     ]
-    ++ lib.optionals stdenvNoCC.hostPlatform.isLinux [ autoPatchelfHook ];
+    ++ lib.optionals stdenvNoCC.hostPlatform.isLinux [
+      autoPatchelfHook
+      writableTmpDirAsHomeHook
+    ];
 
-    buildInputs = lib.optionals stdenvNoCC.hostPlatform.isLinux [ glibc ];
+    buildInputs = lib.optionals stdenvNoCC.hostPlatform.isLinux [
+      glibc
+      alsa-lib
+    ];
 
     installPhase = ''
       runHook preInstall
@@ -46,11 +59,20 @@ let
         --set-default FORCE_AUTOUPDATE_PLUGINS 1 \
         --set DISABLE_INSTALLATION_CHECKS 1 \
         --set USE_BUILTIN_RIPGREP 0 \
+        ${lib.optionalString stdenvNoCC.hostPlatform.isLinux ''
+          --prefix LD_LIBRARY_PATH : ${lib.makeLibraryPath [ alsa-lib ]} \
+        ''}\
         --prefix PATH : ${
-          lib.makeBinPath [
-            procps
-            ripgrep
-          ]
+          lib.makeBinPath (
+            [
+              procps
+              ripgrep
+            ]
+            ++ lib.optionals stdenvNoCC.hostPlatform.isLinux [
+              bubblewrap
+              socat
+            ]
+          )
         }
       runHook postInstall
     '';
@@ -59,14 +81,22 @@ let
     versionCheckProgramArg = "--version";
     versionCheckKeepEnvironment = [ "HOME" ];
 
-    passthru.updateScript = ./update.sh;
+    passthru = {
+      updateScript = ./update.sh;
+      upstreamVersion = upstreamVersion;
+    };
 
     meta = {
       description = "Agentic coding tool that lives in your terminal";
       homepage = "https://github.com/anthropics/claude-code";
       license = lib.licenses.unfree;
       mainProgram = "claude";
-      platforms = builtins.attrNames manifest.platforms;
+      platforms = [
+        "aarch64-darwin"
+        "x86_64-darwin"
+        "aarch64-linux"
+        "x86_64-linux"
+      ];
       sourceProvenance = with lib.sourceTypes; [ binaryNativeCode ];
     };
   });
