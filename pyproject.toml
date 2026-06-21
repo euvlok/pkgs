@@ -4,16 +4,16 @@ version = "0.0.0"
 description = "Scripts for the eupkgs flake"
 requires-python = ">=3.14"
 dependencies = [
-    "typer>=0.12",
-    "rich>=13",
-    "tabulate>=0.9",
-    "cogapp>=3.4",
+    "typer>=0.26.7",
+    "rich>=15.0.0",
+    "tabulate>=0.10.0",
+    "cogapp>=3.6.0",
 ]
 
 [dependency-groups]
 dev = [
-    "ty>=0.0.31",
-    "ruff>=0.6",
+    "ty>=0.0.51",
+    "ruff>=0.15.18",
 ]
 
 [tool.uv]

@@ -50,7 +50,27 @@ def flake_versions(flake_ref: str, system: str, names: list[str]) -> dict[str, s
     return {name: str(version) for name, version in nix_eval_json(expr).items()}
 
 
-def upstream_pin(nix_file: Path) -> str:
+def passthru_upstream_pins(flake_ref: str, system: str, names: list[str]) -> dict[str, str]:
+    expr = f"""
+      let
+        flake = builtins.getFlake {json.dumps(flake_ref)};
+        pkgs = builtins.getAttr {json.dumps(system)} flake.legacyPackages;
+        names = builtins.fromJSON {json.dumps(json.dumps(names))};
+        versionFor = name:
+          if builtins.hasAttr name pkgs then
+            let
+              pkg = builtins.getAttr name pkgs;
+              result = builtins.tryEval (toString (pkg.passthru.upstreamVersion or ""));
+            in if result.success then result.value else ""
+          else
+            "";
+      in
+        builtins.listToAttrs (map (name: {{ inherit name; value = versionFor name; }}) names)
+    """
+    return {name: str(version) for name, version in nix_eval_json(expr).items()}
+
+
+def textual_upstream_pin(nix_file: Path) -> str:
     return nix_string_attr(nix_file, "upstreamVersion") or "<none>"
 
 
@@ -114,11 +134,12 @@ def main(
     with console.status("Evaluating package versions..."):
         upstream_versions = flake_versions(NIXPKGS_MASTER, system, package_names)
         effective_versions = flake_versions(f"path:{REPO_ROOT}", system, package_names)
+        local_pins = passthru_upstream_pins(f"path:{REPO_ROOT}", system, package_names)
 
     comparison_rows = []
     for pkg_file in pkg_files:
         name = pkg_file.parent.name
-        pin = upstream_pin(pkg_file)
+        pin = local_pins.get(name) or textual_upstream_pin(pkg_file)
         upstream = upstream_versions.get(name, "")
         comparison_rows.append((name, pin, upstream))
 

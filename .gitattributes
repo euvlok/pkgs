@@ -1,0 +1,9 @@
+# Generated package metadata.
+flake.lock linguist-generated=true
+uv.lock linguist-generated=true
+pkgs/by-name/**/Cargo.lock linguist-generated=true
+pkgs/by-name/**/bun.lock linguist-generated=true
+pkgs/by-name/**/source.json linguist-generated=true
+pkgs/by-name/**/sources.json linguist-generated=true
+pkgs/by-name/**/package-lock.json linguist-generated=true
+pkgs/by-name/**/webview-package-lock.json linguist-generated=true

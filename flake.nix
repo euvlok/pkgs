@@ -63,10 +63,10 @@
                 ty
                 uv
                 ruff
+                shellcheck
                 gh
                 sd
                 yamlfmt
-                just
                 ;
               python3 = pkgs.python3.withPackages (
                 ps:
@@ -96,6 +96,15 @@
         system:
         let
           pkgs = self.legacyPackages.${system};
+          scriptPython = pkgs.python3.withPackages (
+            ps:
+            (builtins.attrValues {
+              inherit (ps)
+                rich
+                typer
+                ;
+            })
+          );
         in
         {
           update = {
@@ -104,8 +113,7 @@
             program = toString (
               pkgs.writeShellScript "update" ''
                 export EUPKGS_REPO_ROOT="''${EUPKGS_REPO_ROOT:-$PWD}"
-                exec ${pkgs.uv}/bin/uv run --project ${self} \
-                  ${self}/scripts/update.py "$@"
+                exec ${scriptPython}/bin/python ${./scripts}/update.py "$@"
               ''
             );
           };
@@ -115,8 +123,7 @@
             program = toString (
               pkgs.writeShellScript "gen-pkg-table" ''
                 export EUPKGS_REPO_ROOT="''${EUPKGS_REPO_ROOT:-$PWD}"
-                exec ${pkgs.uv}/bin/uv run --project ${self} \
-                  ${self}/scripts/gen-pkg-table.py "$@"
+                exec ${scriptPython}/bin/python ${./scripts}/gen-pkg-table.py "$@"
               ''
             );
           };
@@ -126,8 +133,7 @@
             program = toString (
               pkgs.writeShellScript "status" ''
                 export EUPKGS_REPO_ROOT="''${EUPKGS_REPO_ROOT:-$PWD}"
-                exec ${pkgs.uv}/bin/uv run --project ${self} \
-                  ${self}/scripts/status.py "$@"
+                exec ${scriptPython}/bin/python ${./scripts}/status.py "$@"
               ''
             );
           };
