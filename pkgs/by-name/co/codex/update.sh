@@ -1,13 +1,18 @@
-#!/usr/bin/env nix
-#!nix shell .#bash .#cacert .#coreutils .#curl .#gnugrep .#jq .#nix .#nix-prefetch-github --command bash
+#!/usr/bin/env bash
+# shellcheck shell=bash
+#!nix-shell -i bash -p bash cacert coreutils curl gnugrep jq nix nix-prefetch-github
 
-# Updates sources.json to the latest stable codex release.
+# Updates source.json to the latest stable codex release.
 # Pre-releases (alpha, beta, rc, "-unstable-" pins, etc.) are skipped: only
 # tags matching ^rust-v(\d+\.\d+\.\d+)$ are considered.
 
 set -euo pipefail
 
-cd "$(dirname "${BASH_SOURCE[0]}")"
+if [[ -n "${UPDATE_FILE:-}" ]]; then
+  cd "$(dirname "$UPDATE_FILE")"
+else
+  cd "$(dirname "${BASH_SOURCE[0]}")"
+fi
 
 repo="openai/codex"
 tag_regex='^rust-v[0-9]+\.[0-9]+\.[0-9]+$'
@@ -32,7 +37,7 @@ if [[ -z "$latest_tag" ]]; then
 fi
 
 version="${latest_tag#rust-v}"
-current_version=$(jq -r .version sources.json)
+current_version=$(jq -r .version source.json)
 
 if [[ "$current_version" == "$version" ]]; then
   echo "codex already at latest stable: $version"
@@ -44,7 +49,7 @@ src_hash=$(nix-prefetch-github openai codex --rev "$latest_tag" --json | jq -r .
 # Fetch cargo vendor hash by building with a fake hash and reading the mismatch.
 tmp_pkg=$(mktemp -d)
 trap 'rm -rf "$tmp_pkg"' EXIT
-cat >"$tmp_pkg/sources.json" <<EOF
+cat >"$tmp_pkg/source.json" <<EOF
 {
   "version": "$version",
   "rev": "$latest_tag",
@@ -52,11 +57,11 @@ cat >"$tmp_pkg/sources.json" <<EOF
   "cargoHash": "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 }
 EOF
-cp package.nix ./*.patch "$tmp_pkg/"
+cp package.nix "$tmp_pkg/"
 
 # Force the package override path while deriving the vendor hash.  If nixpkgs
 # already carries the same Codex version, package.nix would otherwise skip the
-# sources.json override, the fake cargo hash would never be used, and the updater
+# source.json override, the fake cargo hash would never be used, and the updater
 # would fail to find the expected hash mismatch.
 build_log=$(NIXPKGS_ALLOW_UNFREE=1 nix build --impure --no-link --print-build-logs \
   --expr "with import <nixpkgs> {}; callPackage $tmp_pkg/package.nix { codex = codex.overrideAttrs (_: { version = \"0.0.0\"; }); }" 2>&1 || true)
@@ -74,6 +79,6 @@ jq -n \
   --arg srcHash "$src_hash" \
   --arg cargoHash "$cargo_hash" \
   '{version: $version, rev: $rev, srcHash: $srcHash, cargoHash: $cargoHash}' \
-  >sources.json
+  >source.json
 
 echo "codex: $current_version -> $version"
