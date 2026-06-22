@@ -1,5 +1,6 @@
 {
   lib,
+  stdenv,
   ghidra,
   fetchFromGitHub,
   runCommand,
@@ -17,6 +18,11 @@
 let
   sources = lib.importJSON ./source.json;
   jarVersion = sources.version;
+  mavenHashes = sources.mavenHashes or { };
+  supportedSystems = builtins.attrNames mavenHashes;
+  mvnHash =
+    mavenHashes.${stdenv.hostPlatform.system}
+      or (throw "missing ghidra-mcp-headless mvnHash for ${stdenv.hostPlatform.system}");
   mvnParameters = lib.strings.escapeShellArgs [ "-Pheadless" ];
 
   upstreamSrc = fetchFromGitHub {
@@ -42,7 +48,7 @@ let
     homepage = "https://github.com/bethington/ghidra-mcp";
     changelog = "https://github.com/bethington/ghidra-mcp/releases/tag/v${jarVersion}";
     license = lib.licenses.asl20;
-    inherit (ghidra.meta) platforms;
+    platforms = lib.lists.intersectLists ghidra.meta.platforms supportedSystems;
     sourceProvenance = with lib.sourceTypes; [
       fromSource
       binaryBytecode
@@ -153,7 +159,7 @@ let
     doCheck = false;
     buildOffline = true;
     strictDeps = true;
-    inherit (sources) mvnHash;
+    inherit mvnHash;
     inherit mvnParameters;
     mvnDepsParameters = mvnParameters;
 

@@ -1,5 +1,8 @@
 {
   "version": "5.14.1",
   "srcHash": "sha256-rMC4/SZP7TfjOzlNihxcPvmnGZ8pYTs5uHn09PdzJms=",
-  "mvnHash": "sha256-5zlAh6dZNmj4BdFFo9J0hKpAsD7i/+OsO5uh3ZSf+Z8="
+  "mavenHashes": {
+    "x86_64-linux": "sha256-5zlAh6dZNmj4BdFFo9J0hKpAsD7i/+OsO5uh3ZSf+Z8=",
+    "aarch64-darwin": "sha256-xlflza1nESwKfl00lvxwsXH3BcnxTAEOjUB3BncZ5dY="
+  }
 }

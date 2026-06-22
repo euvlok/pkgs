@@ -37,13 +37,19 @@ fi
 
 version="${latest_tag#v}"
 current_version=$(jq -r .version source.json)
+nix_system=$(nix eval --impure --raw --expr builtins.currentSystem)
+current_system_mvn_hash=$(jq -r --arg system "$nix_system" '.mavenHashes[$system] // empty' source.json)
 
-if [[ "$current_version" == "$version" ]]; then
+if [[ "$current_version" == "$version" && -n "$current_system_mvn_hash" ]]; then
   echo "ghidra-mcp-headless already at latest stable: $version"
   exit 0
 fi
 
-src_hash=$(nix-prefetch-github "$repo_owner" "$repo_name" --rev "$latest_tag" --json | jq -r .hash)
+if [[ "$current_version" == "$version" ]]; then
+  src_hash=$(jq -r .srcHash source.json)
+else
+  src_hash=$(nix-prefetch-github "$repo_owner" "$repo_name" --rev "$latest_tag" --json | jq -r .hash)
+fi
 
 tmp_pkg=$(mktemp -d)
 trap 'rm -rf "$tmp_pkg"' EXIT
@@ -51,8 +57,9 @@ trap 'rm -rf "$tmp_pkg"' EXIT
 jq -n \
   --arg version "$version" \
   --arg srcHash "$src_hash" \
+  --arg system "$nix_system" \
   --arg mvnHash "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" \
-  '{version: $version, srcHash: $srcHash, mvnHash: $mvnHash}' \
+  '{version: $version, srcHash: $srcHash, mavenHashes: {($system): $mvnHash}}' \
   >"$tmp_pkg/source.json"
 cp package.nix bridge-auth-token.patch update.sh "$tmp_pkg/"
 
@@ -67,11 +74,26 @@ if [[ -z "$mvn_hash" ]]; then
   exit 1
 fi
 
+tmp_source=$(mktemp)
 jq -n \
   --arg version "$version" \
   --arg srcHash "$src_hash" \
+  --arg system "$nix_system" \
   --arg mvnHash "$mvn_hash" \
-  '{version: $version, srcHash: $srcHash, mvnHash: $mvnHash}' \
-  >source.json
+  --slurpfile current source.json \
+  '{
+    version: $version,
+    srcHash: $srcHash,
+    mavenHashes: (
+      if $current[0].version == $version then
+        ($current[0].mavenHashes // {})
+      else
+        {}
+      end
+      + {($system): $mvnHash}
+    )
+  }' \
+  >"$tmp_source"
+mv "$tmp_source" source.json
 
 echo "ghidra-mcp-headless: $current_version -> $version"
