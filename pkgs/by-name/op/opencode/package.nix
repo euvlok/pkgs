@@ -4,11 +4,11 @@
   lib,
 }:
 let
-  upstreamVersion = "1.17.8";
+  upstreamVersion = "pr-33649-assets-unstable-2026-06-24";
   upstreamSrc = fetchFromGitHub {
     inherit (opencode.src) owner repo;
     tag = "v${upstreamVersion}";
-    hash = "sha256-iReCFIJeJIOIs95v0ReVR/X1PnT5dSnR9O0TniyvPR8=";
+    hash = "sha256-IpTD4YCgGNtYlZ6EoyY+YLD81rIFR0D2A4W3uhWSSfo=";
   };
 in
 opencode.overrideAttrs (
