@@ -7,10 +7,10 @@
     "nodeModulesHash": "sha256-vpL0kjDAtxnBpm+izcJ06KXuzX888yxmzrcEc9yKtm0="
   },
   "nightly": {
-    "version": "0.0.28-nightly.20260623.636",
-    "tag": "v0.0.28-nightly.20260623.636",
-    "rev": "a4964b3b363dc515fad04458e5936cd32053c659",
-    "srcHash": "sha256-8lo7zsEVlzfGPHrrTKgGTCumJiQ4dFTRjwE2UgPVOcQ=",
-    "nodeModulesHash": "sha256-Jvkau1fBSMQhd6GMRARAiXTmwDsxqMRnzoMhJFfR+XM="
+    "version": "0.0.28-nightly.20260625.645",
+    "tag": "v0.0.28-nightly.20260625.645",
+    "rev": "22f021ed697f4021462fcbc65fad31e4c5c77ce0",
+    "srcHash": "sha256-oGaT+/8la1FnKE3QYa/x0CttHUmKyNh08ExknK9MVcc=",
+    "nodeModulesHash": "sha256-NL7BEVr7LgFlND+WlPBQHrXG0o9HBbUeU4WC5ho3HVU="
   }
 }
