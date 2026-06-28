@@ -4,7 +4,7 @@
   lib,
 }:
 let
-  upstreamVersion = "2026.06.09-unstable-2026-06-27";
+  upstreamVersion = "2026.06.09-unstable-2026-06-28";
 in
 yt-dlp.overrideAttrs (
   prevAttrs:
@@ -12,8 +12,8 @@ yt-dlp.overrideAttrs (
     version = upstreamVersion;
     src = fetchFromGitHub {
       inherit (prevAttrs.src) owner repo;
-      rev = "c13e2f8a20fc1fafb31cba4e6287c874bc0c0cc0";
-      hash = "sha256-7Mo9aBMvW2iP7qJUUUXxEOux9tTmiD2wqAFVAb20T7k=";
+      rev = "1249676e98aecf2131901f10f0230fb5e1bdc17e";
+      hash = "sha256-HZewzKsaG4mXzYTcieX2vev8R4dxGUtXQSBXuOhpClY=";
     };
   }
 )
