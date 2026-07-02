@@ -2,14 +2,26 @@
   lib,
   runCommand,
   makeWrapper,
-  nushell,
+  bashNonInteractive,
   cacert,
-  uutils-findutils,
+  coreutils,
+  findutils,
   ffmpeg,
+  deno,
   jq,
-  gnused,
+  python3Packages,
   yt-dlp,
 }:
+let
+  runtimePath = lib.makeBinPath [
+    coreutils
+    findutils
+    ffmpeg
+    deno
+    jq
+    yt-dlp
+  ];
+in
 runCommand "yt-dlp-script"
   {
     version = yt-dlp.version;
@@ -23,16 +35,11 @@ runCommand "yt-dlp-script"
   }
   ''
     mkdir -p $out/bin
-    makeWrapper ${lib.getExe nushell} $out/bin/yt-dlp-script \
-      --add-flags "${./yt-dlp-script.nu}" \
-      --prefix PATH : ${
-        lib.makeBinPath [
-          cacert
-          uutils-findutils
-          gnused
-          ffmpeg
-          jq
-          yt-dlp
-        ]
-      }
+    makeWrapper ${lib.getExe bashNonInteractive} $out/bin/yt-dlp-script \
+      --add-flags "${./yt-dlp-script.sh}" \
+      --set YT_DLP_SCRIPT_NAME "yt-dlp-script" \
+      --set YT_DLP_SCRIPT_PATH "${runtimePath}" \
+      --set SSL_CERT_FILE "${cacert}/etc/ssl/certs/ca-bundle.crt" \
+      --prefix PYTHONPATH : "${python3Packages.makePythonPath [ python3Packages.secretstorage ]}" \
+      --prefix PATH : "${runtimePath}"
   ''
