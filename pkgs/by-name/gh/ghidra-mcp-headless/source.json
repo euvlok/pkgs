@@ -1,8 +1,10 @@
 {
-  "version": "5.14.1",
-  "srcHash": "sha256-rMC4/SZP7TfjOzlNihxcPvmnGZ8pYTs5uHn09PdzJms=",
+  "version": "5.15.0-unstable-2026-07-03",
+  "upstreamVersion": "5.15.0",
+  "rev": "b2d16d7dadb114094a2ca13fbf961e79b83f55b4",
+  "srcHash": "sha256-hMcavhXLQUxXyNnGpqwDRUNA0n67ZepLpuAUDkvX4t4=",
   "mavenHashes": {
-    "x86_64-linux": "sha256-5zlAh6dZNmj4BdFFo9J0hKpAsD7i/+OsO5uh3ZSf+Z8=",
-    "aarch64-darwin": "sha256-xlflza1nESwKfl00lvxwsXH3BcnxTAEOjUB3BncZ5dY="
+    "x86_64-linux": "sha256-0QM0Bw5O5c/Qq8rWd26NH/OE9WfLyMMMKURGFCvR7I4=",
+    "aarch64-darwin": "sha256-MCVVdF5FASDeoQzyfKmjV76MPq3D4AZg2LDBV78oRpA="
   }
 }
