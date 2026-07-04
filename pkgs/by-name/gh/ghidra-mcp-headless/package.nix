@@ -7,6 +7,7 @@
   symlinkJoin,
   patch,
   python313,
+  python313Packages,
   maven,
   jdk21,
   stripJavaArchivesHook,
@@ -17,7 +18,9 @@
 }:
 let
   sources = lib.importJSON ./source.json;
-  jarVersion = sources.version;
+  packageVersion = sources.version;
+  jarVersion = sources.upstreamVersion or packageVersion;
+  upstreamRev = sources.rev or "v${jarVersion}";
   mavenHashes = sources.mavenHashes or { };
   supportedSystems = builtins.attrNames mavenHashes;
   mvnHash =
@@ -28,25 +31,66 @@ let
   upstreamSrc = fetchFromGitHub {
     owner = "bethington";
     repo = "ghidra-mcp";
-    rev = "v${jarVersion}";
+    rev = upstreamRev;
     hash = sources.srcHash;
   };
 
-  src = runCommand "ghidra-mcp-${jarVersion}-patched" { nativeBuildInputs = [ patch ]; } ''
+  src = runCommand "ghidra-mcp-${packageVersion}-patched" { nativeBuildInputs = [ patch ]; } ''
     cp -R "${upstreamSrc}/." "$out"
     chmod -R u+w "$out"
     patch -d "$out" -p1 < "${./bridge-auth-token.patch}"
   '';
 
-  python = python313.withPackages (ps: [
-    ps.mcp
-    ps.requests
-  ]);
+  mcpSdkVersion = "1.28.1";
+  mcp = python313Packages.mcp.overridePythonAttrs (old: {
+    version = mcpSdkVersion;
+    src = fetchFromGitHub {
+      owner = "modelcontextprotocol";
+      repo = "python-sdk";
+      tag = "v${mcpSdkVersion}";
+      hash = "sha256-8nifuun7ShtniimsFr9gYPpjwZEM/5E51GDmZRxQGEc=";
+    };
+    dependencies = (old.dependencies or [ ]) ++ [
+      python313Packages.typing-extensions
+      python313Packages.typing-inspection
+    ];
+    doCheck = false;
+  });
+  bridgePython = python313.withPackages (_: [ mcp ]);
+
+  bridgeApp = python313Packages.buildPythonApplication {
+    pname = "ghidra-mcp-bridge";
+    version = packageVersion;
+    pyproject = true;
+
+    inherit src;
+
+    build-system = [
+      python313Packages.hatchling
+    ];
+
+    dependencies = [
+      mcp
+    ];
+
+    pythonImportsCheck = [ "bridge_mcp_ghidra" ];
+
+    # Upstream's checks use uv dependency groups and cover the bridge plus
+    # optional debugger/fun-doc/test subsystems. This derivation intentionally
+    # ships only the bridge runtime declared by [project.dependencies].
+    doCheck = false;
+
+    meta = commonMeta // {
+      description = "Ghidra MCP Python bridge";
+      mainProgram = "bridge-mcp-ghidra";
+    };
+  };
   stateDefault = "$HOME/.local/state/ghidra-mcp-headless";
+  reproducibleBuildStamp = "19700101-000000";
 
   commonMeta = {
     homepage = "https://github.com/bethington/ghidra-mcp";
-    changelog = "https://github.com/bethington/ghidra-mcp/releases/tag/v${jarVersion}";
+    changelog = sources.changelog or "https://github.com/bethington/ghidra-mcp/commits/${upstreamRev}";
     license = lib.licenses.asl20;
     platforms = lib.lists.intersectLists ghidra.meta.platforms supportedSystems;
     sourceProvenance = with lib.sourceTypes; [
@@ -107,6 +151,7 @@ let
     "\${JAVA_OPTS:-}"
     "\${GHIDRA_USER:+-Duser.name=\"$GHIDRA_USER\"}"
     "-Duser.home=\"$GHIDRA_MCP_STATE/home\""
+    "-Djava.io.tmpdir=\"$GHIDRA_MCP_STATE/tmp\""
     "-Dghidra.home=\"$GHIDRA_HOME\""
     "-Dapplication.name=GhidraMCP"
     "-classpath @classpath@"
@@ -120,7 +165,7 @@ let
   ];
 
   bridgeFlags = lib.strings.concatStringsSep " " [
-    "${src}/bridge_mcp_ghidra.py"
+    "-m bridge_mcp_ghidra"
     "--transport \"$GHIDRA_MCP_BRIDGE_TRANSPORT\""
     "--mcp-host \"$GHIDRA_MCP_BRIDGE_HOST\""
     "--mcp-port \"$GHIDRA_MCP_BRIDGE_PORT\""
@@ -133,7 +178,7 @@ let
   installGhidraMavenDeps = repo: ''
     mkdir -p "${repo}"
     ${lib.strings.concatMapStringsSep "\n" (path: ''
-      mvn install:install-file \
+      mvn org.apache.maven.plugins:maven-install-plugin:3.1.2:install-file \
         -Dmaven.repo.local="${repo}" \
         -Dfile="${ghidra}/lib/ghidra/Ghidra/${path}" \
         -DgroupId="ghidra" \
@@ -151,7 +196,7 @@ let
 
   server = maven.buildMavenPackage (finalAttrs: {
     pname = "ghidra-mcp-headless-server";
-    version = jarVersion;
+    version = packageVersion;
 
     inherit src;
 
@@ -172,6 +217,11 @@ let
       sed -i -E \
         's#<ghidra.version>[^<]+</ghidra.version>#<ghidra.version>${ghidra.version}</ghidra.version>#' \
         pom.xml
+
+      sed -i -E \
+        -e 's#<build.timestamp>[^<]+</build.timestamp>#<build.timestamp>${reproducibleBuildStamp}</build.timestamp>#' \
+        -e 's#<build.number>[^<]+</build.number>#<build.number>${reproducibleBuildStamp}</build.number>#' \
+        pom.xml
     '';
 
     mvnFetchExtraArgs = {
@@ -184,8 +234,8 @@ let
     installPhase = ''
       runHook preInstall
 
-      install -Dm644 "target/GhidraMCP-${finalAttrs.version}.jar" \
-        "$out/share/java/GhidraMCP-${finalAttrs.version}.jar"
+      install -Dm644 "target/GhidraMCP-${jarVersion}.jar" \
+        "$out/share/java/GhidraMCP-${jarVersion}.jar"
 
       runHook postInstall
     '';
@@ -233,7 +283,10 @@ let
           --set JAVA_HOME "${jdk21.home}" \
           --run 'export GHIDRA_MCP_STATE="''${GHIDRA_MCP_STATE:-${stateDefault}}"' \
           --run 'export GHIDRA_MCP_BIND="''${GHIDRA_MCP_BIND:-$GHIDRA_MCP_BIND_ADDRESS}"' \
-          --run '${coreutils}/bin/mkdir -p "$GHIDRA_MCP_STATE/home" "$GHIDRA_MCP_STATE/tmp"' \
+          --run '${coreutils}/bin/mkdir -p "$GHIDRA_MCP_STATE/home" "$GHIDRA_MCP_STATE/tmp" "$GHIDRA_MCP_STATE/runtime"' \
+          --run '${coreutils}/bin/chmod 700 "$GHIDRA_MCP_STATE/runtime"' \
+          --run 'export TMPDIR="$GHIDRA_MCP_STATE/tmp"' \
+          --run 'export XDG_RUNTIME_DIR="''${XDG_RUNTIME_DIR:-$GHIDRA_MCP_STATE/runtime}"' \
           --run 'export HOME="$GHIDRA_MCP_STATE/home"' \
           --add-flags "$flags"
       '';
@@ -251,12 +304,18 @@ let
       }
       ''
         mkdir -p "$out/bin"
-        makeWrapper "${lib.meta.getExe' python "python"}" "$out/bin/ghidra-mcp-bridge" \
+        makeWrapper "${lib.meta.getExe bridgeApp}" "$out/bin/ghidra-mcp-bridge" \
           --set-default GHIDRA_MCP_BIND_ADDRESS "127.0.0.1" \
           --set-default GHIDRA_MCP_PORT "8089" \
           --set-default GHIDRA_DEBUGGER_URL "http://127.0.0.1:8099" \
+          --set PYTHONDONTWRITEBYTECODE "1" \
+          --set PYTHONNOUSERSITE "1" \
           --run 'export GHIDRA_MCP_STATE="''${GHIDRA_MCP_STATE:-${stateDefault}}"' \
           --run 'export GHIDRA_MCP_BIND="''${GHIDRA_MCP_BIND:-$GHIDRA_MCP_BIND_ADDRESS}"' \
+          --run '${coreutils}/bin/mkdir -p "$GHIDRA_MCP_STATE/tmp" "$GHIDRA_MCP_STATE/runtime"' \
+          --run '${coreutils}/bin/chmod 700 "$GHIDRA_MCP_STATE/runtime"' \
+          --run 'export TMPDIR="''${TMPDIR:-$GHIDRA_MCP_STATE/tmp}"' \
+          --run 'export XDG_RUNTIME_DIR="''${XDG_RUNTIME_DIR:-$GHIDRA_MCP_STATE/runtime}"' \
           --set-default GHIDRA_MCP_BRIDGE_HOST "127.0.0.1" \
           --set-default GHIDRA_MCP_BRIDGE_PORT "8090" \
           --set-default GHIDRA_MCP_BRIDGE_TRANSPORT "stdio" \
@@ -323,6 +382,18 @@ let
       test -s "${server}/share/java/GhidraMCP-${jarVersion}.jar"
       "${lib.meta.getExe' jdk21 "jar"}" tf "${server}/share/java/GhidraMCP-${jarVersion}.jar" \
         | grep -q '^com/xebyte/headless/GhidraMCPHeadlessServer.class$'
+      "${lib.meta.getExe' jdk21 "jar"}" xf "${server}/share/java/GhidraMCP-${jarVersion}.jar" \
+        com/xebyte/version.properties
+      tr -d '\r' < com/xebyte/version.properties > version.properties.normalized
+      grep -qx 'build.timestamp=${reproducibleBuildStamp}' version.properties.normalized
+      grep -qx 'build.number=${reproducibleBuildStamp}' version.properties.normalized
+
+      "${lib.meta.getExe' bridgePython "python"}" -c \
+        'import importlib.metadata; print(importlib.metadata.version("mcp"))' > mcp-version
+      grep -qx '${mcpSdkVersion}' mcp-version
+
+      "${lib.meta.getExe bridgeApp}" --help > bridge-app-help
+      grep -q -- '--transport' bridge-app-help
 
       export GHIDRA_MCP_STATE="$TMPDIR/state"
 
@@ -334,6 +405,11 @@ let
 
       grep -q 'GhidraMCP-${jarVersion}.jar' "${lib.meta.getExe' httpd "ghidra-mcp-httpd"}"
       grep -q 'com.xebyte.headless.GhidraMCPHeadlessServer' "${lib.meta.getExe' httpd "ghidra-mcp-httpd"}"
+      grep -q -- '-Djava.io.tmpdir=' "${lib.meta.getExe' httpd "ghidra-mcp-httpd"}"
+      grep -q 'XDG_RUNTIME_DIR=' "${lib.meta.getExe' httpd "ghidra-mcp-httpd"}"
+      grep -q 'PYTHONDONTWRITEBYTECODE' "${lib.meta.getExe' bridge "ghidra-mcp-bridge"}"
+      grep -q 'PYTHONNOUSERSITE' "${lib.meta.getExe' bridge "ghidra-mcp-bridge"}"
+      grep -q 'XDG_RUNTIME_DIR=' "${lib.meta.getExe' bridge "ghidra-mcp-bridge"}"
 
       touch "$out"
     '';
@@ -352,8 +428,8 @@ let
   };
 in
 symlinkJoin {
-  name = "ghidra-mcp-headless-${jarVersion}";
-  version = jarVersion;
+  name = "ghidra-mcp-headless-${packageVersion}";
+  version = packageVersion;
 
   paths = [
     bridge
@@ -364,10 +440,15 @@ symlinkJoin {
   passthru = {
     inherit
       bridge
+      bridgeApp
+      bridgePython
       jarVersion
+      packageVersion
       ghidra
       httpd
       launcher
+      mcp
+      mcpSdkVersion
       mvnParameters
       server
       src
