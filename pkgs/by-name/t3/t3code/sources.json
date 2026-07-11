@@ -1,10 +1,10 @@
 {
   "stable": {
-    "version": "0.0.27",
-    "tag": "v0.0.27",
-    "rev": "a3422a9bb51d73724b9b665ae0ef1fb756f753d1",
-    "srcHash": "sha256-KwiF6A7pTlkzr43FJ9XM+oEXBOEtw3vrazVOjBaD5lU=",
-    "nodeModulesHash": "sha256-vpL0kjDAtxnBpm+izcJ06KXuzX888yxmzrcEc9yKtm0="
+    "version": "0.0.28",
+    "tag": "v0.0.28",
+    "rev": "fda6486233e0b2f07ecfea166e1a94533cb923c4",
+    "srcHash": "sha256-InVrw9L281QSSPrHSiZuivmb+FkYEd6FkHwHIAAxmGk=",
+    "nodeModulesHash": "sha256-+JqW/iI0wdRPxyL7y6ggD/+AvwwZXs9+fSUtG/SgW9s="
   },
   "nightly": {
     "version": "0.0.28-nightly.20260629.685",

@@ -1,20 +1,19 @@
-From 66f96318819d4ab407c74f013ffaa19deceee424 Mon Sep 17 00:00:00 2001
-From: FlameFlag <git@ps1.sh>
-Date: Sun, 21 Jun 2026 17:31:59 +0300
+From 6c45aaa041f1eb587451ea42a2d189e9c24265c9 Mon Sep 17 00:00:00 2001
+From: 4evy <git@evy.pink>
+Date: Sat, 11 Jul 2026 13:42:41 +0300
 Subject: [PATCH 1/2] Add split Catppuccin theme controls
 
 ---
  apps/web/src/catppuccin-theme.css             | 1681 +++++++++++++++++
- .../settings/SettingsPanels.browser.tsx       |   99 +
- .../components/settings/SettingsPanels.tsx    |  170 +-
- apps/web/src/hooks/useTheme.ts                |  252 ++-
+ .../components/settings/SettingsPanels.tsx    |  140 +-
+ apps/web/src/hooks/useTheme.ts                |  381 +++-
  apps/web/src/index.css                        |    1 +
- 5 files changed, 2114 insertions(+), 89 deletions(-)
+ 4 files changed, 2069 insertions(+), 134 deletions(-)
  create mode 100644 apps/web/src/catppuccin-theme.css
 
 diff --git a/apps/web/src/catppuccin-theme.css b/apps/web/src/catppuccin-theme.css
 new file mode 100644
-index 000000000..6c06a0b4f
+index 00000000..6c06a0b4
 --- /dev/null
 +++ b/apps/web/src/catppuccin-theme.css
 @@ -0,0 +1,1681 @@
@@ -1699,128 +1698,11 @@ index 000000000..6c06a0b4f
 +  --warning: #f9e2af;
 +  --warning-foreground: #f9e2af;
 +}
-diff --git a/apps/web/src/components/settings/SettingsPanels.browser.tsx b/apps/web/src/components/settings/SettingsPanels.browser.tsx
-index a4cdc867f..25b0f7d00 100644
---- a/apps/web/src/components/settings/SettingsPanels.browser.tsx
-+++ b/apps/web/src/components/settings/SettingsPanels.browser.tsx
-@@ -251,6 +251,19 @@ function createBaseServerConfig(): ServerConfig {
-   };
- }
- 
-+function stubSystemColorScheme(isDark: boolean) {
-+  vi.stubGlobal("matchMedia", (query: string) => ({
-+    matches: query === "(prefers-color-scheme: dark)" ? isDark : false,
-+    media: query,
-+    onchange: null,
-+    addEventListener: vi.fn(),
-+    removeEventListener: vi.fn(),
-+    addListener: vi.fn(),
-+    removeListener: vi.fn(),
-+    dispatchEvent: vi.fn(),
-+  }));
-+}
-+
- function createOutdatedProvider(
-   driver: string,
-   updateCommand = "npm install -g openai/codex@latest",
-@@ -789,6 +802,92 @@ describe("GeneralSettingsPanel observability", () => {
-       .toBeInTheDocument();
-   });
- 
-+  it("shows split theme controls and only built-in theme modes in the Theme select", async () => {
-+    stubSystemColorScheme(false);
-+    setServerConfigSnapshot(createBaseServerConfig());
-+
-+    mounted = await renderWithTestRouter(
-+      <AppAtomRegistryProvider>
-+        <GeneralSettingsPanel />
-+      </AppAtomRegistryProvider>,
-+    );
-+
-+    await expect
-+      .element(page.getByRole("combobox", { name: "Theme preference" }))
-+      .toHaveTextContent("System");
-+    await expect
-+      .element(page.getByRole("combobox", { name: "Accent color" }))
-+      .toHaveTextContent("Blue");
-+    expect(document.documentElement.dataset.catppuccinTheme).toBe("latte-blue");
-+    await expect
-+      .element(page.getByRole("combobox", { name: "Dark theme" }))
-+      .not.toBeInTheDocument();
-+
-+    await page.getByRole("combobox", { name: "Theme preference" }).click();
-+    await expect.element(page.getByRole("option", { name: "System" })).toBeInTheDocument();
-+    await expect.element(page.getByRole("option", { name: "Light" })).toBeInTheDocument();
-+    await expect.element(page.getByRole("option", { name: "Dark" })).toBeInTheDocument();
-+    await expect.element(page.getByRole("option", { name: "Mocha" })).not.toBeInTheDocument();
-+  });
-+
-+  it("shows the dark flavor select when dark mode is selected", async () => {
-+    stubSystemColorScheme(false);
-+    setServerConfigSnapshot(createBaseServerConfig());
-+
-+    mounted = await renderWithTestRouter(
-+      <AppAtomRegistryProvider>
-+        <GeneralSettingsPanel />
-+      </AppAtomRegistryProvider>,
-+    );
-+
-+    await page.getByRole("combobox", { name: "Theme preference" }).click();
-+    await page.getByRole("option", { name: "Dark" }).click();
-+
-+    await expect
-+      .element(page.getByRole("combobox", { name: "Dark theme" }))
-+      .toHaveTextContent("Mocha");
-+    expect(document.documentElement.dataset.catppuccinTheme).toBe("mocha-blue");
-+  });
-+
-+  it("shows the dark flavor select when system resolves to dark", async () => {
-+    stubSystemColorScheme(true);
-+    setServerConfigSnapshot(createBaseServerConfig());
-+
-+    mounted = await renderWithTestRouter(
-+      <AppAtomRegistryProvider>
-+        <GeneralSettingsPanel />
-+      </AppAtomRegistryProvider>,
-+    );
-+
-+    await expect
-+      .element(page.getByRole("combobox", { name: "Dark theme" }))
-+      .toHaveTextContent("Mocha");
-+    expect(document.documentElement.dataset.catppuccinTheme).toBe("mocha-blue");
-+  });
-+
-+  it("migrates old bundled Catppuccin theme values", async () => {
-+    stubSystemColorScheme(false);
-+    localStorage.setItem("t3code:theme", "catppuccin-frappe-teal");
-+    setServerConfigSnapshot(createBaseServerConfig());
-+
-+    mounted = await renderWithTestRouter(
-+      <AppAtomRegistryProvider>
-+        <GeneralSettingsPanel />
-+      </AppAtomRegistryProvider>,
-+    );
-+
-+    await expect
-+      .element(page.getByRole("combobox", { name: "Theme preference" }))
-+      .toHaveTextContent("Dark");
-+    await expect
-+      .element(page.getByRole("combobox", { name: "Accent color" }))
-+      .toHaveTextContent("Teal");
-+    await expect
-+      .element(page.getByRole("combobox", { name: "Dark theme" }))
-+      .toHaveTextContent("Frappe");
-+    expect(document.documentElement.dataset.catppuccinTheme).toBe("frappe-teal");
-+  });
-+
-   it("creates and shows a pairing link when network access is enabled", async () => {
-     window.desktopBridge = createDesktopBridgeStub({
-       serverExposureState: {
 diff --git a/apps/web/src/components/settings/SettingsPanels.tsx b/apps/web/src/components/settings/SettingsPanels.tsx
-index 76d5d34c3..84114fa14 100644
+index 40017d56..c7d34b25 100644
 --- a/apps/web/src/components/settings/SettingsPanels.tsx
 +++ b/apps/web/src/components/settings/SettingsPanels.tsx
-@@ -30,7 +30,14 @@ import { ProviderModelPicker } from "../chat/ProviderModelPicker";
+@@ -36,7 +36,14 @@ import { ProviderModelPicker } from "../chat/ProviderModelPicker";
  import { TraitsPicker } from "../chat/TraitsPicker";
  import { isElectron } from "../../env";
  import { buildHostedChannelSelectionUrl, type HostedAppChannel } from "../../hostedPairing";
@@ -1833,12 +1715,12 @@ index 76d5d34c3..84114fa14 100644
 +  THEME_MODE_OPTIONS,
 +  useTheme,
 +} from "../../hooks/useTheme";
- import { useSettings, useUpdateSettings } from "../../hooks/useSettings";
+ import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
  import { useThreadActions } from "../../hooks/useThreadActions";
- import {
-@@ -80,21 +87,6 @@ import {
+ import { useDesktopUpdateState } from "../../state/desktopUpdate";
+@@ -89,21 +96,6 @@ import {
  import { ProjectFavicon } from "../ProjectFavicon";
- import { useServerObservability, useServerProviders } from "../../rpc/serverState";
+ import { useAtomCommand } from "../../state/use-atom-command";
  
 -const THEME_OPTIONS = [
 -  {
@@ -1858,7 +1740,7 @@ index 76d5d34c3..84114fa14 100644
  const TIMESTAMP_FORMAT_LABELS = {
    locale: "System default",
    "12-hour": "12-hour",
-@@ -123,6 +115,10 @@ const PROVIDER_SETTINGS = DRIVER_OPTIONS.map((definition) => ({
+@@ -132,6 +124,10 @@ const PROVIDER_SETTINGS = DRIVER_OPTIONS.map((definition) => ({
    provider: definition.value,
  }));
  
@@ -1869,83 +1751,16 @@ index 76d5d34c3..84114fa14 100644
  function ProviderLastChecked({ lastCheckedAt }: { lastCheckedAt: string | null }) {
    useRelativeTimeTick();
    const lastCheckedRelative = lastCheckedAt ? formatRelativeTime(lastCheckedAt) : null;
-@@ -160,6 +156,7 @@ function AboutVersionSection() {
-   const [isChangingUpdateChannel, setIsChangingUpdateChannel] = useState(false);
- 
-   const updateState = updateStateQuery.data ?? null;
-+  const updatesEnabled = updateState?.enabled === true;
-   const hasDesktopBridge = typeof window !== "undefined" && Boolean(window.desktopBridge);
-   const selectedUpdateChannel = updateState?.channel ?? "latest";
-   const selectedHostedAppChannel = hasDesktopBridge ? null : HOSTED_APP_CHANNEL;
-@@ -168,6 +165,7 @@ function AboutVersionSection() {
-     (channel: DesktopUpdateChannel) => {
-       const bridge = window.desktopBridge;
-       if (
-+        !updatesEnabled ||
-         !bridge ||
-         typeof bridge.setUpdateChannel !== "function" ||
-         channel === selectedUpdateChannel
-@@ -194,12 +192,12 @@ function AboutVersionSection() {
-           setIsChangingUpdateChannel(false);
-         });
-     },
--    [queryClient, selectedUpdateChannel],
-+    [queryClient, selectedUpdateChannel, updatesEnabled],
-   );
- 
-   const handleButtonClick = useCallback(() => {
-     const bridge = window.desktopBridge;
--    if (!bridge) return;
-+    if (!updatesEnabled || !bridge) return;
- 
-     const action = updateState ? resolveDesktopUpdateButtonAction(updateState) : "none";
- 
-@@ -270,7 +268,7 @@ function AboutVersionSection() {
-           }),
-         );
-       });
--  }, [queryClient, updateState]);
-+  }, [queryClient, updateState, updatesEnabled]);
- 
-   const action = updateState ? resolveDesktopUpdateButtonAction(updateState) : "none";
-   const buttonTooltip = updateState ? getDesktopUpdateButtonTooltip(updateState) : null;
-@@ -281,8 +279,8 @@ function AboutVersionSection() {
- 
-   const actionLabel: Record<string, string> = { download: "Download", install: "Install" };
-   const statusLabel: Record<string, string> = {
--    checking: "Checking…",
--    downloading: "Downloading…",
-+    checking: "Checking...",
-+    downloading: "Downloading...",
-     "up-to-date": "Up to Date",
-   };
-   const buttonLabel =
-@@ -292,6 +290,15 @@ function AboutVersionSection() {
-       ? "Update available."
-       : "Current version of the application.";
- 
-+  if (!updatesEnabled) {
-+    return (
-+      <SettingsRow
-+        title={<AboutVersionTitle />}
-+        description="Current version of the application."
-+      />
-+    );
-+  }
-+
-   return (
-     <>
-       <SettingsRow
-@@ -380,7 +387,7 @@ function AboutVersionSection() {
+@@ -373,7 +369,7 @@ function AboutVersionSection() {
  }
  
  export function useSettingsRestore(onRestored?: () => void) {
 -  const { theme, setTheme } = useTheme();
 +  const { themeMode, setThemeMode, accent, setAccent, darkFlavor, setDarkFlavor } = useTheme();
-   const settings = useSettings();
-   const { updateSettings } = useUpdateSettings();
+   const settings = usePrimarySettings();
+   const updateSettings = useUpdatePrimarySettings();
  
-@@ -391,7 +398,9 @@ export function useSettingsRestore(onRestored?: () => void) {
+@@ -384,7 +380,9 @@ export function useSettingsRestore(onRestored?: () => void) {
  
    const changedSettingLabels = useMemo(
      () => [
@@ -1956,10 +1771,10 @@ index 76d5d34c3..84114fa14 100644
        ...(settings.timestampFormat !== DEFAULT_UNIFIED_SETTINGS.timestampFormat
          ? ["Time format"]
          : []),
-@@ -441,7 +450,9 @@ export function useSettingsRestore(onRestored?: () => void) {
-       settings.enableAssistantStreaming,
+@@ -437,7 +435,9 @@ export function useSettingsRestore(onRestored?: () => void) {
        settings.sidebarThreadPreviewCount,
        settings.timestampFormat,
+       settings.wordWrap,
 -      theme,
 +      accent,
 +      darkFlavor,
@@ -1967,7 +1782,7 @@ index 76d5d34c3..84114fa14 100644
      ],
    );
  
-@@ -455,7 +466,9 @@ export function useSettingsRestore(onRestored?: () => void) {
+@@ -451,7 +451,9 @@ export function useSettingsRestore(onRestored?: () => void) {
      );
      if (!confirmed) return;
  
@@ -1977,8 +1792,8 @@ index 76d5d34c3..84114fa14 100644
 +    setDarkFlavor("mocha");
      updateSettings({
        timestampFormat: DEFAULT_UNIFIED_SETTINGS.timestampFormat,
-       diffWordWrap: DEFAULT_UNIFIED_SETTINGS.diffWordWrap,
-@@ -471,7 +484,7 @@ export function useSettingsRestore(onRestored?: () => void) {
+       wordWrap: DEFAULT_UNIFIED_SETTINGS.wordWrap,
+@@ -468,7 +470,7 @@ export function useSettingsRestore(onRestored?: () => void) {
        textGenerationModelSelection: DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection,
      });
      onRestored?.();
@@ -1987,7 +1802,7 @@ index 76d5d34c3..84114fa14 100644
  
    return {
      changedSettingLabels,
-@@ -480,7 +493,15 @@ export function useSettingsRestore(onRestored?: () => void) {
+@@ -477,7 +479,15 @@ export function useSettingsRestore(onRestored?: () => void) {
  }
  
  export function GeneralSettingsPanel() {
@@ -2001,10 +1816,10 @@ index 76d5d34c3..84114fa14 100644
 +    setDarkFlavor,
 +    isDarkThemeActive,
 +  } = useTheme();
-   const settings = useSettings();
-   const { updateSettings } = useUpdateSettings();
-   const observability = useServerObservability();
-@@ -515,6 +536,10 @@ export function GeneralSettingsPanel() {
+   const settings = usePrimarySettings();
+   const updateSettings = useUpdatePrimarySettings();
+   const observability = useAtomValue(primaryServerObservabilityAtom);
+@@ -512,6 +522,10 @@ export function GeneralSettingsPanel() {
      settings.textGenerationModelSelection ?? null,
      DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection ?? null,
    );
@@ -2015,7 +1830,7 @@ index 76d5d34c3..84114fa14 100644
  
    return (
      <SettingsPageContainer>
-@@ -523,26 +548,25 @@ export function GeneralSettingsPanel() {
+@@ -520,26 +534,25 @@ export function GeneralSettingsPanel() {
            title="Theme"
            description="Choose how T3 Code looks across the app."
            resetAction={
@@ -2050,7 +1865,7 @@ index 76d5d34c3..84114fa14 100644
                    <SelectItem hideIndicator key={option.value} value={option.value}>
                      {option.label}
                    </SelectItem>
-@@ -551,6 +575,71 @@ export function GeneralSettingsPanel() {
+@@ -548,6 +561,71 @@ export function GeneralSettingsPanel() {
              </Select>
            }
          />
@@ -2122,30 +1937,20 @@ index 76d5d34c3..84114fa14 100644
  
          <SettingsRow
            title="Time format"
-@@ -894,14 +983,7 @@ export function GeneralSettingsPanel() {
-       </SettingsSection>
- 
-       <SettingsSection title="About">
--        {isElectron || HOSTED_APP_CHANNEL ? (
--          <AboutVersionSection />
--        ) : (
--          <SettingsRow
--            title={<AboutVersionTitle />}
--            description="Current version of the application."
--          />
--        )}
-+        <AboutVersionSection />
-         <SettingsRow
-           title="Diagnostics"
-           description={diagnosticsDescription}
 diff --git a/apps/web/src/hooks/useTheme.ts b/apps/web/src/hooks/useTheme.ts
-index 78d063a96..b08c6a0bb 100644
+index bdaf37f0..ded2ba7f 100644
 --- a/apps/web/src/hooks/useTheme.ts
 +++ b/apps/web/src/hooks/useTheme.ts
-@@ -1,23 +1,82 @@
+@@ -4,20 +4,64 @@ import * as Schema from "effect/Schema";
  import { useCallback, useEffect, useSyncExternalStore } from "react";
  
--type Theme = "light" | "dark" | "system";
+ const ThemePreference = Schema.Literals(["light", "dark", "system"]);
+-type Theme = typeof ThemePreference.Type;
+-type ThemeSnapshot = {
+-  theme: Theme;
+-  systemDark: boolean;
+-};
++
 +export type ThemeMode = "system" | "light" | "dark";
 +export type CatppuccinAccent =
 +  | "rosewater"
@@ -2163,7 +1968,10 @@ index 78d063a96..b08c6a0bb 100644
 +  | "blue"
 +  | "lavender";
 +export type CatppuccinDarkFlavor = "frappe" | "macchiato" | "mocha";
-+
+ 
+ type DesktopThemeBridge = Pick<DesktopBridge, "setTheme">;
+ 
+-const STORAGE_KEY = "t3code:theme";
 +export const THEME_MODE_OPTIONS: Array<{ label: string; value: ThemeMode }> = [
 +  { label: "System", value: "system" },
 +  { label: "Light", value: "light" },
@@ -2197,51 +2005,104 @@ index 78d063a96..b08c6a0bb 100644
 +const THEME_ACCENT_STORAGE_KEY = "t3code:theme-accent";
 +const THEME_DARK_FLAVOR_STORAGE_KEY = "t3code:theme-dark-flavor";
 +const LEGACY_THEME_STORAGE_KEY = "t3code:theme";
-+const MEDIA_QUERY = "(prefers-color-scheme: dark)";
+ const MEDIA_QUERY = "(prefers-color-scheme: dark)";
+-const DEFAULT_THEME_SNAPSHOT: ThemeSnapshot = {
+-  theme: "system",
+-  systemDark: false,
+-};
 +const DEFAULT_THEME_MODE: ThemeMode = "system";
 +const DEFAULT_ACCENT: CatppuccinAccent = "blue";
 +const DEFAULT_DARK_FLAVOR: CatppuccinDarkFlavor = "mocha";
-+const THEME_COLOR_META_NAME = "theme-color";
-+const DYNAMIC_THEME_COLOR_SELECTOR = `meta[name="${THEME_COLOR_META_NAME}"][data-dynamic-theme-color="true"]`;
-+
- type ThemeSnapshot = {
--  theme: Theme;
+ const THEME_COLOR_META_NAME = "theme-color";
+ const DYNAMIC_THEME_COLOR_SELECTOR = `meta[name="${THEME_COLOR_META_NAME}"][data-dynamic-theme-color="true"]`;
+ 
+@@ -51,77 +95,181 @@ export class DesktopThemeSyncError extends Schema.TaggedErrorClass<DesktopThemeS
+ 
+ export const isDesktopThemeSyncError = Schema.is(DesktopThemeSyncError);
+ 
++type ThemeSnapshot = {
 +  themeMode: ThemeMode;
 +  accent: CatppuccinAccent;
 +  darkFlavor: CatppuccinDarkFlavor;
-   systemDark: boolean;
- };
- 
--const STORAGE_KEY = "t3code:theme";
--const MEDIA_QUERY = "(prefers-color-scheme: dark)";
++  systemDark: boolean;
++};
++
 +type StoredTheme = Omit<ThemeSnapshot, "systemDark">;
 +
- const DEFAULT_THEME_SNAPSHOT: ThemeSnapshot = {
--  theme: "system",
++const DEFAULT_THEME_SNAPSHOT: ThemeSnapshot = {
 +  themeMode: DEFAULT_THEME_MODE,
 +  accent: DEFAULT_ACCENT,
 +  darkFlavor: DEFAULT_DARK_FLAVOR,
-   systemDark: false,
- };
--const THEME_COLOR_META_NAME = "theme-color";
--const DYNAMIC_THEME_COLOR_SELECTOR = `meta[name="${THEME_COLOR_META_NAME}"][data-dynamic-theme-color="true"]`;
- 
++  systemDark: false,
++};
++
  let listeners: Array<() => void> = [];
  let lastSnapshot: ThemeSnapshot | null = null;
 -let lastDesktopTheme: Theme | null = null;
+-let lastAppliedTheme: ThemeSnapshot | null = null;
 +let lastDesktopTheme: ThemeMode | null = null;
+ let themeStorageReadFailure: ThemeStorageError | null = null;
  
  function emitChange() {
    for (const listener of listeners) listener();
-@@ -31,11 +90,79 @@ function getSystemDark() {
-   return typeof window !== "undefined" && window.matchMedia(MEDIA_QUERY).matches;
+ }
+ 
++function hasThemeStorage() {
++  return typeof window !== "undefined" && typeof localStorage !== "undefined";
++}
++
+ function getSystemDark() {
+-  return (
+-    typeof window !== "undefined" &&
+-    typeof window.matchMedia === "function" &&
+-    window.matchMedia(MEDIA_QUERY).matches
+-  );
++  return typeof window !== "undefined" && window.matchMedia(MEDIA_QUERY).matches;
+ }
+ 
+-export function readThemePreference(): Theme {
+-  if (typeof window === "undefined") return DEFAULT_THEME_SNAPSHOT.theme;
++export function readThemePreference(): ThemeMode {
++  if (typeof window === "undefined") return DEFAULT_THEME_SNAPSHOT.themeMode;
+   let raw: string | null;
+   try {
+-    raw = window.localStorage.getItem(STORAGE_KEY);
++    raw = window.localStorage.getItem(LEGACY_THEME_STORAGE_KEY);
+   } catch (cause) {
+     throw new ThemeStorageError({
+       operation: "read",
+-      storageKey: STORAGE_KEY,
++      storageKey: LEGACY_THEME_STORAGE_KEY,
+       cause,
+     });
+   }
+-  if (raw === "light" || raw === "dark" || raw === "system") return raw;
+-  return DEFAULT_THEME_SNAPSHOT.theme;
++  if (isThemeMode(raw)) return raw;
++  return DEFAULT_THEME_SNAPSHOT.themeMode;
+ }
+ 
+-export function writeThemePreference(theme: Theme): void {
++export function writeThemePreference(theme: ThemeMode): void {
+   if (typeof window === "undefined") return;
+   try {
+-    window.localStorage.setItem(STORAGE_KEY, theme);
++    window.localStorage.setItem(LEGACY_THEME_STORAGE_KEY, theme);
+     themeStorageReadFailure = null;
+   } catch (cause) {
+     throw new ThemeStorageError({
+       operation: "write",
+-      storageKey: STORAGE_KEY,
++      storageKey: LEGACY_THEME_STORAGE_KEY,
+       theme,
+       cause,
+     });
+   }
  }
  
 -function getStored(): Theme {
--  if (!hasThemeStorage()) return DEFAULT_THEME_SNAPSHOT.theme;
--  const raw = localStorage.getItem(STORAGE_KEY);
--  if (raw === "light" || raw === "dark" || raw === "system") return raw;
--  return DEFAULT_THEME_SNAPSHOT.theme;
+-  if (themeStorageReadFailure !== null) {
+-    return DEFAULT_THEME_SNAPSHOT.theme;
 +function isThemeMode(value: string | null): value is ThemeMode {
 +  return value === "system" || value === "light" || value === "dark";
 +}
@@ -2261,7 +2122,7 @@ index 78d063a96..b08c6a0bb 100644
 +      accent: DEFAULT_ACCENT,
 +      darkFlavor: DEFAULT_DARK_FLAVOR,
 +    };
-+  }
+   }
 +
 +  if (!value?.startsWith("catppuccin-")) return null;
 +  const [, flavor, accent] = value.split("-");
@@ -2284,9 +2145,40 @@ index 78d063a96..b08c6a0bb 100644
 +function readStoredTheme(): StoredTheme {
 +  if (!hasThemeStorage()) return DEFAULT_THEME_SNAPSHOT;
 +
-+  const storedMode = localStorage.getItem(THEME_MODE_STORAGE_KEY);
-+  const storedAccent = localStorage.getItem(THEME_ACCENT_STORAGE_KEY);
-+  const storedDarkFlavor = localStorage.getItem(THEME_DARK_FLAVOR_STORAGE_KEY);
++  if (themeStorageReadFailure !== null) return DEFAULT_THEME_SNAPSHOT;
++
++  let storedMode: string | null;
++  let storedAccent: string | null;
++  let storedDarkFlavor: string | null;
++  let legacyTheme: string | null;
+   try {
+-    return readThemePreference();
++    storedMode = localStorage.getItem(THEME_MODE_STORAGE_KEY);
++    storedAccent = localStorage.getItem(THEME_ACCENT_STORAGE_KEY);
++    storedDarkFlavor = localStorage.getItem(THEME_DARK_FLAVOR_STORAGE_KEY);
++    legacyTheme = localStorage.getItem(LEGACY_THEME_STORAGE_KEY);
+   } catch (cause) {
+-    const error = isThemeStorageError(cause)
+-      ? cause
+-      : new ThemeStorageError({
+-          operation: "read",
+-          storageKey: STORAGE_KEY,
+-          cause,
+-        });
++    const error = new ThemeStorageError({
++      operation: "read",
++      storageKey: LEGACY_THEME_STORAGE_KEY,
++      cause,
++    });
+     themeStorageReadFailure = error;
+     console.error(error.message, {
+       operation: error.operation,
+       storageKey: error.storageKey,
+       ...safeErrorLogAttributes(error),
+     });
+-    return DEFAULT_THEME_SNAPSHOT.theme;
++    return DEFAULT_THEME_SNAPSHOT;
++  }
 +  const hasNewStorage = storedMode !== null || storedAccent !== null || storedDarkFlavor !== null;
 +
 +  if (hasNewStorage) {
@@ -2295,13 +2187,29 @@ index 78d063a96..b08c6a0bb 100644
 +      accent: isCatppuccinAccent(storedAccent) ? storedAccent : DEFAULT_ACCENT,
 +      darkFlavor: isCatppuccinDarkFlavor(storedDarkFlavor) ? storedDarkFlavor : DEFAULT_DARK_FLAVOR,
 +    };
-+  }
+   }
 +
-+  const migrated = parseLegacyTheme(localStorage.getItem(LEGACY_THEME_STORAGE_KEY));
++  const migrated = parseLegacyTheme(legacyTheme);
 +  if (migrated) {
-+    localStorage.setItem(THEME_MODE_STORAGE_KEY, migrated.themeMode);
-+    localStorage.setItem(THEME_ACCENT_STORAGE_KEY, migrated.accent);
-+    localStorage.setItem(THEME_DARK_FLAVOR_STORAGE_KEY, migrated.darkFlavor);
++    try {
++      localStorage.setItem(THEME_MODE_STORAGE_KEY, migrated.themeMode);
++      localStorage.setItem(THEME_ACCENT_STORAGE_KEY, migrated.accent);
++      localStorage.setItem(THEME_DARK_FLAVOR_STORAGE_KEY, migrated.darkFlavor);
++      themeStorageReadFailure = null;
++    } catch (cause) {
++      const error = new ThemeStorageError({
++        operation: "write",
++        storageKey: THEME_MODE_STORAGE_KEY,
++        theme: migrated.themeMode,
++        cause,
++      });
++      console.error(error.message, {
++        operation: error.operation,
++        storageKey: error.storageKey,
++        theme: error.theme,
++        ...safeErrorLogAttributes(error),
++      });
++    }
 +    return migrated;
 +  }
 +
@@ -2318,18 +2226,25 @@ index 78d063a96..b08c6a0bb 100644
  }
  
  function ensureThemeColorMetaTag(): HTMLMetaElement {
-@@ -87,17 +214,18 @@ export function syncBrowserChromeTheme() {
+@@ -173,24 +321,18 @@ export function syncBrowserChromeTheme() {
    ensureThemeColorMetaTag().setAttribute("content", backgroundColor);
  }
  
 -function applyTheme(theme: Theme, suppressTransitions = false) {
 +function applyTheme(storedTheme: StoredTheme, suppressTransitions = false) {
    if (typeof document === "undefined" || typeof window === "undefined") return;
+-  const systemDark = theme === "system" ? getSystemDark() : false;
+-  if (lastAppliedTheme?.theme === theme && lastAppliedTheme.systemDark === systemDark) {
+-    syncDesktopTheme(theme);
+-    return;
+-  }
+-
    if (suppressTransitions) {
      document.documentElement.classList.add("no-transitions");
    }
--  const isDark = theme === "dark" || (theme === "system" && getSystemDark());
+-  const isDark = theme === "dark" || (theme === "system" && systemDark);
 -  document.documentElement.classList.toggle("dark", isDark);
+-  lastAppliedTheme = { theme, systemDark };
 +  const resolvedTheme = resolveTheme(storedTheme.themeMode);
 +  document.documentElement.classList.toggle("dark", resolvedTheme === "dark");
 +  document.documentElement.dataset.catppuccinTheme = resolveCatppuccinDatasetValue(storedTheme);
@@ -2342,12 +2257,21 @@ index 78d063a96..b08c6a0bb 100644
      // oxlint-disable-next-line no-unused-expressions
      document.documentElement.offsetHeight;
      requestAnimationFrame(() => {
-@@ -106,36 +234,42 @@ function applyTheme(theme: Theme, suppressTransitions = false) {
+@@ -201,7 +343,7 @@ function applyTheme(theme: Theme, suppressTransitions = false) {
+ 
+ export async function syncDesktopThemePreference(
+   bridge: DesktopThemeBridge,
+-  theme: Theme,
++  theme: ThemeMode,
+ ): Promise<void> {
+   try {
+     await bridge.setTheme(theme);
+@@ -210,43 +352,49 @@ export async function syncDesktopThemePreference(
    }
  }
  
--function syncDesktopTheme(theme: Theme) {
-+function syncDesktopTheme(themeMode: ThemeMode) {
+-export function syncDesktopTheme(theme: Theme) {
++export function syncDesktopTheme(themeMode: ThemeMode) {
    if (typeof window === "undefined") return;
    const bridge = window.desktopBridge;
 -  if (!bridge || typeof bridge.setTheme !== "function" || lastDesktopTheme === theme) {
@@ -2356,10 +2280,18 @@ index 78d063a96..b08c6a0bb 100644
    }
  
 -  lastDesktopTheme = theme;
--  void bridge.setTheme(theme).catch(() => {
--    if (lastDesktopTheme === theme) {
+-  void syncDesktopThemePreference(bridge, theme).catch((cause: unknown) => {
 +  lastDesktopTheme = themeMode;
-+  void bridge.setTheme(themeMode).catch(() => {
++  void syncDesktopThemePreference(bridge, themeMode).catch((cause: unknown) => {
+     const error = isDesktopThemeSyncError(cause)
+       ? cause
+-      : new DesktopThemeSyncError({ theme, cause });
++      : new DesktopThemeSyncError({ theme: themeMode, cause });
+     console.error(error.message, {
+       theme: error.theme,
+       ...safeErrorLogAttributes(error),
+     });
+-    if (lastDesktopTheme === theme) {
 +    if (lastDesktopTheme === themeMode) {
        lastDesktopTheme = null;
      }
@@ -2367,16 +2299,18 @@ index 78d063a96..b08c6a0bb 100644
  }
  
 -// Apply immediately on module load to prevent flash
-+// Apply immediately on module load to prevent flash.
- if (typeof document !== "undefined" && hasThemeStorage()) {
+-if (typeof document !== "undefined" && typeof window !== "undefined") {
 -  applyTheme(getStored());
++// Apply immediately on module load to prevent flash.
++if (typeof document !== "undefined" && hasThemeStorage()) {
 +  applyTheme(readStoredTheme());
  }
  
  function getSnapshot(): ThemeSnapshot {
-   if (!hasThemeStorage()) return DEFAULT_THEME_SNAPSHOT;
+-  if (typeof window === "undefined") return DEFAULT_THEME_SNAPSHOT;
 -  const theme = getStored();
 -  const systemDark = theme === "system" ? getSystemDark() : false;
++  if (!hasThemeStorage()) return DEFAULT_THEME_SNAPSHOT;
 +  const storedTheme = readStoredTheme();
 +  const systemDark = storedTheme.themeMode === "system" ? getSystemDark() : false;
  
@@ -2396,44 +2330,70 @@ index 78d063a96..b08c6a0bb 100644
    return lastSnapshot;
  }
  
-@@ -147,18 +281,22 @@ function subscribe(listener: () => void): () => void {
+@@ -258,19 +406,23 @@ function subscribe(listener: () => void): () => void {
    if (typeof window === "undefined") return () => {};
    listeners.push(listener);
  
 -  // Listen for system preference changes
-   const mq = window.matchMedia(MEDIA_QUERY);
+-  const mq = typeof window.matchMedia === "function" ? window.matchMedia(MEDIA_QUERY) : null;
++  const mq = window.matchMedia(MEDIA_QUERY);
    const handleChange = () => {
 -    if (getStored() === "system") applyTheme("system", true);
 +    const storedTheme = readStoredTheme();
 +    if (storedTheme.themeMode === "system") applyTheme(storedTheme, true);
      emitChange();
    };
-   mq.addEventListener("change", handleChange);
+-  mq?.addEventListener("change", handleChange);
++  mq.addEventListener("change", handleChange);
  
 -  // Listen for storage changes from other tabs
    const handleStorage = (e: StorageEvent) => {
 -    if (e.key === STORAGE_KEY) {
--      applyTheme(getStored(), true);
 +    if (
 +      e.key === THEME_MODE_STORAGE_KEY ||
 +      e.key === THEME_ACCENT_STORAGE_KEY ||
 +      e.key === THEME_DARK_FLAVOR_STORAGE_KEY ||
 +      e.key === LEGACY_THEME_STORAGE_KEY
 +    ) {
+       themeStorageReadFailure = null;
+-      applyTheme(getStored(), true);
 +      applyTheme(readStoredTheme(), true);
        emitChange();
      }
    };
-@@ -171,24 +309,48 @@ function subscribe(listener: () => void): () => void {
+@@ -278,47 +430,70 @@ function subscribe(listener: () => void): () => void {
+ 
+   return () => {
+     listeners = listeners.filter((l) => l !== listener);
+-    mq?.removeEventListener("change", handleChange);
++    mq.removeEventListener("change", handleChange);
+     window.removeEventListener("storage", handleStorage);
    };
  }
  
 +function writeThemePatch(patch: Partial<StoredTheme>) {
 +  if (!hasThemeStorage()) return;
 +  const next = { ...readStoredTheme(), ...patch };
-+  localStorage.setItem(THEME_MODE_STORAGE_KEY, next.themeMode);
-+  localStorage.setItem(THEME_ACCENT_STORAGE_KEY, next.accent);
-+  localStorage.setItem(THEME_DARK_FLAVOR_STORAGE_KEY, next.darkFlavor);
++  try {
++    localStorage.setItem(THEME_MODE_STORAGE_KEY, next.themeMode);
++    localStorage.setItem(THEME_ACCENT_STORAGE_KEY, next.accent);
++    localStorage.setItem(THEME_DARK_FLAVOR_STORAGE_KEY, next.darkFlavor);
++    themeStorageReadFailure = null;
++  } catch (cause) {
++    const error = new ThemeStorageError({
++      operation: "write",
++      storageKey: THEME_MODE_STORAGE_KEY,
++      theme: next.themeMode,
++      cause,
++    });
++    console.error(error.message, {
++      operation: error.operation,
++      storageKey: error.storageKey,
++      theme: error.theme,
++      ...safeErrorLogAttributes(error),
++    });
++    return;
++  }
 +  applyTheme(next, true);
 +  emitChange();
 +}
@@ -2449,30 +2409,49 @@ index 78d063a96..b08c6a0bb 100644
 +  const isDarkThemeActive = resolvedTheme === "dark";
  
 -  const setTheme = useCallback((next: Theme) => {
--    if (!hasThemeStorage()) return;
--    localStorage.setItem(STORAGE_KEY, next);
+-    if (typeof window === "undefined") return;
+-    try {
+-      writeThemePreference(next);
+-    } catch (cause) {
+-      const error = isThemeStorageError(cause)
+-        ? cause
+-        : new ThemeStorageError({
+-            operation: "write",
+-            storageKey: STORAGE_KEY,
+-            theme: next,
+-            cause,
+-          });
+-      console.error(error.message, {
+-        operation: error.operation,
+-        storageKey: error.storageKey,
+-        theme: next,
+-        ...safeErrorLogAttributes(error),
+-      });
+-      return;
+-    }
 -    applyTheme(next, true);
 -    emitChange();
 +  const setThemeMode = useCallback((next: ThemeMode) => {
 +    writeThemePatch({ themeMode: next });
-+  }, []);
-+
-+  const setAccent = useCallback((next: CatppuccinAccent) => {
-+    writeThemePatch({ accent: next });
-+  }, []);
-+
-+  const setDarkFlavor = useCallback((next: CatppuccinDarkFlavor) => {
-+    writeThemePatch({ darkFlavor: next });
    }, []);
  
 -  // Keep DOM in sync on mount/change
-   useEffect(() => {
+-  useEffect(() => {
 -    applyTheme(theme);
 -  }, [theme]);
-+    applyTheme({ themeMode, accent, darkFlavor });
-+  }, [accent, darkFlavor, themeMode]);
++  const setAccent = useCallback((next: CatppuccinAccent) => {
++    writeThemePatch({ accent: next });
++  }, []);
  
 -  return { theme, setTheme, resolvedTheme } as const;
++  const setDarkFlavor = useCallback((next: CatppuccinDarkFlavor) => {
++    writeThemePatch({ darkFlavor: next });
++  }, []);
++
++  useEffect(() => {
++    applyTheme({ themeMode, accent, darkFlavor });
++  }, [accent, darkFlavor, themeMode]);
++
 +  return {
 +    themeMode,
 +    setThemeMode,
@@ -2485,7 +2464,7 @@ index 78d063a96..b08c6a0bb 100644
 +  } as const;
  }
 diff --git a/apps/web/src/index.css b/apps/web/src/index.css
-index 0f0417d43..84a785a67 100644
+index 3ea13641..218a2711 100644
 --- a/apps/web/src/index.css
 +++ b/apps/web/src/index.css
 @@ -1,4 +1,5 @@
@@ -2494,6 +2473,3 @@ index 0f0417d43..84a785a67 100644
  
  @custom-variant dark (&:is(.dark, .dark *));
  /* Window Controls Overlay: active when Electron exposes native titlebar control geometry. */
--- 
-2.54.0
-

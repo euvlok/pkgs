@@ -1,16 +1,17 @@
-From 8d4e0254299b584f761bc9275d721a932efd3bd1 Mon Sep 17 00:00:00 2001
-From: FlameFlag <git@ps1.sh>
-Date: Sun, 21 Jun 2026 17:42:00 +0300
+From 4e573efe5de952f112efc59fdf8e98f58752f6f5 Mon Sep 17 00:00:00 2001
+From: 4evy <git@evy.pink>
+Date: Sat, 11 Jul 2026 13:42:51 +0300
 Subject: [PATCH 2/2] Suppress disabled desktop update surfacing
 
 ---
- .../src/window/DesktopApplicationMenu.test.ts | 40 +++------
- .../src/window/DesktopApplicationMenu.ts      | 82 +------------------
+ .../src/window/DesktopApplicationMenu.test.ts | 40 +++-------
+ .../src/window/DesktopApplicationMenu.ts      | 74 +------------------
  .../web/src/components/desktopUpdate.logic.ts |  2 +-
- 3 files changed, 13 insertions(+), 111 deletions(-)
+ .../components/settings/SettingsPanels.tsx    | 17 ++++-
+ 4 files changed, 27 insertions(+), 106 deletions(-)
 
 diff --git a/apps/desktop/src/window/DesktopApplicationMenu.test.ts b/apps/desktop/src/window/DesktopApplicationMenu.test.ts
-index 62d619fe1..78c19059b 100644
+index ba77292f..d3e853b7 100644
 --- a/apps/desktop/src/window/DesktopApplicationMenu.test.ts
 +++ b/apps/desktop/src/window/DesktopApplicationMenu.test.ts
 @@ -3,17 +3,14 @@ import { assert, describe, it } from "@effect/vitest";
@@ -33,14 +34,14 @@ index 62d619fe1..78c19059b 100644
  const environmentInput = {
 @@ -48,24 +45,6 @@ const electronAppLayer = Layer.succeed(ElectronApp.ElectronApp, {
    on: () => Effect.void,
- } satisfies ElectronApp.ElectronAppShape);
+ } satisfies ElectronApp.ElectronApp["Service"]);
  
 -const electronDialogLayer = Layer.succeed(ElectronDialog.ElectronDialog, {
 -  pickFolder: () => Effect.succeed(Option.none()),
 -  confirm: () => Effect.succeed(false),
 -  showMessageBox: () => Effect.succeed({ response: 0, checkboxChecked: false }),
 -  showErrorBox: () => Effect.void,
--} satisfies ElectronDialog.ElectronDialogShape);
+-} satisfies ElectronDialog.ElectronDialog["Service"]);
 -
 -const desktopUpdatesLayer = Layer.succeed(DesktopUpdates.DesktopUpdates, {
 -  getState: Effect.die("unexpected getState"),
@@ -51,12 +52,12 @@ index 62d619fe1..78c19059b 100644
 -  check: () => Effect.die("unexpected check"),
 -  download: Effect.die("unexpected download"),
 -  install: Effect.die("unexpected install"),
--} satisfies DesktopUpdates.DesktopUpdatesShape);
+-} satisfies DesktopUpdates.DesktopUpdates["Service"]);
 -
  const makeDesktopWindowLayer = (selectedAction: Deferred.Deferred<string>) =>
    Layer.succeed(DesktopWindow.DesktopWindow, {
      createMain: Effect.die("unexpected createMain"),
-@@ -100,14 +79,12 @@ describe("DesktopApplicationMenu", () => {
+@@ -102,14 +81,12 @@ describe("DesktopApplicationMenu", () => {
          yield* menu.configure;
        }).pipe(
          Effect.provide(
@@ -77,7 +78,7 @@ index 62d619fe1..78c19059b 100644
                  Layer.provide(Layer.mergeAll(NodeServices.layer, DesktopConfig.layerTest({}))),
                ),
              ),
-@@ -116,6 +93,11 @@ describe("DesktopApplicationMenu", () => {
+@@ -118,6 +95,11 @@ describe("DesktopApplicationMenu", () => {
        );
  
        const template = yield* Deferred.await(applicationMenuTemplate);
@@ -90,18 +91,19 @@ index 62d619fe1..78c19059b 100644
        assert.isDefined(fileMenu);
        if (!Array.isArray(fileMenu.submenu)) {
 diff --git a/apps/desktop/src/window/DesktopApplicationMenu.ts b/apps/desktop/src/window/DesktopApplicationMenu.ts
-index 2d41fa9db..0feb737a9 100644
+index a5270762..dc2d6c77 100644
 --- a/apps/desktop/src/window/DesktopApplicationMenu.ts
 +++ b/apps/desktop/src/window/DesktopApplicationMenu.ts
-@@ -2,16 +2,13 @@ import * as Cause from "effect/Cause";
+@@ -1,17 +1,14 @@
  import * as Context from "effect/Context";
  import * as Effect from "effect/Effect";
  import * as Layer from "effect/Layer";
 -import * as Option from "effect/Option";
+ import * as Schema from "effect/Schema";
  
  import type * as Electron from "electron";
  
- import * as DesktopObservability from "../app/DesktopObservability.ts";
+ import { makeComponentLogger } from "../app/DesktopObservability.ts";
  import * as ElectronApp from "../electron/ElectronApp.ts";
 -import * as ElectronDialog from "../electron/ElectronDialog.ts";
  import * as ElectronMenu from "../electron/ElectronMenu.ts";
@@ -109,9 +111,9 @@ index 2d41fa9db..0feb737a9 100644
 -import * as DesktopUpdates from "../updates/DesktopUpdates.ts";
  import * as DesktopWindow from "./DesktopWindow.ts";
  
- export interface DesktopApplicationMenuShape {
-@@ -23,12 +20,7 @@ export class DesktopApplicationMenu extends Context.Service<
-   DesktopApplicationMenuShape
+ export class DesktopApplicationMenuActionError extends Schema.TaggedErrorClass<DesktopApplicationMenuActionError>()(
+@@ -33,12 +30,7 @@ export class DesktopApplicationMenu extends Context.Service<
+   }
  >()("@t3tools/desktop/window/DesktopApplicationMenu") {}
  
 -type DesktopApplicationMenuRuntimeServices =
@@ -119,20 +121,16 @@ index 2d41fa9db..0feb737a9 100644
 -  | DesktopWindow.DesktopWindow
 -  | ElectronDialog.ElectronDialog;
 -
--const { logInfo: logUpdaterInfo } = DesktopObservability.makeComponentLogger("desktop-updater");
+-const { logInfo: logUpdaterInfo } = makeComponentLogger("desktop-updater");
 +type DesktopApplicationMenuRuntimeServices = DesktopWindow.DesktopWindow;
  
- const { logError: logMenuError } = DesktopObservability.makeComponentLogger("desktop-menu");
+ const { logError: logMenuError } = makeComponentLogger("desktop-menu");
  
-@@ -39,61 +31,6 @@ const dispatchMenuAction = Effect.fn("desktop.menu.dispatchMenuAction")(function
+@@ -49,53 +41,6 @@ const dispatchMenuAction = Effect.fn("desktop.menu.dispatchMenuAction")(function
    yield* desktopWindow.dispatchMenuAction(action);
  });
  
--const checkForUpdatesFromMenu: Effect.Effect<
--  void,
--  never,
--  DesktopUpdates.DesktopUpdates | ElectronDialog.ElectronDialog
--> = Effect.gen(function* () {
+-const checkForUpdatesFromMenu = Effect.gen(function* () {
 -  const updates = yield* DesktopUpdates.DesktopUpdates;
 -  const electronDialog = yield* ElectronDialog.ElectronDialog;
 -  const result = yield* updates.check("menu");
@@ -156,11 +154,7 @@ index 2d41fa9db..0feb737a9 100644
 -  }
 -}).pipe(Effect.withSpan("desktop.menu.checkForUpdates"));
 -
--const handleCheckForUpdatesMenuClick: Effect.Effect<
--  void,
--  DesktopWindow.DesktopWindowError,
--  DesktopUpdates.DesktopUpdates | ElectronDialog.ElectronDialog | DesktopWindow.DesktopWindow
--> = Effect.gen(function* () {
+-const handleCheckForUpdatesMenuClick = Effect.gen(function* () {
 -  const updates = yield* DesktopUpdates.DesktopUpdates;
 -  const electronDialog = yield* ElectronDialog.ElectronDialog;
 -  const disabledReason = yield* updates.disabledReason;
@@ -183,10 +177,10 @@ index 2d41fa9db..0feb737a9 100644
 -  yield* checkForUpdatesFromMenu;
 -}).pipe(Effect.withSpan("desktop.menu.handleCheckForUpdatesClick"));
 -
- const make = Effect.gen(function* () {
+ export const make = Effect.gen(function* () {
    const electronApp = yield* ElectronApp.ElectronApp;
    const electronMenu = yield* ElectronMenu.ElectronMenu;
-@@ -121,9 +58,6 @@ const make = Effect.gen(function* () {
+@@ -121,9 +66,6 @@ export const make = Effect.gen(function* () {
    };
  
    const configure = Effect.gen(function* () {
@@ -196,7 +190,7 @@ index 2d41fa9db..0feb737a9 100644
      const settingsClick = () => {
        runMenuEffect("open-settings", dispatchMenuAction("open-settings"));
      };
-@@ -134,11 +68,6 @@ const make = Effect.gen(function* () {
+@@ -134,11 +76,6 @@ export const make = Effect.gen(function* () {
          label: appName,
          submenu: [
            { role: "about" },
@@ -208,7 +202,7 @@ index 2d41fa9db..0feb737a9 100644
            {
              label: "Settings...",
              accelerator: "CmdOrCtrl+,",
-@@ -190,15 +119,6 @@ const make = Effect.gen(function* () {
+@@ -190,15 +127,6 @@ export const make = Effect.gen(function* () {
          ],
        },
        { role: "windowMenu" },
@@ -225,7 +219,7 @@ index 2d41fa9db..0feb737a9 100644
  
      yield* electronMenu.setApplicationMenu(template);
 diff --git a/apps/web/src/components/desktopUpdate.logic.ts b/apps/web/src/components/desktopUpdate.logic.ts
-index 38983c810..66beba28d 100644
+index 38983c81..66beba28 100644
 --- a/apps/web/src/components/desktopUpdate.logic.ts
 +++ b/apps/web/src/components/desktopUpdate.logic.ts
 @@ -30,7 +30,7 @@ export function shouldShowDesktopUpdateButton(state: DesktopUpdateState | null):
@@ -237,6 +231,63 @@ index 38983c810..66beba28d 100644
  }
  
  export function isDesktopUpdateButtonDisabled(state: DesktopUpdateState | null): boolean {
--- 
-2.54.0
-
+diff --git a/apps/web/src/components/settings/SettingsPanels.tsx b/apps/web/src/components/settings/SettingsPanels.tsx
+index c7d34b25..2295e6f2 100644
+--- a/apps/web/src/components/settings/SettingsPanels.tsx
++++ b/apps/web/src/components/settings/SettingsPanels.tsx
+@@ -163,6 +163,7 @@ function AboutVersionSection() {
+   const updateState = useDesktopUpdateState();
+   const [isChangingUpdateChannel, setIsChangingUpdateChannel] = useState(false);
+ 
++  const updatesEnabled = updateState?.enabled === true;
+   const hasDesktopBridge = typeof window !== "undefined" && Boolean(window.desktopBridge);
+   const selectedUpdateChannel = updateState?.channel ?? "latest";
+   const selectedHostedAppChannel = hasDesktopBridge ? null : HOSTED_APP_CHANNEL;
+@@ -171,6 +172,7 @@ function AboutVersionSection() {
+     (channel: DesktopUpdateChannel) => {
+       const bridge = window.desktopBridge;
+       if (
++        !updatesEnabled ||
+         !bridge ||
+         typeof bridge.setUpdateChannel !== "function" ||
+         channel === selectedUpdateChannel
+@@ -194,12 +196,12 @@ function AboutVersionSection() {
+           setIsChangingUpdateChannel(false);
+         });
+     },
+-    [selectedUpdateChannel],
++    [selectedUpdateChannel, updatesEnabled],
+   );
+ 
+   const handleButtonClick = useCallback(() => {
+     const bridge = window.desktopBridge;
+-    if (!bridge) return;
++    if (!updatesEnabled || !bridge) return;
+ 
+     const action = updateState ? resolveDesktopUpdateButtonAction(updateState) : "none";
+ 
+@@ -259,7 +261,7 @@ function AboutVersionSection() {
+           }),
+         );
+       });
+-  }, [updateState]);
++  }, [updateState, updatesEnabled]);
+ 
+   const action = updateState ? resolveDesktopUpdateButtonAction(updateState) : "none";
+   const buttonTooltip = updateState ? getDesktopUpdateButtonTooltip(updateState) : null;
+@@ -281,6 +283,15 @@ function AboutVersionSection() {
+       ? "Update available."
+       : "Current version of the application.";
+ 
++  if (!updatesEnabled) {
++    return (
++      <SettingsRow
++        title={<AboutVersionTitle />}
++        description="Current version of the application."
++      />
++    );
++  }
++
+   return (
+     <>
+       <SettingsRow
