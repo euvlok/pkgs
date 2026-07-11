@@ -55,12 +55,6 @@ version="${upstream_version}-unstable-${date}"
 current_version=$(jq -r .version source.json)
 current_rev=$(jq -r '.rev // empty' source.json)
 nix_system=$(nix eval --impure --raw --expr builtins.currentSystem)
-current_system_mvn_hash=$(jq -r --arg system "$nix_system" '.mavenHashes[$system] // empty' source.json)
-
-if [[ "$current_rev" == "$rev" && "$current_version" == "$version" && -n "$current_system_mvn_hash" ]]; then
-  echo "ghidra-mcp-headless already at ${branch}: ${version} (${rev})"
-  exit 0
-fi
 
 if [[ "$current_rev" == "$rev" ]]; then
   src_hash=$(jq -r .srcHash source.json)
@@ -93,8 +87,9 @@ jq -n \
 cp package.nix update.sh "$tmp_pkg/"
 
 repo_root=$(realpath ../../../..)
+nixpkgs_path=$(nix eval --impure --raw "$repo_root#legacyPackages.${nix_system}.path")
 build_log=$(nix build --impure --no-link --print-build-logs \
-  --expr "with import $repo_root {}; callPackage $tmp_pkg/package.nix {}" 2>&1 || true)
+  --expr "with import $nixpkgs_path { system = \"$nix_system\"; }; callPackage $tmp_pkg/package.nix {}" 2>&1 || true)
 mvn_hash=$(echo "$build_log" | awk '/got: +sha256-/ {print $2; exit}')
 
 if [[ -z "$mvn_hash" ]]; then
