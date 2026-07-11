@@ -5,7 +5,6 @@
   fetchFromGitHub,
   runCommand,
   symlinkJoin,
-  patch,
   python313,
   python313Packages,
   maven,
@@ -27,19 +26,14 @@ let
     mavenHashes.${stdenv.hostPlatform.system}
       or (throw "missing ghidra-mcp-headless mvnHash for ${stdenv.hostPlatform.system}");
   mvnParameters = lib.strings.escapeShellArgs [ "-Pheadless" ];
+  mvnDepsGhidraVersion = "0";
 
-  upstreamSrc = fetchFromGitHub {
+  src = fetchFromGitHub {
     owner = "bethington";
     repo = "ghidra-mcp";
     rev = upstreamRev;
     hash = sources.srcHash;
   };
-
-  src = runCommand "ghidra-mcp-${packageVersion}-patched" { nativeBuildInputs = [ patch ]; } ''
-    cp -R "${upstreamSrc}/." "$out"
-    chmod -R u+w "$out"
-    patch -d "$out" -p1 < "${./bridge-auth-token.patch}"
-  '';
 
   mcpSdkVersion = "1.28.1";
   mcp = python313Packages.mcp.overridePythonAttrs (old: {
@@ -175,19 +169,43 @@ let
   # Upstream resolves Ghidra artifacts through Maven, but nixpkgs packages
   # Ghidra as an application tree. Install the required jars into the local
   # Maven repository used by both dependency fetching and the offline build.
-  installGhidraMavenDeps = repo: ''
-    mkdir -p "${repo}"
-    ${lib.strings.concatMapStringsSep "\n" (path: ''
-      mvn org.apache.maven.plugins:maven-install-plugin:3.1.2:install-file \
-        -Dmaven.repo.local="${repo}" \
-        -Dfile="${ghidra}/lib/ghidra/Ghidra/${path}" \
-        -DgroupId="ghidra" \
-        -DartifactId="${lib.strings.removeSuffix ".jar" (baseNameOf path)}" \
-        -Dversion="${ghidra.version}" \
-        -Dpackaging="jar" \
-        -DgeneratePom="true"
-    '') requiredGhidraJarPaths}
+  installGhidraMavenDeps =
+    {
+      repo,
+      version,
+      jar,
+    }:
+    ''
+      mkdir -p "${repo}"
+      ${lib.strings.concatMapStringsSep "\n" (path: ''
+        mvn org.apache.maven.plugins:maven-install-plugin:3.1.2:install-file \
+          -Dmaven.repo.local="${repo}" \
+          -Dfile="${jar path}" \
+          -DgroupId="ghidra" \
+          -DartifactId="${lib.strings.removeSuffix ".jar" (baseNameOf path)}" \
+          -Dversion="${version}" \
+          -Dpackaging="jar" \
+          -DgeneratePom="true"
+      '') requiredGhidraJarPaths}
+    '';
+
+  installGhidraMavenStubs = repo: ''
+    stub_jar="$TMPDIR/ghidra-maven-stub.jar"
+    touch "$stub_jar"
+    ${installGhidraMavenDeps {
+      inherit repo;
+      version = mvnDepsGhidraVersion;
+      jar = _: "$stub_jar";
+    }}
   '';
+
+  installGhidraMavenJars =
+    repo:
+    installGhidraMavenDeps {
+      inherit repo;
+      version = ghidra.version;
+      jar = path: "${ghidra}/lib/ghidra/Ghidra/${path}";
+    };
 
   normalizeGhidraMavenMetadata = repo: ''
     find "${repo}/ghidra" -name maven-metadata-local.xml -exec \
@@ -206,7 +224,14 @@ let
     strictDeps = true;
     inherit mvnHash;
     inherit mvnParameters;
-    mvnDepsParameters = mvnParameters;
+    # The fetched Maven repository must not embed nixpkgs' Ghidra output:
+    # overlay consumers can have different Ghidra store paths and contents.
+    # Resolve against deterministic stubs, then install the real jars only in
+    # the ordinary (non-fixed-output) build.
+    mvnDepsParameters = lib.strings.escapeShellArgs [
+      "-Pheadless"
+      "-Dghidra.version=${mvnDepsGhidraVersion}"
+    ];
 
     nativeBuildInputs = [
       stripJavaArchivesHook
@@ -225,11 +250,11 @@ let
     '';
 
     mvnFetchExtraArgs = {
-      preBuild = installGhidraMavenDeps "$out/.m2";
+      preBuild = installGhidraMavenStubs "$out/.m2";
       postInstall = normalizeGhidraMavenMetadata "$out/.m2";
     };
 
-    afterDepsSetup = installGhidraMavenDeps "$mvnDeps/.m2";
+    afterDepsSetup = installGhidraMavenJars "$mvnDeps/.m2";
 
     installPhase = ''
       runHook preInstall
@@ -453,7 +478,6 @@ symlinkJoin {
       server
       src
       tests
-      upstreamSrc
       ;
     upstreamVersion = jarVersion;
     components = {

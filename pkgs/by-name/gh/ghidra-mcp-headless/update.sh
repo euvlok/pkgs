@@ -90,7 +90,7 @@ jq -n \
     mavenHashes: {($system): $mvnHash}
   }' \
   >"$tmp_pkg/source.json"
-cp package.nix bridge-auth-token.patch update.sh "$tmp_pkg/"
+cp package.nix update.sh "$tmp_pkg/"
 
 repo_root=$(realpath ../../../..)
 build_log=$(nix build --impure --no-link --print-build-logs \
