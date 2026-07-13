@@ -2,18 +2,48 @@
   yt-dlp,
   fetchFromGitHub,
   lib,
+  stdenvNoCC,
+  python3Packages,
+  deno,
+  jsRuntime ? deno,
+  atomicparsleySupport ? true,
+  ffmpegSupport ? true,
+  javascriptSupport ? true,
+  rtmpSupport ? true,
+  withAlias ? false,
+  withSecretStorage ? !stdenvNoCC.hostPlatform.isDarwin,
+  ...
 }:
 let
-  upstreamVersion = "2026.07.04-unstable-2026-07-12";
+  sources = lib.importJSON ./source.json;
+  upstreamVersion = sources.version;
+  baseYtDlp = yt-dlp.override {
+    inherit
+      atomicparsleySupport
+      ffmpegSupport
+      javascriptSupport
+      jsRuntime
+      python3Packages
+      rtmpSupport
+      withAlias
+      withSecretStorage
+      ;
+  };
 in
-yt-dlp.overrideAttrs (
+baseYtDlp.overrideAttrs (
   prevAttrs:
   lib.optionalAttrs (lib.versionOlder prevAttrs.version upstreamVersion) {
     version = upstreamVersion;
     src = fetchFromGitHub {
       inherit (prevAttrs.src) owner repo;
-      rev = "d9813a3da6959662841dfb34cad0ee6c07a65d1e";
-      hash = "sha256-fJVsq9PUjJquprNrBfexbjPgk8yl+GCxMhBHf6365OU=";
+      rev = sources.rev;
+      hash = sources.srcHash;
+    };
+  }
+  // {
+    passthru = (prevAttrs.passthru or { }) // {
+      updateScript = ./update.sh;
+      inherit upstreamVersion;
     };
   }
 )
