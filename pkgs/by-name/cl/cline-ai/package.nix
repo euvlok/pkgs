@@ -10,14 +10,15 @@
 }:
 
 let
-  version = "3.89.2";
+  sources = lib.importJSON ./source.json;
+  inherit (sources) version;
   nodejs = nodejs_22;
 
   src = fetchFromGitHub {
     owner = "cline";
     repo = "cline";
-    tag = "v${version}";
-    hash = "sha256-m7aJyKHFFvp71PWtbOPGWiiz04znk3Vh7pZjwGa/QPM=";
+    tag = sources.rev;
+    hash = sources.srcHash;
   };
 
   rootSrc = runCommand "cline-ai-src-${version}" { } ''
@@ -37,7 +38,7 @@ let
     inherit version nodejs;
     src = webviewSrc;
     npmDepsFetcherVersion = 2;
-    npmDepsHash = "sha256-GN+GqdCFO34t5A/XFlBdxkHb5/XZ83PRQi8guHYo8Xs=";
+    npmDepsHash = sources.webviewNpmDepsHash;
 
     dontNpmBuild = true;
 
@@ -56,7 +57,7 @@ let
     inherit version nodejs;
     src = rootSrc;
     npmDepsFetcherVersion = 2;
-    npmDepsHash = "sha256-vkRDwqMBbn/jG7psOJZj/XKR2UG4oCmIyIJL2nXkojw=";
+    npmDepsHash = sources.vscodeNpmDepsHash;
     npmRebuildFlags = [ "--ignore-scripts" ];
 
     postPatch = ''
