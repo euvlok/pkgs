@@ -4,11 +4,12 @@
   lib,
 }:
 let
-  upstreamVersion = "pr-33649-assets-unstable-2026-06-24";
+  sources = lib.importJSON ./source.json;
+  upstreamVersion = sources.version;
   upstreamSrc = fetchFromGitHub {
     inherit (opencode.src) owner repo;
-    tag = "v${upstreamVersion}";
-    hash = "sha256-IpTD4YCgGNtYlZ6EoyY+YLD81rIFR0D2A4W3uhWSSfo=";
+    rev = sources.rev;
+    hash = sources.srcHash;
   };
 in
 opencode.overrideAttrs (
@@ -19,7 +20,13 @@ opencode.overrideAttrs (
     node_modules = prevAttrs.node_modules.overrideAttrs {
       version = upstreamVersion;
       src = upstreamSrc;
-      outputHash = "sha256-ERywlcNEF9EUW3JDGH8987g+GAj76RylUtegqMvStyg=";
+      outputHash = sources.nodeModulesHash;
+    };
+  }
+  // {
+    passthru = (prevAttrs.passthru or { }) // {
+      updateScript = ./update.sh;
+      inherit upstreamVersion;
     };
   }
 )
