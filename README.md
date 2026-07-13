@@ -7,8 +7,23 @@ although it can be used by other repos as well too
 
 ### Binary cache
 
-This flake does not configure a project binary cache. Builds use the substituters
-from your local Nix configuration.
+This flake advertises the public `eupkgs` Cachix cache through `nixConfig`:
+
+```nix
+extra-substituters = [ "https://eupkgs.cachix.org" ];
+extra-trusted-public-keys = [
+  "eupkgs.cachix.org-1:V9Y0HdASNNSU9U6EkXhR1j85bZGRtNgW7wSyTiQrwGU="
+];
+```
+
+Accept the flake configuration when Nix prompts to download prebuilt packages
+from Cachix instead of building them locally. For non-interactive use, pass
+`--accept-flake-config`. Multi-user Nix installations may require a trusted
+administrator to add the same substituter and public key system-wide.
+
+GitHub Actions pulls from this cache for all checks. Builds on `master` and
+manually dispatched builds also push successful results using the repository's
+`CACHIX_AUTH_TOKEN`; pull requests remain read-only.
 
 ### Add as a flake input
 
