@@ -4,6 +4,7 @@
   "rev": "c0d1fb8fdf353826ba06bda92092371cf6d70130",
   "srcHash": "sha256-eOmeLutIvRbrvjjot1yLqgyV5LBX0xcciS5oSamI0BM=",
   "mavenHashes": {
-    "x86_64-linux": "sha256-v8yojXlKXOkMLKxBK9RtlEx16QtaqZT1xU5CprDJVbw="
+    "x86_64-linux": "sha256-v8yojXlKXOkMLKxBK9RtlEx16QtaqZT1xU5CprDJVbw=",
+    "aarch64-darwin": "sha256-v8yojXlKXOkMLKxBK9RtlEx16QtaqZT1xU5CprDJVbw="
   }
 }
