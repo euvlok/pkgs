@@ -1,6 +1,5 @@
 {
   lib,
-  stdenv,
   ghidra,
   fetchFromGitHub,
   runCommand,
@@ -20,11 +19,8 @@ let
   packageVersion = sources.version;
   jarVersion = sources.upstreamVersion or packageVersion;
   upstreamRev = sources.rev or "v${jarVersion}";
-  mavenHashes = sources.mavenHashes or { };
-  supportedSystems = builtins.attrNames mavenHashes;
-  mvnHash =
-    mavenHashes.${stdenv.hostPlatform.system}
-      or (throw "missing ghidra-mcp-headless mvnHash for ${stdenv.hostPlatform.system}");
+  supportedSystems = lib.lists.intersectLists ghidra.meta.platforms jdk21.meta.platforms;
+  mvnHash = sources.mvnHash;
   mvnParameters = lib.strings.escapeShellArgs [ "-Pheadless" ];
   mvnDepsGhidraVersion = "0";
 
@@ -35,19 +31,25 @@ let
     hash = sources.srcHash;
   };
 
-  mcpSdkVersion = "1.28.1";
+  mcpSdkVersion = sources.mcpSdkVersion;
   mcp = python313Packages.mcp.overridePythonAttrs (old: {
     version = mcpSdkVersion;
     src = fetchFromGitHub {
       owner = "modelcontextprotocol";
       repo = "python-sdk";
       tag = "v${mcpSdkVersion}";
-      hash = "sha256-8nifuun7ShtniimsFr9gYPpjwZEM/5E51GDmZRxQGEc=";
+      hash = sources.mcpSrcHash;
     };
-    dependencies = (old.dependencies or [ ]) ++ [
-      python313Packages.typing-extensions
-      python313Packages.typing-inspection
-    ];
+    dependencies = lib.unique (
+      (old.dependencies or [ ])
+      ++ [
+        python313Packages.typing-extensions
+        python313Packages.typing-inspection
+      ]
+    );
+    # The nixpkgs expression being overridden may target an older SDK test
+    # suite. The bridge checks below exercise this SDK through the consumer
+    # that is actually shipped here.
     doCheck = false;
   });
   bridgePython = python313.withPackages (_: [ mcp ]);
@@ -56,6 +58,8 @@ let
     pname = "ghidra-mcp-bridge";
     version = packageVersion;
     pyproject = true;
+    strictDeps = true;
+    __structuredAttrs = true;
 
     inherit src;
 
@@ -69,12 +73,32 @@ let
 
     pythonImportsCheck = [ "bridge_mcp_ghidra" ];
 
-    # Upstream's checks use uv dependency groups and cover the bridge plus
-    # optional debugger/fun-doc/test subsystems. This derivation intentionally
-    # ships only the bridge runtime declared by [project.dependencies].
-    doCheck = false;
+    nativeCheckInputs = [
+      python313Packages.pytestCheckHook
+      python313Packages.requests
+    ];
 
-    meta = commonMeta // {
+    # Upstream's default pytest configuration pulls in the repository's
+    # optional debugger and fun-doc dependency groups. Run the complete
+    # offline bridge/invariant subset against the minimal shipped runtime.
+    preCheck = "touch pytest-empty.ini";
+    pytestFlags = [
+      "-c"
+      "pytest-empty.ini"
+      "tests/unit/test_bridge_cli.py"
+      "tests/unit/test_bridge_utils.py"
+      "tests/unit/test_endpoint_catalog.py"
+      "tests/unit/test_mcp_tools.py"
+      "tests/unit/test_no_default_data_egress.py"
+      "tests/unit/test_project_consistency.py"
+      "tests/unit/test_response_schemas.py"
+      "tests/unit/test_static_tools.py"
+      "tests/unit/test_transport_network.py"
+    ];
+
+    __darwinAllowLocalNetworking = true;
+
+    meta = bridgeMeta // {
       description = "Ghidra MCP Python bridge";
       mainProgram = "bridge-mcp-ghidra";
     };
@@ -84,9 +108,19 @@ let
 
   commonMeta = {
     homepage = "https://github.com/bethington/ghidra-mcp";
-    changelog = sources.changelog or "https://github.com/bethington/ghidra-mcp/commits/${upstreamRev}";
+    changelog = "https://github.com/bethington/ghidra-mcp/blob/${upstreamRev}/CHANGELOG.md";
     license = lib.licenses.asl20;
-    platforms = lib.lists.intersectLists ghidra.meta.platforms supportedSystems;
+    platforms = supportedSystems;
+    sourceProvenance = with lib.sourceTypes; [ fromSource ];
+  };
+
+  # The bridge can connect to a Ghidra server on another host and therefore
+  # does not inherit the local Ghidra application's narrower platform set.
+  bridgeMeta = commonMeta // {
+    platforms = python313.meta.platforms;
+  };
+
+  javaMeta = commonMeta // {
     sourceProvenance = with lib.sourceTypes; [
       fromSource
       binaryBytecode
@@ -159,7 +193,6 @@ let
   ];
 
   bridgeFlags = lib.strings.concatStringsSep " " [
-    "-m bridge_mcp_ghidra"
     "--transport \"$GHIDRA_MCP_BRIDGE_TRANSPORT\""
     "--mcp-host \"$GHIDRA_MCP_BRIDGE_HOST\""
     "--mcp-port \"$GHIDRA_MCP_BRIDGE_PORT\""
@@ -167,8 +200,9 @@ let
   ];
 
   # Upstream resolves Ghidra artifacts through Maven, but nixpkgs packages
-  # Ghidra as an application tree. Install the required jars into the local
-  # Maven repository used by both dependency fetching and the offline build.
+  # Ghidra as an application tree. Populate the local Maven layout directly:
+  # invoking Maven once per jar adds substantial JVM startup time and only
+  # produces these same jar/POM pairs.
   installGhidraMavenDeps =
     {
       repo,
@@ -177,16 +211,27 @@ let
     }:
     ''
       mkdir -p "${repo}"
-      ${lib.strings.concatMapStringsSep "\n" (path: ''
-        mvn org.apache.maven.plugins:maven-install-plugin:3.1.2:install-file \
-          -Dmaven.repo.local="${repo}" \
-          -Dfile="${jar path}" \
-          -DgroupId="ghidra" \
-          -DartifactId="${lib.strings.removeSuffix ".jar" (baseNameOf path)}" \
-          -Dversion="${version}" \
-          -Dpackaging="jar" \
-          -DgeneratePom="true"
-      '') requiredGhidraJarPaths}
+      ${lib.strings.concatMapStringsSep "\n" (
+        path:
+        let
+          artifactId = lib.strings.removeSuffix ".jar" (baseNameOf path);
+          artifactDir = "${repo}/ghidra/${artifactId}/${version}";
+        in
+        ''
+          install -Dm444 "${jar path}" \
+            "${artifactDir}/${artifactId}-${version}.jar"
+          printf '%s\n' \
+            '<?xml version="1.0" encoding="UTF-8"?>' \
+            '<project xmlns="http://maven.apache.org/POM/4.0.0">' \
+            '  <modelVersion>4.0.0</modelVersion>' \
+            '  <groupId>ghidra</groupId>' \
+            '  <artifactId>${artifactId}</artifactId>' \
+            '  <version>${version}</version>' \
+            '  <packaging>jar</packaging>' \
+            '</project>' \
+            > "${artifactDir}/${artifactId}-${version}.pom"
+        ''
+      ) requiredGhidraJarPaths}
     '';
 
   installGhidraMavenStubs = repo: ''
@@ -207,11 +252,6 @@ let
       jar = path: "${ghidra}/lib/ghidra/Ghidra/${path}";
     };
 
-  normalizeGhidraMavenMetadata = repo: ''
-    find "${repo}/ghidra" -name maven-metadata-local.xml -exec \
-      sed -i 's#<lastUpdated>.*</lastUpdated>#<lastUpdated>19700101000000</lastUpdated>#' {} +
-  '';
-
   server = maven.buildMavenPackage (finalAttrs: {
     pname = "ghidra-mcp-headless-server";
     version = packageVersion;
@@ -219,7 +259,6 @@ let
     inherit src;
 
     mvnJdk = jdk21;
-    doCheck = false;
     buildOffline = true;
     strictDeps = true;
     inherit mvnHash;
@@ -231,6 +270,11 @@ let
     mvnDepsParameters = lib.strings.escapeShellArgs [
       "-Pheadless"
       "-Dghidra.version=${mvnDepsGhidraVersion}"
+    ];
+    # go-offline-maven-plugin does not discover Surefire's dynamically
+    # selected JUnit 4 provider.
+    manualMvnArtifacts = [
+      "org.apache.maven.surefire:surefire-junit4:3.5.6"
     ];
 
     nativeBuildInputs = [
@@ -251,7 +295,6 @@ let
 
     mvnFetchExtraArgs = {
       preBuild = installGhidraMavenStubs "$out/.m2";
-      postInstall = normalizeGhidraMavenMetadata "$out/.m2";
     };
 
     afterDepsSetup = installGhidraMavenJars "$mvnDeps/.m2";
@@ -267,7 +310,7 @@ let
 
     passthru.upstreamVersion = jarVersion;
 
-    meta = commonMeta // {
+    meta = javaMeta // {
       description = "Ghidra MCP headless Java server jar";
     };
   });
@@ -278,7 +321,7 @@ let
         version = jarVersion;
         nativeBuildInputs = [ makeWrapper ];
         passthru.upstreamVersion = jarVersion;
-        meta = commonMeta // {
+        meta = javaMeta // {
           description = "Ghidra MCP headless HTTP daemon";
           mainProgram = "ghidra-mcp-httpd";
         };
@@ -322,7 +365,7 @@ let
         version = jarVersion;
         nativeBuildInputs = [ makeWrapper ];
         passthru.upstreamVersion = jarVersion;
-        meta = commonMeta // {
+        meta = bridgeMeta // {
           description = "Ghidra MCP Python bridge";
           mainProgram = "ghidra-mcp-bridge";
         };
@@ -330,13 +373,10 @@ let
       ''
         mkdir -p "$out/bin"
         makeWrapper "${lib.meta.getExe bridgeApp}" "$out/bin/ghidra-mcp-bridge" \
-          --set-default GHIDRA_MCP_BIND_ADDRESS "127.0.0.1" \
-          --set-default GHIDRA_MCP_PORT "8089" \
           --set-default GHIDRA_DEBUGGER_URL "http://127.0.0.1:8099" \
           --set PYTHONDONTWRITEBYTECODE "1" \
           --set PYTHONNOUSERSITE "1" \
           --run 'export GHIDRA_MCP_STATE="''${GHIDRA_MCP_STATE:-${stateDefault}}"' \
-          --run 'export GHIDRA_MCP_BIND="''${GHIDRA_MCP_BIND:-$GHIDRA_MCP_BIND_ADDRESS}"' \
           --run '${coreutils}/bin/mkdir -p "$GHIDRA_MCP_STATE/tmp" "$GHIDRA_MCP_STATE/runtime"' \
           --run '${coreutils}/bin/chmod 700 "$GHIDRA_MCP_STATE/runtime"' \
           --run 'export TMPDIR="''${TMPDIR:-$GHIDRA_MCP_STATE/tmp}"' \
@@ -344,10 +384,6 @@ let
           --set-default GHIDRA_MCP_BRIDGE_HOST "127.0.0.1" \
           --set-default GHIDRA_MCP_BRIDGE_PORT "8090" \
           --set-default GHIDRA_MCP_BRIDGE_TRANSPORT "stdio" \
-          --set-default GHIDRA_MCP_CONNECT_HOST "127.0.0.1" \
-          --run 'export GHIDRA_MCP_URL="''${GHIDRA_MCP_URL:-http://$GHIDRA_MCP_CONNECT_HOST:$GHIDRA_MCP_PORT}"' \
-          --run 'case " $* " in *" --help "*|*" -h "*) GHIDRA_MCP_SKIP_WAIT=1 ;; esac' \
-          --run 'if [ "''${GHIDRA_MCP_SKIP_WAIT:-0}" != 1 ]; then ${lib.meta.getExe' curl "curl"} -fsS --retry 1800 --retry-delay 1 --retry-connrefused "$GHIDRA_MCP_URL/check_connection" >/dev/null; fi' \
           --add-flags ${lib.strings.escapeShellArg bridgeFlags}
       '';
 
@@ -355,6 +391,7 @@ let
     name = "ghidra-mcp-headless";
     runtimeInputs = [
       coreutils
+      curl
     ];
     text = ''
       set -euo pipefail
@@ -386,6 +423,39 @@ let
         mkdir -p "$(dirname "$log")"
         ${lib.meta.getExe' httpd "ghidra-mcp-httpd"} >> "$log" 2>&1 &
         httpd_pid=$!
+
+        connect_host="''${GHIDRA_MCP_CONNECT_HOST:-127.0.0.1}"
+        connect_port="''${GHIDRA_MCP_PORT:-8089}"
+        export GHIDRA_MCP_URL="''${GHIDRA_MCP_URL:-http://$connect_host:$connect_port}"
+
+        if [[ "''${GHIDRA_MCP_SKIP_WAIT:-0}" != "1" ]]; then
+          startup_timeout="''${GHIDRA_MCP_STARTUP_TIMEOUT:-120}"
+          if [[ ! "$startup_timeout" =~ ^[0-9]+$ ]] || (( startup_timeout == 0 )); then
+            echo "GHIDRA_MCP_STARTUP_TIMEOUT must be a positive integer" >&2
+            exit 2
+          fi
+
+          deadline=$((SECONDS + startup_timeout))
+
+          until curl --fail --silent --max-time 1 "$GHIDRA_MCP_URL/check_connection" >/dev/null 2>&1; do
+            if ! kill -0 "$httpd_pid" 2>/dev/null; then
+              set +e
+              wait "$httpd_pid"
+              httpd_status=$?
+              set -e
+              echo "ghidra-mcp-httpd exited with status $httpd_status; see $log" >&2
+              if (( httpd_status == 0 )); then
+                exit 1
+              fi
+              exit "$httpd_status"
+            fi
+            if (( SECONDS >= deadline )); then
+              echo "timed out after ''${startup_timeout}s waiting for $GHIDRA_MCP_URL; see $log" >&2
+              exit 1
+            fi
+            sleep 1
+          done
+        fi
       fi
 
       ${lib.meta.getExe' bridge "ghidra-mcp-bridge"} "$@" &
@@ -401,7 +471,7 @@ let
   };
 
   tests = {
-    smoke = runCommand "ghidra-mcp-headless-smoke-test" { } ''
+    smoke = runCommand "ghidra-mcp-headless-smoke-test" { __darwinAllowLocalNetworking = true; } ''
       set -eu
 
       test -s "${server}/share/java/GhidraMCP-${jarVersion}.jar"
@@ -428,6 +498,10 @@ let
       GHIDRA_MCP_START_HTTPD=0 "${lib.meta.getExe launcher}" --help > launcher-help
       grep -q -- '--transport' launcher-help
 
+      "${lib.meta.getExe' httpd "ghidra-mcp-httpd"}" --help > httpd-help
+      grep -q -- '--bind' httpd-help
+      grep -q -- '--file' httpd-help
+
       grep -q 'GhidraMCP-${jarVersion}.jar' "${lib.meta.getExe' httpd "ghidra-mcp-httpd"}"
       grep -q 'com.xebyte.headless.GhidraMCPHeadlessServer' "${lib.meta.getExe' httpd "ghidra-mcp-httpd"}"
       grep -q -- '-Djava.io.tmpdir=' "${lib.meta.getExe' httpd "ghidra-mcp-httpd"}"
@@ -435,13 +509,49 @@ let
       grep -q 'PYTHONDONTWRITEBYTECODE' "${lib.meta.getExe' bridge "ghidra-mcp-bridge"}"
       grep -q 'PYTHONNOUSERSITE' "${lib.meta.getExe' bridge "ghidra-mcp-bridge"}"
       grep -q 'XDG_RUNTIME_DIR=' "${lib.meta.getExe' bridge "ghidra-mcp-bridge"}"
+      if grep -q 'GHIDRA_MCP_URL=' "${lib.meta.getExe' bridge "ghidra-mcp-bridge"}"; then
+        echo "standalone bridge must not override upstream transport discovery" >&2
+        exit 1
+      fi
+      if grep -q -- '-m bridge_mcp_ghidra' "${lib.meta.getExe' bridge "ghidra-mcp-bridge"}"; then
+        echo "console-script wrapper must not pass Python -m arguments to argparse" >&2
+        exit 1
+      fi
+      grep -q 'GHIDRA_MCP_STARTUP_TIMEOUT' "${lib.meta.getExe launcher}"
+      grep -q '/check_connection' "${lib.meta.getExe launcher}"
+
+      runtime_port="$(
+        "${lib.meta.getExe' bridgePython "python"}" -c \
+          'import socket; sock = socket.socket(); sock.bind(("127.0.0.1", 0)); print(sock.getsockname()[1]); sock.close()'
+      )"
+      runtime_state="$TMPDIR/runtime-test"
+      GHIDRA_MCP_STATE="$runtime_state" \
+        GHIDRA_MCP_PORT="$runtime_port" \
+        GHIDRA_MCP_STARTUP_TIMEOUT=30 \
+        "${lib.meta.getExe launcher}" </dev/null \
+        > runtime-stdout 2> runtime-stderr
+      grep -q "Auto-connected via TCP to http://127.0.0.1:$runtime_port" runtime-stderr
+      if "${lib.meta.getExe curl}" --fail --silent --max-time 1 \
+        "http://127.0.0.1:$runtime_port/check_connection" >/dev/null 2>&1; then
+        echo "combined launcher left ghidra-mcp-httpd running" >&2
+        exit 1
+      fi
+      if GHIDRA_MCP_STATE="$TMPDIR/failed-runtime-test" \
+        GHIDRA_MCP_EXTRA_ARGS=--version \
+        GHIDRA_MCP_STARTUP_TIMEOUT=5 \
+        "${lib.meta.getExe launcher}" </dev/null \
+        > failed-runtime-stdout 2> failed-runtime-stderr; then
+        echo "combined launcher hid an early ghidra-mcp-httpd exit" >&2
+        exit 1
+      fi
+      grep -q 'ghidra-mcp-httpd exited with status 0' failed-runtime-stderr
 
       touch "$out"
     '';
   };
 
   meta = {
-    inherit (commonMeta)
+    inherit (javaMeta)
       changelog
       homepage
       license

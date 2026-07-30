@@ -54,6 +54,7 @@ fi
 version="${upstream_version}-unstable-${date}"
 current_version=$(jq -r .version source.json)
 current_rev=$(jq -r '.rev // empty' source.json)
+current_mcp_sdk_version=$(jq -r '.mcpSdkVersion // empty' source.json)
 nix_system=$(nix eval --impure --raw --expr builtins.currentSystem)
 
 if [[ "$current_rev" == "$rev" ]]; then
@@ -66,6 +67,31 @@ else
   )
 fi
 
+mcp_sdk_version=$(
+  curl -fsSL "${auth_header[@]}" \
+    -H "Accept: application/vnd.github+json" \
+    "https://api.github.com/repos/modelcontextprotocol/python-sdk/tags?per_page=100" \
+  | jq -r '.[].name' \
+  | awk '/^v1\.[0-9]+\.[0-9]+$/ { sub(/^v/, ""); print }' \
+  | sort -V \
+  | tail -n 1
+)
+
+if [[ -z "$mcp_sdk_version" ]]; then
+  echo "could not determine the latest compatible MCP Python SDK 1.x release" >&2
+  exit 1
+fi
+
+if [[ "$current_mcp_sdk_version" == "$mcp_sdk_version" ]]; then
+  mcp_src_hash=$(jq -r .mcpSrcHash source.json)
+else
+  mcp_src_hash=$(
+    nix store prefetch-file --json --unpack \
+      "https://github.com/modelcontextprotocol/python-sdk/archive/refs/tags/v${mcp_sdk_version}.tar.gz" \
+    | jq -r .hash
+  )
+fi
+
 tmp_pkg=$(mktemp -d)
 trap 'rm -rf "$tmp_pkg"' EXIT
 
@@ -74,14 +100,17 @@ jq -n \
   --arg upstreamVersion "$upstream_version" \
   --arg rev "$rev" \
   --arg srcHash "$src_hash" \
-  --arg system "$nix_system" \
+  --arg mcpSdkVersion "$mcp_sdk_version" \
+  --arg mcpSrcHash "$mcp_src_hash" \
   --arg mvnHash "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" \
   '{
     version: $version,
     upstreamVersion: $upstreamVersion,
     rev: $rev,
     srcHash: $srcHash,
-    mavenHashes: {($system): $mvnHash}
+    mcpSdkVersion: $mcpSdkVersion,
+    mcpSrcHash: $mcpSrcHash,
+    mvnHash: $mvnHash
   }' \
   >"$tmp_pkg/source.json"
 cp package.nix update.sh "$tmp_pkg/"
@@ -104,24 +133,20 @@ jq -n \
   --arg upstreamVersion "$upstream_version" \
   --arg rev "$rev" \
   --arg srcHash "$src_hash" \
-  --arg system "$nix_system" \
+  --arg mcpSdkVersion "$mcp_sdk_version" \
+  --arg mcpSrcHash "$mcp_src_hash" \
   --arg mvnHash "$mvn_hash" \
-  --slurpfile current source.json \
   '{
     version: $version,
     upstreamVersion: $upstreamVersion,
     rev: $rev,
     srcHash: $srcHash,
-    mavenHashes: (
-      if ($current[0].rev // "") == $rev then
-        ($current[0].mavenHashes // {})
-      else
-        {}
-      end
-      + {($system): $mvnHash}
-    )
+    mcpSdkVersion: $mcpSdkVersion,
+    mcpSrcHash: $mcpSrcHash,
+    mvnHash: $mvnHash
   }' \
   >"$tmp_source"
 mv "$tmp_source" source.json
 
 echo "ghidra-mcp-headless: $current_version -> $version (${rev})"
+echo "mcp Python SDK: $current_mcp_sdk_version -> $mcp_sdk_version"
