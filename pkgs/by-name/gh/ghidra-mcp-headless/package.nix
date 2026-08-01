@@ -483,7 +483,7 @@ let
       grep -qx 'build.timestamp=${reproducibleBuildStamp}' version.properties.normalized
       grep -qx 'build.number=${reproducibleBuildStamp}' version.properties.normalized
 
-      "${lib.meta.getExe' bridgePython "python"}" -c \
+      "${lib.meta.getExe' bridgePython "python3"}" -c \
         'import importlib.metadata; print(importlib.metadata.version("mcp"))' > mcp-version
       grep -qx '${mcpSdkVersion}' mcp-version
 
@@ -521,7 +521,7 @@ let
       grep -q '/check_connection' "${lib.meta.getExe launcher}"
 
       runtime_port="$(
-        "${lib.meta.getExe' bridgePython "python"}" -c \
+        "${lib.meta.getExe' bridgePython "python3"}" -c \
           'import socket; sock = socket.socket(); sock.bind(("127.0.0.1", 0)); print(sock.getsockname()[1]); sock.close()'
       )"
       runtime_state="$TMPDIR/runtime-test"
