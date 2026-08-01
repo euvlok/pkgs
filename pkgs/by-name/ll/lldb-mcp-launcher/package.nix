@@ -1,7 +1,7 @@
 {
   lib,
   llvmPackages_22,
-  python3,
+  makeWrapper,
   stdenvNoCC,
 }:
 
@@ -14,16 +14,14 @@ stdenvNoCC.mkDerivation {
 
   dontUnpack = true;
 
+  nativeBuildInputs = [ makeWrapper ];
+
   installPhase = ''
     runHook preInstall
 
-    install -Dm755 ${./lldb-mcp-launcher.py} "$out/bin/lldb-mcp-launcher"
-    substituteInPlace "$out/bin/lldb-mcp-launcher" \
-      --replace-fail '@python@' '${lib.getExe python3}' \
-      --replace-fail '@lldb@' '${lib.getExe' lldb "lldb"}' \
-      --replace-fail '@lldb_mcp@' '${lib.getExe' lldb "lldb-mcp"}'
-
-    ${lib.getExe python3} -m py_compile "$out/bin/lldb-mcp-launcher"
+    mkdir -p "$out/bin"
+    makeWrapper '${lib.getExe' lldb "lldb-mcp"}' "$out/bin/lldb-mcp-launcher" \
+      --set LLDB_EXE_PATH '${lib.getExe' lldb "lldb"}'
 
     runHook postInstall
   '';
