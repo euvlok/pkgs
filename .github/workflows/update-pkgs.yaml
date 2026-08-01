@@ -2,7 +2,7 @@ name: Update EUVlok Packages
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 */4 * * *"
+    - cron: "17 */8 * * *"
 permissions:
   contents: write
 concurrency:
