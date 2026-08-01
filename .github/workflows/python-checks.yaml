@@ -5,6 +5,7 @@ on:
     branches: [master]
     paths:
       - "scripts/**"
+      - "tests/**"
       - "pyproject.toml"
       - "uv.lock"
       - ".python-version"
@@ -12,6 +13,7 @@ on:
   pull_request:
     paths:
       - "scripts/**"
+      - "tests/**"
       - "pyproject.toml"
       - "uv.lock"
       - ".python-version"
@@ -32,13 +34,19 @@ jobs:
           enable-cache: true
 
       - name: Sync dev dependencies
-        run: uv sync --frozen --dev
+        run: uv sync --locked
 
       - name: ty
-        run: uv run ty check scripts/
+        run: uv run --locked ty check
 
       - name: ruff format
-        run: uv run ruff format --check scripts/
+        run: uv run --locked ruff format --check scripts/ tests/
 
       - name: ruff
-        run: uv run ruff check scripts/
+        run: uv run --locked ruff check scripts/ tests/
+
+      - name: Unit tests
+        run: PYTHONPATH=scripts uv run --locked python3 -m unittest discover -s tests
+
+      - name: Compile with Python 3
+        run: uv run --locked python3 -m compileall -q scripts/ tests/

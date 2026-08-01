@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash
-#!nix-shell -i bash -p bash "python3.withPackages (ps: [ ps.typer ps.rich ])" nix-update git nix
+#!nix-shell -i bash -p bash "python3.withPackages (ps: [ ps.typer ])" nix-update git nix
 
 set -euo pipefail
 

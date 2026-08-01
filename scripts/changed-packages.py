@@ -1,5 +1,5 @@
 #!/usr/bin/env nix-shell
-#!nix-shell -i python3 -p "python3.withPackages (ps: [ ps.typer ps.rich ])" git
+#!nix-shell -i python3 -p "python3.withPackages (ps: [ ps.typer ])" git
 """Emit the list of by-name packages touched between two git revisions.
 
 Used by build-package CI workflows. The directories under
@@ -17,6 +17,7 @@ import json
 import re
 from collections import defaultdict, deque
 from pathlib import Path
+from typing import Annotated
 
 import typer
 
@@ -33,8 +34,6 @@ INFRA_FILES = {
 INFRA_PREFIXES = (".github/actions/setup-nix/",)
 
 ZERO_SHA = "0" * 40
-
-app = typer.Typer(add_completion=False, help=__doc__)
 
 
 def git_diff_files(base: str, head: str) -> list[str]:
@@ -121,25 +120,34 @@ def changed_packages(files: list[str]) -> list[str]:
     return include_local_dependents(existing_packages(pkgs))
 
 
-@app.command()
 def main(
-    base: str = typer.Option("", envvar="BASE_SHA", help="Base revision to diff from"),
-    head: str = typer.Option("HEAD", envvar="HEAD_SHA", help="Head revision to diff to"),
-    packages: str = typer.Option(
-        "",
-        "--packages",
-        envvar="PACKAGES",
-        help=(
-            "Explicit package names to emit, separated by commas or whitespace. "
-            "Use 'all' explicitly."
+    base: Annotated[
+        str,
+        typer.Option(envvar="BASE_SHA", help="Base revision to diff from"),
+    ] = "",
+    head: Annotated[
+        str,
+        typer.Option(envvar="HEAD_SHA", help="Head revision to diff to"),
+    ] = "HEAD",
+    packages: Annotated[
+        str,
+        typer.Option(
+            "--packages",
+            envvar="PACKAGES",
+            help=(
+                "Explicit package names to emit, separated by commas or whitespace. "
+                "Use 'all' explicitly."
+            ),
         ),
-    ),
-    all_on_infra: bool = typer.Option(
-        False,
-        "--all-on-infra/--changed-only-on-infra",
-        envvar="ALL_ON_INFRA",
-        help="Build every package when an infra file changes.",
-    ),
+    ] = "",
+    all_on_infra: Annotated[
+        bool,
+        typer.Option(
+            "--all-on-infra/--changed-only-on-infra",
+            envvar="ALL_ON_INFRA",
+            help="Build every package when an infra file changes.",
+        ),
+    ] = False,
 ) -> None:
     if packages.strip():
         print(f"Using explicit package selection: {packages}")
@@ -169,4 +177,4 @@ def main(
 
 
 if __name__ == "__main__":
-    app()
+    typer.run(main)

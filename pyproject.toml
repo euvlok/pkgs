@@ -4,38 +4,32 @@ version = "0.0.0"
 description = "Scripts for the eupkgs flake"
 requires-python = ">=3.14"
 dependencies = [
-    "typer>=0.26.7",
+    "typer>=0.27.0",
     "rich>=15.0.0",
     "tabulate>=0.10.0",
-    "cogapp>=3.6.0",
 ]
 
 [dependency-groups]
 dev = [
-    "ty>=0.0.51",
-    "ruff>=0.15.18",
+    "ty>=0.0.65",
+    "ruff>=0.16.1",
 ]
 
 [tool.uv]
 package = false
 
 [tool.ty.environment]
-python = ".venv"
-python-version = "3.14"
+root = ["./scripts"]
 
 [tool.ty.src]
-include = ["scripts"]
+include = ["scripts", "tests"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py314"
 src = ["scripts"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
-
-[tool.ruff.lint.flake8-bugbear]
-extend-immutable-calls = ["typer.Argument", "typer.Option"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["_common"]

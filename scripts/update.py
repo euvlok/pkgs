@@ -1,5 +1,5 @@
 #!/usr/bin/env nix-shell
-#!nix-shell -i python3 -p "python3.withPackages (ps: [ ps.typer ps.rich ])" nix-update git nix
+#!nix-shell -i python3 -p "python3.withPackages (ps: [ ps.typer ])" nix-update git nix
 """Update by-name nix packages.
 
 Subcommands:
@@ -18,10 +18,11 @@ import contextlib
 import os
 import re
 import shutil
+import tempfile
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 import typer
 
@@ -133,20 +134,19 @@ def run_string_update_script(nix_file: Path, meta: Metadata) -> None:
     log_info("Executing updateScript...")
     print()
 
-    pkg_name = nix_file.stem
-    out_link = Path(os.environ.get("TEMP_DIR", "/tmp")) / "update-script-result"
-    if out_link.is_symlink() or out_link.exists():
-        out_link.unlink()
-
-    with pkg_wrapper(nix_file) as wrapper:
-        wrapper.write_text(
-            "{ pkgs ? import <nixpkgs> {} }:\n"
-            "let\n"
-            f"  pkg = pkgs.callPackage {nix_file} {{}};\n"
-            f'in pkgs.writeShellScriptBin "{pkg_name}-update-script" '
-            "(builtins.readFile pkg.passthru.updateScript)\n"
-        )
-        try:
+    pkg_name = nix_file.parent.name
+    temp_root = os.environ.get("TEMP_DIR")
+    with tempfile.TemporaryDirectory(prefix=f"{pkg_name}-update-", dir=temp_root) as temp_dir:
+        out_link = Path(temp_dir) / "result"
+        with pkg_wrapper(nix_file) as wrapper:
+            wrapper.write_text(
+                "{ pkgs ? import <nixpkgs> {} }:\n"
+                "let\n"
+                f"  pkg = pkgs.callPackage {nix_file} {{}};\n"
+                f'in pkgs.writeShellScriptBin "{pkg_name}-update-script" '
+                "(builtins.readFile pkg.passthru.updateScript)\n",
+                encoding="utf-8",
+            )
             build = run(
                 [
                     "nix",
@@ -165,7 +165,7 @@ def run_string_update_script(nix_file: Path, meta: Metadata) -> None:
 
             bin_dir = out_link / "bin"
             binary = next(
-                (p for p in bin_dir.iterdir() if p.is_file() and os.access(p, os.X_OK)),
+                (path for path in bin_dir.iterdir() if path.is_file() and os.access(path, os.X_OK)),
                 None,
             )
             if binary is None:
@@ -175,10 +175,51 @@ def run_string_update_script(nix_file: Path, meta: Metadata) -> None:
             if run([binary], env_extra={"UPDATE_FILE": str(nix_file)}).returncode != 0:
                 log_error("updateScript failed")
                 raise typer.Exit(1)
-        finally:
-            if out_link.is_symlink() or out_link.exists():
-                with contextlib.suppress(OSError):
-                    out_link.unlink()
+
+
+def dirty_paths(path: Path) -> list[str]:
+    result = run(
+        ["git", "status", "--porcelain", "--untracked-files=all", "--", path],
+        cwd=REPO_ROOT,
+        capture=True,
+        check=True,
+    )
+    return result.stdout.splitlines()
+
+
+def require_clean_worktree() -> None:
+    dirty = dirty_paths(REPO_ROOT)
+    if not dirty:
+        return
+
+    gha(
+        "error",
+        "Refusing to update a dirty worktree; commit or stash these paths first:\n"
+        + "\n".join(dirty),
+    )
+    raise typer.Exit(1)
+
+
+def restore_package(pkg_dir: Path) -> None:
+    """Restore a package after a failed update; callers guarantee a clean starting tree."""
+    run(
+        ["git", "restore", "--source=HEAD", "--staged", "--worktree", "--", pkg_dir],
+        cwd=REPO_ROOT,
+        check=True,
+    )
+    run(["git", "clean", "-fd", "--", pkg_dir], cwd=REPO_ROOT, check=True)
+
+
+def pkg_has_changes(pkg_dir: Path) -> bool:
+    return bool(dirty_paths(pkg_dir))
+
+
+def commit_pkg(pkg_name: str, pkg_dir: Path) -> bool:
+    run(["git", "add", "--", pkg_dir], cwd=REPO_ROOT, check=True)
+    if run(["git", "diff", "--staged", "--quiet", "--", pkg_dir], cwd=REPO_ROOT).returncode == 0:
+        return False
+    run(["git", "commit", "-m", f"{pkg_name}: bump", "--", pkg_dir], cwd=REPO_ROOT, check=True)
+    return True
 
 
 @cache
@@ -333,42 +374,31 @@ def build_pkg(pkg_path: Path) -> bool:
     )
 
 
-def revert(pkg_dir: Path) -> None:
-    run(["git", "checkout", "--", pkg_dir], cwd=REPO_ROOT)
-
-
-def pkg_has_changes(pkg_dir: Path) -> bool:
-    r = run(["git", "status", "--porcelain", "--", pkg_dir], cwd=REPO_ROOT, capture=True)
-    return bool(r.stdout.strip())
-
-
-def commit_pkg(pkg_name: str, pkg_dir: Path) -> bool:
-    run(["git", "add", pkg_dir], cwd=REPO_ROOT, check=True)
-    if run(["git", "diff", "--staged", "--quiet"], cwd=REPO_ROOT).returncode == 0:
-        return False
-    run(["git", "commit", "-m", f"{pkg_name}: bump"], cwd=REPO_ROOT, check=True)
-    return True
-
-
 @app.command("pkg")
 def cmd_pkg(
-    nix_file: Path = typer.Argument(
-        ...,
-        exists=True,
-        dir_okay=False,
-        readable=True,
-        help="Path to a package.nix under pkgs/by-name.",
-    ),
-    version: str = typer.Option(
-        "branch",
-        "--version",
-        help="Version argument for nix-update (ignored when an updateScript is present).",
-    ),
-    subpackages: list[str] | None = typer.Option(
-        None,
-        "--subpackage",
-        help="Child derivation hash to bump with nix-update. May be passed multiple times.",
-    ),
+    nix_file: Annotated[
+        Path,
+        typer.Argument(
+            exists=True,
+            dir_okay=False,
+            readable=True,
+            help="Path to a package.nix under pkgs/by-name.",
+        ),
+    ],
+    version: Annotated[
+        str,
+        typer.Option(
+            "--version",
+            help="Version argument for nix-update (ignored when an updateScript is present).",
+        ),
+    ] = "branch",
+    subpackages: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--subpackage",
+            help="Child derivation hash to bump with nix-update. May be passed multiple times.",
+        ),
+    ] = None,
 ) -> None:
     """Update a single package."""
     update_one(nix_file, version, subpackages)
@@ -376,22 +406,21 @@ def cmd_pkg(
 
 @app.command("all")
 def cmd_all(
-    by_name: Path = typer.Option(
-        REPO_ROOT / "pkgs" / "by-name",
-        "--by-name",
-        help="Root of the by-name package tree.",
-    ),
-    version: str = typer.Option(
-        "branch",
-        "--version",
-        help="Version argument for nix-update.",
-    ),
+    by_name: Annotated[
+        Path,
+        typer.Option("--by-name", help="Root of the by-name package tree."),
+    ] = REPO_ROOT / "pkgs" / "by-name",
+    version: Annotated[
+        str,
+        typer.Option("--version", help="Version argument for nix-update."),
+    ] = "branch",
 ) -> None:
     """Walk pkgs/by-name, update each fetchable derivation, and commit per-package bumps."""
     if not shutil.which("nix") or not shutil.which("git"):
         gha("error", "nix and git must be on PATH")
         raise typer.Exit(1)
 
+    require_clean_worktree()
     pkg_files = package_files(by_name)
     updated: list[str] = []
 
@@ -409,7 +438,7 @@ def cmd_all(
                     update_one(nixfile, version)
             except typer.Exit:
                 gha("warning", f"Update failed for {name}", file=str(nixfile))
-                revert(pkg_dir)
+                restore_package(pkg_dir)
                 continue
 
             if not pkg_has_changes(pkg_dir):
@@ -418,7 +447,7 @@ def cmd_all(
 
             if not build_pkg(nixfile):
                 gha("warning", f"Build failed for {name} after update", file=str(nixfile))
-                revert(pkg_dir)
+                restore_package(pkg_dir)
                 continue
 
             if commit_pkg(name, pkg_dir):

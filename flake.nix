@@ -82,7 +82,6 @@
                     tabulate
                     rich
                     typer
-                    cogapp
                     ;
                 })
               );
@@ -90,7 +89,7 @@
 
             shellHook = ''
               if [ -f pyproject.toml ] && [ -f uv.lock ]; then
-                uv sync --frozen --quiet 2>/dev/null || true
+                uv sync --locked --quiet
               fi
             '';
           };
@@ -108,6 +107,7 @@
             (builtins.attrValues {
               inherit (ps)
                 rich
+                tabulate
                 typer
                 ;
             })
@@ -120,7 +120,7 @@
             program = toString (
               pkgs.writeShellScript "update" ''
                 export EUPKGS_REPO_ROOT="''${EUPKGS_REPO_ROOT:-$PWD}"
-                exec ${scriptPython}/bin/python ${./scripts}/update.py "$@"
+                exec ${scriptPython}/bin/python3 ${./scripts}/update.py "$@"
               ''
             );
           };
@@ -130,7 +130,7 @@
             program = toString (
               pkgs.writeShellScript "gen-pkg-table" ''
                 export EUPKGS_REPO_ROOT="''${EUPKGS_REPO_ROOT:-$PWD}"
-                exec ${scriptPython}/bin/python ${./scripts}/gen-pkg-table.py "$@"
+                exec ${scriptPython}/bin/python3 ${./scripts}/gen-pkg-table.py "$@"
               ''
             );
           };
@@ -140,7 +140,7 @@
             program = toString (
               pkgs.writeShellScript "status" ''
                 export EUPKGS_REPO_ROOT="''${EUPKGS_REPO_ROOT:-$PWD}"
-                exec ${scriptPython}/bin/python ${./scripts}/status.py "$@"
+                exec ${scriptPython}/bin/python3 ${./scripts}/status.py "$@"
               ''
             );
           };

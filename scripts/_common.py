@@ -7,7 +7,7 @@ import os
 import re
 import subprocess
 import tempfile
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from functools import cache
 from pathlib import Path
@@ -15,6 +15,7 @@ from typing import Any
 
 REPO_ROOT = Path(os.environ.get("EUPKGS_REPO_ROOT", Path(__file__).resolve().parent.parent))
 BY_NAME = REPO_ROOT / "pkgs" / "by-name"
+NIX_HELPERS = Path(__file__).resolve().parent / "nix"
 FORMAL_ARG_RE = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_'-]*)")
 TOP_LEVEL_ARGS_RE = re.compile(r"\A\s*\{(?P<body>.*?)\}\s*:", re.DOTALL)
 
@@ -45,7 +46,7 @@ def gha_output(key: str, value: str) -> None:
     path = os.environ.get("GITHUB_OUTPUT")
     if not path:
         return
-    with open(path, "a") as f:
+    with Path(path).open("a", encoding="utf-8") as f:
         if "\n" in value:
             delimiter = "EOF"
             while delimiter in value:
@@ -59,7 +60,7 @@ def gha_summary(content: str) -> None:
     path = os.environ.get("GITHUB_STEP_SUMMARY")
     if not path:
         return
-    with open(path, "a") as f:
+    with Path(path).open("a", encoding="utf-8") as f:
         f.write(content)
 
 
@@ -100,19 +101,30 @@ def nix_eval_json(expr: str) -> Any:
     return json.loads(r.stdout)
 
 
+def nix_eval_file_json(nix_file: Path, *, args: Mapping[str, str]) -> Any:
+    """Evaluate a parameterized Nix file as JSON using string arguments."""
+    arg_flags = [flag for name, value in args.items() for flag in ("--argstr", name, value)]
+    r = run(
+        [
+            "nix-instantiate",
+            "--eval",
+            "--strict",
+            "--json",
+            "--impure",
+            nix_file,
+            *arg_flags,
+        ],
+        cwd=REPO_ROOT,
+        capture=True,
+        env_extra={"NIXPKGS_ALLOW_UNFREE": "1"},
+        check=True,
+    )
+    return json.loads(r.stdout)
+
+
 @cache
 def nix_current_system() -> str:
     return nix_eval("builtins.currentSystem", check=True)
-
-
-def nix_flake_attr(pkg: str, attr: str, system: str) -> str:
-    """Evaluate a package attribute from this flake. Empty string on failure."""
-    r = run(
-        ["nix", "eval", "--impure", "--raw", f".#legacyPackages.{system}.{pkg}.{attr}"],
-        cwd=REPO_ROOT,
-        capture=True,
-    )
-    return r.stdout.strip() if r.returncode == 0 else ""
 
 
 def package_files(by_name: Path = BY_NAME) -> list[Path]:
@@ -127,7 +139,7 @@ def nix_string_attr(nix_file: Path, key: str) -> str:
     """Return a simple `key = "value";` attribute from a Nix file."""
     match = re.search(
         rf'^\s*{re.escape(key)}\s*=\s*"([^"]*)"\s*;',
-        nix_file.read_text(),
+        nix_file.read_text(encoding="utf-8"),
         re.M,
     )
     return match.group(1) if match else ""
@@ -135,7 +147,7 @@ def nix_string_attr(nix_file: Path, key: str) -> str:
 
 def nix_top_level_formal_args(nix_file: Path) -> set[str]:
     """Return the function argument names from a simple `{ ... }:` Nix file."""
-    content = re.sub(r"#.*", "", nix_file.read_text())
+    content = re.sub(r"#.*", "", nix_file.read_text(encoding="utf-8"))
     match = TOP_LEVEL_ARGS_RE.match(content)
     if not match:
         return set()
@@ -164,10 +176,12 @@ def pkg_wrapper(nix_file: Path, *, rec: bool = False) -> Iterator[Path]:
                 "{ pkgs ? import <nixpkgs> {} }:\n"
                 "rec {\n"
                 f"  pkg = pkgs.callPackage {nix_file} {{}};\n"
-                "}\n"
+                "}\n",
+                encoding="utf-8",
             )
         else:
             wrapper.write_text(
-                f"let pkgs = import <nixpkgs> {{}}; in (pkgs.callPackage {nix_file} {{}})\n"
+                f"let pkgs = import <nixpkgs> {{}}; in (pkgs.callPackage {nix_file} {{}})\n",
+                encoding="utf-8",
             )
         yield wrapper
