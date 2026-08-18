@@ -1,0 +1,22 @@
+diff --git a/yt_dlp/cookies.py b/yt_dlp/cookies.py
+index 35d5d50a4..37a0c7348 100644
+--- a/yt_dlp/cookies.py
++++ b/yt_dlp/cookies.py
+@@ -965,8 +965,16 @@ def _get_gnome_keyring_password(browser_keyring_name, logger):
+     # https://github.com/jaraco/keyring/issues/556
+     with contextlib.closing(secretstorage.dbus_init()) as con:
+         col = secretstorage.get_default_collection(con)
++        label_matches = []
+         for item in col.get_all_items():
+             if item.get_label() == f'{browser_keyring_name} Safe Storage':
+-                return item.get_secret()
++                label_matches.append(item)
++                application = item.get_attributes().get('application', '')
++                if application.casefold() == browser_keyring_name.casefold():
++                    return item.get_secret()
++        if label_matches:
++            # Preserve the existing label-only behavior for browsers whose
++            # Secret Service application name differs from the keyring name.
++            return label_matches[0].get_secret()
+         logger.error('failed to read from keyring')
+         return b''

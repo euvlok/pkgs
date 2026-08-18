@@ -12,6 +12,133 @@ fi
 
 readonly PROGRAM_NAME="${YT_DLP_SCRIPT_NAME:-${0##*/}}"
 
+# User-facing policy lives here. Adding a format or browser location should be
+# a data change; the control flow below consumes these declarations.
+readonly DEFAULT_CRF=26
+readonly MIN_CRF=0
+readonly MAX_CRF=51
+readonly MAX_FILENAME_LENGTH=220
+readonly MAX_VIDEO_HEIGHT=1080
+readonly AUDIO_QUALITY=0
+readonly COMPRESSION_VIDEO_CODEC=libx264
+readonly COMPRESSION_PRESET=slow
+readonly COMPRESSION_AUDIO_CODEC=copy
+readonly COMPRESSION_OUTPUT_EXTENSION=mp4
+readonly OUTPUT_ID_TEMPLATE='%(display_id)s'
+readonly METADATA_ERROR_LINE_LIMIT=3
+readonly DEFAULT_BROWSER_COOKIE_MODE=auto
+readonly DISABLED_BROWSER_COOKIE_MODE=none
+readonly UPLOAD_DATE_TIME_SUFFIX=0000
+readonly MAX_TIME_COMPONENTS=3
+readonly FRACTIONAL_SECOND_DIGITS=3
+readonly SECONDS_PER_MINUTE=60
+readonly MILLISECONDS_PER_SECOND=1000
+readonly MILLISECONDS_PER_MINUTE=$((SECONDS_PER_MINUTE * MILLISECONDS_PER_SECOND))
+readonly TIME_ENDPOINT_PATTERN='^-?[0-9]+(:[0-9]+){0,2}([.][0-9]+)?$'
+readonly UPLOAD_DATE_PATTERN='^[0-9]{8}$'
+readonly METADATA_PRINT_TEMPLATE='%(.{duration,upload_date})j'
+readonly METADATA_PRINT_WHEN=video
+
+# Fields: CLI name, base format, requires time range, supports compression,
+# force precise video cuts.
+declare -ar FORMAT_SPECS=(
+  $'mp4\tmp4\tfalse\ttrue\tfalse'
+  $'mp3\tmp3\tfalse\tfalse\tfalse'
+  $'m4a\tm4a\tfalse\tfalse\tfalse'
+  $'mp4-cut\tmp4\ttrue\ttrue\ttrue'
+  $'mp3-cut\tmp3\ttrue\tfalse\tfalse'
+  $'m4a-cut\tm4a\ttrue\tfalse\tfalse'
+)
+
+# These arrays are referenced indirectly through FORMAT_ARGUMENT_ARRAY.
+# shellcheck disable=SC2034
+declare -ar FORMAT_ARGS_MP4=(
+  --preset-alias mp4
+  --format-sort "res:${MAX_VIDEO_HEIGHT}"
+)
+
+# shellcheck disable=SC2034
+declare -ar FORMAT_ARGS_MP3=(
+  --preset-alias mp3
+  --audio-quality "$AUDIO_QUALITY"
+  --embed-thumbnail
+)
+
+# shellcheck disable=SC2034
+declare -ar FORMAT_ARGS_M4A=(
+  --format 'ba[acodec^=mp4a]/ba/b'
+  --extract-audio
+  --audio-format m4a
+  --audio-quality "$AUDIO_QUALITY"
+  --embed-thumbnail
+)
+
+declare -Ar FORMAT_ARGUMENT_ARRAY=(
+  [mp4]=FORMAT_ARGS_MP4
+  [mp3]=FORMAT_ARGS_MP3
+  [m4a]=FORMAT_ARGS_M4A
+)
+
+declare -ar YT_DLP_BASE_ARGS=(
+  --ignore-config
+  --no-playlist
+)
+
+declare -ar DOWNLOAD_BEHAVIOR_ARGS=(
+  --trim-filenames "$MAX_FILENAME_LENGTH"
+)
+
+declare -ar DOWNLOAD_FINAL_ARGS=(
+  --embed-metadata
+  --console-title
+)
+
+declare -ar FFMPEG_BASE_ARGS=(
+  -nostdin
+  -hide_banner
+)
+
+declare -ar COMPRESSION_ARGS=(
+  -map 0:v:0
+  -map '0:a?'
+  -map_metadata 0
+  -c:v "$COMPRESSION_VIDEO_CODEC"
+  -preset "$COMPRESSION_PRESET"
+  -c:a "$COMPRESSION_AUDIO_CODEC"
+  -movflags +faststart
+  -n
+)
+
+# Fields: root key, yt-dlp browser, display label, relative browser-data path.
+# The path is only used to detect installed browsers. yt-dlp itself selects the
+# newest profile and cookie database.
+declare -ar BROWSER_PROFILE_SPECS=(
+  $'config\tchrome\tGoogle Chrome\tgoogle-chrome'
+  $'config\tchromium\tChromium\tchromium'
+  $'config\tbrave\tBrave\tBraveSoftware/Brave-Browser'
+  $'config\tedge\tMicrosoft Edge\tmicrosoft-edge'
+  $'config\tfirefox\tFirefox\tmozilla/firefox'
+  $'config\tvivaldi\tVivaldi\tvivaldi'
+  $'config\topera\tOpera\topera'
+  $'home\tchrome\tGoogle Chrome\tLibrary/Application Support/Google/Chrome'
+  $'home\tchromium\tChromium\tLibrary/Application Support/Chromium'
+  $'home\tbrave\tBrave\tLibrary/Application Support/BraveSoftware/Brave-Browser'
+  $'home\tedge\tMicrosoft Edge\tLibrary/Application Support/Microsoft Edge'
+  $'home\tfirefox\tFirefox\tLibrary/Application Support/Firefox/Profiles'
+  $'home\tfirefox\tFirefox\t.mozilla/firefox'
+  $'home\tsafari\tSafari\tLibrary/Cookies/Cookies.binarycookies'
+  $'home\tsafari\tSafari\tLibrary/Containers/com.apple.Safari/Data/Library/Cookies/Cookies.binarycookies'
+  $'home\tvivaldi\tVivaldi\tLibrary/Application Support/Vivaldi'
+  $'home\topera\tOpera\tLibrary/Application Support/com.operasoftware.Opera'
+)
+
+declare -ar COOKIE_PASSTHROUGH_OPTIONS=(
+  --cookies
+  --no-cookies
+  --cookies-from-browser
+  --no-cookies-from-browser
+)
+
 readonly COLOR_ERROR=$'\033[1;31m'
 readonly COLOR_INFO=$'\033[1;34m'
 readonly COLOR_SUCCESS=$'\033[1;32m'
@@ -49,17 +176,46 @@ cleanup_temp_paths() {
 trap cleanup_temp_paths EXIT
 
 make_temp_file() {
+  local -n output_ref=$1
   local path
+
   path=$(mktemp)
   TEMP_PATHS+=("$path")
-  printf '%s\n' "$path"
+  output_ref=$path
 }
 
 make_temp_dir() {
+  local -n output_ref=$1
   local path
+
   path=$(mktemp -d)
   TEMP_PATHS+=("$path")
-  printf '%s\n' "$path"
+  output_ref=$path
+}
+
+join_by() {
+  local separator=$1
+  local value
+  shift
+
+  (($# > 0)) || return 0
+  printf '%s' "$1"
+  shift
+  for value in "$@"; do
+    printf '%s%s' "$separator" "$value"
+  done
+}
+
+supported_formats() {
+  local spec name _base_format _requires_time_range _supports_compression _force_precise_cuts
+  local -a names=()
+
+  for spec in "${FORMAT_SPECS[@]}"; do
+    IFS=$'\t' read -r \
+      name _base_format _requires_time_range _supports_compression _force_precise_cuts <<<"$spec"
+    names+=("$name")
+  done
+  join_by ', ' "${names[@]}"
 }
 
 usage() {
@@ -68,7 +224,11 @@ Usage:
   $PROGRAM_NAME FORMAT URL [TIME_RANGE] [--compress] [--crf CRF] [--no-browser-cookies] [--browser-cookies SPEC] [-- YT_DLP_ARGS...]
 
 Formats:
-  mp4, mp3, m4a, mp4-cut, mp3-cut, m4a-cut
+  $(supported_formats)
+
+Time ranges:
+  START-END, -END, or START-. Timestamps may be seconds or HH:MM:SS;
+  negative timestamps are relative to the end of the video.
 
 Examples:
   $PROGRAM_NAME mp4 'https://example.invalid/watch?v=id'
@@ -79,11 +239,32 @@ Examples:
 EOF
 }
 
-is_valid_format() {
-  case "$1" in
-    mp4 | mp3 | m4a | mp4-cut | mp3-cut | m4a-cut) return 0 ;;
-    *) return 1 ;;
-  esac
+read_format_spec() {
+  local requested_format=$1
+  local -n base_format_ref=$2
+  local -n requires_time_range_ref=$3
+  local -n supports_compression_ref=$4
+  local -n force_precise_cuts_ref=$5
+  local spec declared_name declared_base_format declared_requires_time_range
+  local declared_supports_compression declared_force_precise_cuts
+
+  for spec in "${FORMAT_SPECS[@]}"; do
+    IFS=$'\t' read -r \
+      declared_name declared_base_format declared_requires_time_range \
+      declared_supports_compression declared_force_precise_cuts <<<"$spec"
+    [[ "$declared_name" == "$requested_format" ]] || continue
+    # Assigned through nameref output parameters.
+    # shellcheck disable=SC2034
+    base_format_ref=$declared_base_format
+    # shellcheck disable=SC2034
+    requires_time_range_ref=$declared_requires_time_range
+    # shellcheck disable=SC2034
+    supports_compression_ref=$declared_supports_compression
+    # shellcheck disable=SC2034
+    force_precise_cuts_ref=$declared_force_precise_cuts
+    return 0
+  done
+  return 1
 }
 
 is_unsigned_integer() {
@@ -91,89 +272,39 @@ is_unsigned_integer() {
 }
 
 is_valid_crf() {
-  is_unsigned_integer "$1" && (($1 <= 51))
+  is_unsigned_integer "$1" && (($1 >= MIN_CRF && $1 <= MAX_CRF))
 }
 
-path_has_cookie_db() {
-  [[ -f "$1/Cookies" || -f "$1/Network/Cookies" ]]
+append_format_args() {
+  local destination_name=$1
+  local base_format=$2
+  local source_name=${FORMAT_ARGUMENT_ARRAY[$base_format]:-}
+  local -n destination_ref=$destination_name
+
+  [[ -n "$source_name" ]] || die "No download arguments declared for format '$base_format'."
+  local -n source_ref=$source_name
+  destination_ref+=("${source_ref[@]}")
 }
 
-cookie_db_mtime() {
-  local profile=$1
-  local cookie_db=''
+resolve_browser_root() {
+  local root_key=$1
+  local config_home=$2
+  local home=$3
+  local -n output_ref=$4
 
-  if [[ -f "$profile/Network/Cookies" ]]; then
-    cookie_db=$profile/Network/Cookies
-  elif [[ -f "$profile/Cookies" ]]; then
-    cookie_db=$profile/Cookies
-  else
-    return 1
-  fi
-
-  stat -c '%Y' "$cookie_db"
-}
-
-list_cookie_profiles_in_user_data_dir() {
-  local user_data_dir=$1
-  local profile cookie_file profile_dir
-  local -A seen=()
-
-  [[ -d "$user_data_dir" ]] || return 1
-
-  if path_has_cookie_db "$user_data_dir"; then
-    printf '%s\n' "$user_data_dir"
-    seen[$user_data_dir]=1
-  fi
-
-  for profile in "$user_data_dir/Default" "$user_data_dir"/Profile\ *; do
-    [[ -d "$profile" ]] || continue
-    if path_has_cookie_db "$profile"; then
-      printf '%s\n' "$profile"
-      seen[$profile]=1
-    fi
-  done
-
-  while IFS= read -r -d '' cookie_file; do
-    if [[ "${cookie_file%/*}" == */Network ]]; then
-      profile_dir=${cookie_file%/*/*}
-    else
-      profile_dir=${cookie_file%/*}
-    fi
-
-    [[ -n "${seen[$profile_dir]+x}" ]] && continue
-    seen[$profile_dir]=1
-    printf '%s\n' "$profile_dir"
-  done < <(find "$user_data_dir" -maxdepth 3 -type f \( -path '*/Network/Cookies' -o -name Cookies \) -print0 | sort -z)
-}
-
-emit_browser_cookie_profiles() {
-  local browser=$1
-  local label=$2
-  local user_data_dir=$3
-  local profile mtime
-
-  while IFS= read -r profile; do
-    mtime=$(cookie_db_mtime "$profile") || continue
-    printf '%s\t%s:%s\t%s (%s)\n' "$mtime" "$browser" "$profile" "$label" "$profile"
-  done < <(list_cookie_profiles_in_user_data_dir "$user_data_dir")
-}
-
-emit_generic_chromium_cookie_profiles() {
-  local search_root=$1
-  local local_state user_data_dir
-
-  [[ -d "$search_root" ]] || return 0
-
-  while IFS= read -r -d '' local_state; do
-    user_data_dir=${local_state%/*}
-    emit_browser_cookie_profiles chromium "Chromium-compatible profile" "$user_data_dir"
-  done < <(find "$search_root" -maxdepth 3 -type f -name 'Local State' -print0 | sort -z)
+  case "$root_key" in
+    config) output_ref=$config_home ;;
+    home) output_ref=$home ;;
+    *) die "Unknown browser profile root key '$root_key'." ;;
+  esac
 }
 
 discover_browser_cookie_candidates() {
   local xdg_config_home=${XDG_CONFIG_HOME:-}
   local home=${HOME:-}
   local config_home=''
+  local spec root_key browser label relative_path root browser_path
+  local -A seen_browsers=()
 
   if [[ -n "$xdg_config_home" ]]; then
     config_home=$xdg_config_home
@@ -181,163 +312,146 @@ discover_browser_cookie_candidates() {
     config_home=$home/.config
   fi
 
-  if [[ -n "$config_home" ]]; then
-    emit_browser_cookie_profiles chromium "Chromium" "$config_home/chromium"
-    emit_browser_cookie_profiles chrome "Google Chrome" "$config_home/google-chrome"
-    emit_browser_cookie_profiles brave "Brave" "$config_home/BraveSoftware/Brave-Browser"
-    emit_browser_cookie_profiles edge "Microsoft Edge" "$config_home/microsoft-edge"
-    emit_browser_cookie_profiles vivaldi "Vivaldi" "$config_home/vivaldi"
-    emit_browser_cookie_profiles opera "Opera" "$config_home/opera"
-    emit_generic_chromium_cookie_profiles "$config_home"
-  fi
-
-  if [[ -n "$home" ]]; then
-    emit_browser_cookie_profiles chrome "Google Chrome" "$home/Library/Application Support/Google/Chrome"
-    emit_browser_cookie_profiles brave "Brave" "$home/Library/Application Support/BraveSoftware/Brave-Browser"
-    emit_browser_cookie_profiles edge "Microsoft Edge" "$home/Library/Application Support/Microsoft Edge"
-    emit_browser_cookie_profiles vivaldi "Vivaldi" "$home/Library/Application Support/Vivaldi"
-    emit_generic_chromium_cookie_profiles "$home/Library/Application Support"
-  fi
+  for spec in "${BROWSER_PROFILE_SPECS[@]}"; do
+    IFS=$'\t' read -r root_key browser label relative_path <<<"$spec"
+    resolve_browser_root "$root_key" "$config_home" "$home" root
+    [[ -n "$root" ]] || continue
+    browser_path="$root/$relative_path"
+    [[ -e "$browser_path" ]] || continue
+    [[ -n "${seen_browsers[$browser]+x}" ]] && continue
+    seen_browsers[$browser]=1
+    printf '%s\t%s\n' "$browser" "$label"
+  done
 }
 
 passthrough_has_cookie_option() {
-  local arg
+  local arg option
 
   for arg in "$@"; do
-    case "$arg" in
-      --cookies | --cookies=* | --no-cookies | --cookies-from-browser | --cookies-from-browser=* | --no-cookies-from-browser)
-        return 0
-        ;;
-    esac
+    for option in "${COOKIE_PASSTHROUGH_OPTIONS[@]}"; do
+      [[ "$arg" == "$option" || "$arg" == "$option="* ]] && return 0
+    done
   done
 
   return 1
 }
 
-METADATA=''
-METADATA_COOKIE_SPEC=''
-METADATA_COOKIE_LABEL=''
-METADATA_ERROR=''
+die_metadata_fetch() {
+  local message=$1
+  local details=${2:-}
+
+  [[ -z "$details" ]] || log_warning "$details"
+  die "$message"
+}
 
 fetch_metadata_with_cookie_spec() {
   local url=$1
   local cookie_spec=$2
-  local log_file
-  local -a metadata_args=(--ignore-config --no-playlist)
+  local -n passthrough_ref=$3
+  local -n metadata_ref=$4
+  local -n error_ref=$5
+  local log_file metadata_file
+  local -a metadata_args=("${YT_DLP_BASE_ARGS[@]}")
 
   if [[ -n "$cookie_spec" ]]; then
     metadata_args+=(--cookies-from-browser "$cookie_spec")
   fi
-  metadata_args+=(--dump-json "$url" "${passthrough[@]}")
+  make_temp_file metadata_file
+  metadata_args+=(
+    "${passthrough_ref[@]}"
+    --simulate
+    --print-to-file "${METADATA_PRINT_WHEN}:${METADATA_PRINT_TEMPLATE}" "$metadata_file"
+    -- "$url"
+  )
 
-  log_file=$(mktemp)
-  if METADATA=$(yt-dlp "${metadata_args[@]}" 2>"$log_file"); then
+  make_temp_file log_file
+  if yt-dlp "${metadata_args[@]}" > /dev/null 2>"$log_file"; then
     rm -f -- "$log_file"
-    METADATA_ERROR=''
-    jq -e type >/dev/null <<<"$METADATA" \
-      || die "yt-dlp returned invalid metadata JSON."
+    error_ref=''
+    metadata_ref=$(<"$metadata_file")
+    jq -e 'type == "object"' >/dev/null <<<"$metadata_ref" \
+      || die "yt-dlp returned invalid metadata JSON object."
     return 0
   fi
 
-  METADATA_ERROR=$(head -n 3 "$log_file")
+  # Assigned through a nameref output parameter.
+  # shellcheck disable=SC2034
+  error_ref=$(head -n "$METADATA_ERROR_LINE_LIMIT" "$log_file")
   rm -f -- "$log_file"
-  METADATA=''
+  metadata_ref=''
   return 1
-}
-
-metadata_score() {
-  local has_cookies=$1
-
-  jq -r --argjson has_cookies "$has_cookies" '
-    (((.formats // []) | length) * 10000000000) + (if $has_cookies then 1 else 0 end)
-  ' <<<"$METADATA"
 }
 
 select_metadata_and_browser_cookies() {
   local url=$1
   local browser_cookie_mode=$2
-  local best_metadata=''
-  local best_cookie_spec=''
-  local best_cookie_label=''
-  local best_score=-1
-  local score mtime cookie_spec cookie_label
-  local tried_browser_cookies=false
-  local -A seen_cookie_specs=()
+  local passthrough_name=$3
+  local -n output_metadata_ref=$4
+  local -n output_cookie_spec_ref=$5
+  local -n passthrough_ref=$passthrough_name
+  local candidate_metadata='' fetch_error=''
+  local candidate_cookie_spec cookie_label
 
-  if passthrough_has_cookie_option "${passthrough[@]}"; then
+  if passthrough_has_cookie_option "${passthrough_ref[@]}"; then
     log_info "yt-dlp cookie option supplied; not auto-selecting browser cookies."
-    fetch_metadata_with_cookie_spec "$url" "" \
-      || die "Failed to fetch video metadata."
-    METADATA_COOKIE_SPEC=''
-    METADATA_COOKIE_LABEL=''
+    fetch_metadata_with_cookie_spec "$url" "" "$passthrough_name" candidate_metadata fetch_error \
+      || die_metadata_fetch "Failed to fetch video metadata." "$fetch_error"
+    output_metadata_ref=$candidate_metadata
+    output_cookie_spec_ref=''
     return 0
   fi
 
   case "$browser_cookie_mode" in
-    none)
+    "$DISABLED_BROWSER_COOKIE_MODE")
       log_info "Browser cookies disabled by flag."
-      fetch_metadata_with_cookie_spec "$url" "" \
-        || die "Failed to fetch video metadata."
-      METADATA_COOKIE_SPEC=''
-      METADATA_COOKIE_LABEL=''
+      fetch_metadata_with_cookie_spec "$url" "" "$passthrough_name" candidate_metadata fetch_error \
+        || die_metadata_fetch "Failed to fetch video metadata." "$fetch_error"
+      output_metadata_ref=$candidate_metadata
+      output_cookie_spec_ref=''
       return 0
       ;;
-    auto) ;;
+    "$DEFAULT_BROWSER_COOKIE_MODE") ;;
     *)
       log_info "Preferring browser cookies from: ${browser_cookie_mode}"
-      fetch_metadata_with_cookie_spec "$url" "$browser_cookie_mode" \
-        || die "Failed to fetch video metadata with browser cookies '${browser_cookie_mode}'."
-      METADATA_COOKIE_SPEC=$browser_cookie_mode
-      METADATA_COOKIE_LABEL=$browser_cookie_mode
+      fetch_metadata_with_cookie_spec "$url" "$browser_cookie_mode" "$passthrough_name" candidate_metadata fetch_error \
+        || die_metadata_fetch \
+          "Failed to fetch video metadata with browser cookies '${browser_cookie_mode}'." "$fetch_error"
+      output_metadata_ref=$candidate_metadata
+      output_cookie_spec_ref=$browser_cookie_mode
       return 0
       ;;
   esac
 
-  while IFS=$'\t' read -r mtime cookie_spec cookie_label; do
-    [[ -n "$cookie_spec" ]] || continue
-    [[ -n "${seen_cookie_specs[$cookie_spec]+x}" ]] && continue
-    seen_cookie_specs[$cookie_spec]=1
-    tried_browser_cookies=true
-
-    if fetch_metadata_with_cookie_spec "$url" "$cookie_spec"; then
-      score=$(metadata_score true)
-      score=$((score + mtime))
-      if ((score > best_score)); then
-        best_score=$score
-        best_metadata=$METADATA
-        best_cookie_spec=$cookie_spec
-        best_cookie_label=$cookie_label
-      fi
-    else
-      log_warning "Browser cookies from ${cookie_label} did not work for this URL; trying the next candidate."
-      if [[ -n "$METADATA_ERROR" ]]; then
-        log_warning "$METADATA_ERROR"
-      fi
-    fi
-  done < <(discover_browser_cookie_candidates | sort -rn)
-
-  if ((best_score < 0)); then
-    if fetch_metadata_with_cookie_spec "$url" ""; then
-      best_score=$(metadata_score false)
-      best_metadata=$METADATA
-      best_cookie_spec=''
-      best_cookie_label=''
-    else
-      die "Failed to fetch video metadata."
-    fi
+  if fetch_metadata_with_cookie_spec "$url" "" "$passthrough_name" candidate_metadata fetch_error; then
+    output_metadata_ref=$candidate_metadata
+    output_cookie_spec_ref=''
+    log_info "Anonymous extraction succeeded; browser cookies are not needed."
+    return 0
   fi
 
-  METADATA=$best_metadata
-  METADATA_COOKIE_SPEC=$best_cookie_spec
-  METADATA_COOKIE_LABEL=$best_cookie_label
-
-  if [[ -n "$METADATA_COOKIE_SPEC" ]]; then
-    log_info "Preferring browser cookies from: ${METADATA_COOKIE_LABEL}"
-  elif [[ "$tried_browser_cookies" == true ]]; then
-    log_info "Continuing without browser cookies; anonymous extraction worked best for this URL."
-  else
-    log_info "No browser cookie database found. Continuing without browser cookies."
+  log_warning "Anonymous extraction failed; trying installed browsers."
+  if [[ -n "$fetch_error" ]]; then
+    log_warning "$fetch_error"
   fi
+
+  while IFS=$'\t' read -r candidate_cookie_spec cookie_label; do
+    [[ -n "$candidate_cookie_spec" ]] || continue
+    if fetch_metadata_with_cookie_spec "$url" "$candidate_cookie_spec" "$passthrough_name" candidate_metadata fetch_error; then
+      # shellcheck disable=SC2034
+      output_metadata_ref=$candidate_metadata
+      # shellcheck disable=SC2034
+      output_cookie_spec_ref=$candidate_cookie_spec
+      log_info "Using the newest cookie profile found by yt-dlp for: ${cookie_label}"
+      return 0
+    fi
+
+    log_warning "Browser cookies from ${cookie_label} did not work for this URL; trying the next candidate."
+    if [[ -n "$fetch_error" ]]; then
+      log_warning "$fetch_error"
+    fi
+  done < <(discover_browser_cookie_candidates)
+
+  die "Failed to fetch video metadata anonymously or with cookies from installed browsers."
 }
 
 parse_time_ms() {
@@ -349,7 +463,7 @@ parse_time_ms() {
 
   [[ -n "$value" ]] || return 1
   IFS=: read -r -a parts <<<"$value"
-  ((${#parts[@]} >= 1 && ${#parts[@]} <= 3)) || return 1
+  ((${#parts[@]} >= 1 && ${#parts[@]} <= MAX_TIME_COMPONENTS)) || return 1
 
   for index in "${!parts[@]}"; do
     part=${parts[$index]}
@@ -357,15 +471,15 @@ parse_time_ms() {
 
     if ((index < ${#parts[@]} - 1)); then
       [[ "$part" != *.* ]] || return 1
-      prefix_seconds=$((prefix_seconds * 60 + 10#$part))
+      prefix_seconds=$((prefix_seconds * SECONDS_PER_MINUTE + 10#$part))
       continue
     fi
 
     whole=${part%%.*}
     if [[ "$part" == *.* ]]; then
       fraction=${part#*.}
-      fraction=${fraction:0:3}
-      while ((${#fraction} < 3)); do
+      fraction=${fraction:0:FRACTIONAL_SECOND_DIGITS}
+      while ((${#fraction} < FRACTIONAL_SECOND_DIGITS)); do
         fraction+="0"
       done
       fraction_ms=$((10#$fraction))
@@ -373,45 +487,45 @@ parse_time_ms() {
       fraction_ms=0
     fi
 
-    printf '%s\n' $((prefix_seconds * 60000 + 10#$whole * 1000 + fraction_ms))
+    printf '%s\n' $((prefix_seconds * MILLISECONDS_PER_MINUTE + 10#$whole * MILLISECONDS_PER_SECOND + fraction_ms))
   done
 }
 
 split_time_range() {
   local range=$1
-  local start_var=$2
-  local end_var=$3
-  local parsed_start parsed_end rest
+  local -n start_ref=$2
+  local -n end_ref=$3
+  local range_pattern
+  local parsed_start parsed_end
 
-  if [[ "$range" == -* ]]; then
-    rest=${range:1}
-    [[ "$rest" == *-* ]] || return 1
-    parsed_start="-${rest%%-*}"
-    parsed_end=${rest#*-}
-  else
-    [[ "$range" == *-* ]] || return 1
-    parsed_start=${range%%-*}
-    parsed_end=${range#*-}
-  fi
-
-  [[ -n "$parsed_start" && -n "$parsed_end" ]] || return 1
-  printf -v "$start_var" '%s' "$parsed_start"
-  printf -v "$end_var" '%s' "$parsed_end"
+  range_pattern='^(-?[0-9]+(:[0-9]+){0,2}([.][0-9]+)?)?-(-?[0-9]+(:[0-9]+){0,2}([.][0-9]+)?|inf|infinite)?$'
+  [[ "$range" =~ $range_pattern ]] || return 1
+  parsed_start=${BASH_REMATCH[1]}
+  parsed_end=${BASH_REMATCH[4]}
+  [[ -n "$parsed_start" || -n "$parsed_end" ]] || return 1
+  parsed_start=${parsed_start:-0}
+  parsed_end=${parsed_end:-inf}
+  [[ "$parsed_end" != infinite ]] || parsed_end=inf
+  # Assigned through nameref output parameters.
+  # shellcheck disable=SC2034
+  start_ref=$parsed_start
+  # shellcheck disable=SC2034
+  end_ref=$parsed_end
 }
 
 is_time_endpoint() {
-  [[ "$1" == "inf" || "$1" =~ ^-?[0-9]+(:[0-9]+){0,2}([.][0-9]+)?$ ]]
+  [[ "$1" == "inf" || "$1" =~ $TIME_ENDPOINT_PATTERN ]]
 }
 
 resolve_time_endpoint_ms() {
   local value=$1
   local duration_ms=$2
-  local output_var=$3
+  local -n output_ref=$3
   local raw_ms resolved_ms
 
   if [[ "$value" == "inf" ]]; then
     [[ -n "$duration_ms" ]] || return 1
-    printf -v "$output_var" '%s' "$duration_ms"
+    output_ref=$duration_ms
     return 0
   fi
 
@@ -423,7 +537,7 @@ resolve_time_endpoint_ms() {
     resolved_ms=$(parse_time_ms "$value") || return 1
   fi
 
-  printf -v "$output_var" '%s' "$resolved_ms"
+  output_ref=$resolved_ms
 }
 
 validate_time_range() {
@@ -484,9 +598,10 @@ first_downloaded_file() {
   local -a files=()
   local file
 
-  while IFS= read -r -d '' file; do
+  for file in "$directory"/*; do
+    [[ -f "$file" && "$file" != *.part ]] || continue
     files+=("$file")
-  done < <(find "$directory" -maxdepth 1 -type f ! -name '*.part' -print0 | sort -z)
+  done
 
   ((${#files[@]} > 0)) || return 1
   printf '%s\n' "${files[0]}"
@@ -526,29 +641,29 @@ next_available_path() {
 compress_video() {
   local input_file=$1
   local crf=$2
-  local output_var=$3
+  local -n output_ref=$3
   local base_name output_file
 
   [[ -f "$input_file" ]] || die "Downloaded file not found for compression."
   base_name=${input_file##*/}
   base_name=${base_name%.*}
-  if [[ -e "./${base_name}.mp4" ]]; then
-    output_file=$(next_available_path "${base_name}-compressed" mp4)
+  if [[ -e "./${base_name}.${COMPRESSION_OUTPUT_EXTENSION}" ]]; then
+    output_file=$(next_available_path "${base_name}-compressed" "$COMPRESSION_OUTPUT_EXTENSION")
   else
-    output_file="./${base_name}.mp4"
+    output_file="./${base_name}.${COMPRESSION_OUTPUT_EXTENSION}"
   fi
 
   log_info "Compressing video with CRF ${crf}..."
   log_info "  Input:  ${input_file}"
   log_info "  Output: ${output_file}"
 
-  ffmpeg -nostdin -hide_banner -i "$input_file" \
-    -map 0:v:0 -map '0:a?' -map_metadata 0 \
-    -c:v libx264 -preset slow -crf "$crf" -c:a copy \
-    -movflags +faststart -n "$output_file" \
+  ffmpeg "${FFMPEG_BASE_ARGS[@]}" -i "$input_file" \
+    "${COMPRESSION_ARGS[@]}" -crf "$crf" "$output_file" \
     || die "Compression failed."
 
-  printf -v "$output_var" '%s' "$output_file"
+  # Assigned through a nameref output parameter.
+  # shellcheck disable=SC2034
+  output_ref=$output_file
   log_success "Compression finished successfully."
 }
 
@@ -562,7 +677,7 @@ change_file_date() {
     return 0
   fi
 
-  if [[ ! "$upload_date" =~ ^[0-9]{8}$ ]]; then
+  if [[ ! "$upload_date" =~ $UPLOAD_DATE_PATTERN ]]; then
     log_warning "Upload date '$upload_date' is not in YYYYMMDD format. Skipping file date modification."
     return 0
   fi
@@ -575,7 +690,7 @@ change_file_date() {
   fi
 
   log_info "Setting file modification time of '${file_to_touch}' to ${upload_date}..."
-  touch -t "${upload_date}0000" "$file_to_touch"
+  touch -t "${upload_date}${UPLOAD_DATE_TIME_SUFFIX}" "$file_to_touch"
 }
 
 run_yt_dlp() {
@@ -587,27 +702,40 @@ run_yt_dlp() {
 
 download_media() {
   local output_tmpl=$1
-  local path_file_var=$2
+  local media_url=$2
+  local passthrough_name=$3
+  local -n output_path_file_ref=$4
+  local -n passthrough_ref=$passthrough_name
   local path_file
   local -a download_args=()
-  shift 2
+  shift 4
 
-  path_file=$(make_temp_file)
-  download_args=("$@" --output "$output_tmpl" --print-to-file after_move:filepath "$path_file" "$url" "${passthrough[@]}")
+  make_temp_file path_file
+  download_args=(
+    "$@"
+    --output "$output_tmpl"
+    --print-to-file after_move:filepath "$path_file"
+    --no-simulate
+    "${passthrough_ref[@]}"
+    -- "$media_url"
+  )
   run_yt_dlp "${download_args[@]}"
-  printf -v "$path_file_var" '%s' "$path_file"
+  # Assigned through a nameref output parameter.
+  # shellcheck disable=SC2034
+  output_path_file_ref=$path_file
 }
 
 main() {
   local format url time_range=''
   local compress=false
-  local browser_cookie_mode=auto
-  local crf=26
+  local browser_cookie_mode=$DEFAULT_BROWSER_COOKIE_MODE
+  local crf=$DEFAULT_CRF
   local -a passthrough=()
   local -a cookie_args=()
   local -a args=()
-  local base_format is_cut=false
+  local base_format requires_time_range supports_compression force_precise_cuts
   local metadata duration upload_date
+  local metadata_cookie_spec=''
   local time_suffix=''
   local temp_dir=''
   local downloaded_paths=''
@@ -632,8 +760,9 @@ main() {
   url=$2
   shift 2
 
-  is_valid_format "$format" \
-    || die "Invalid format '$format'. Must be one of: mp4, mp3, m4a, mp4-cut, mp3-cut, m4a-cut."
+  read_format_spec \
+    "$format" base_format requires_time_range supports_compression force_precise_cuts \
+    || die "Invalid format '$format'. Must be one of: $(supported_formats)."
 
   while (($# > 0)); do
     case "$1" in
@@ -649,16 +778,16 @@ main() {
       --crf)
         (($# >= 2)) || die "Missing value for --crf."
         crf=$2
-        is_valid_crf "$crf" || die "Invalid --crf value '$crf'. Expected an integer from 0 to 51."
+        is_valid_crf "$crf" || die "Invalid --crf value '$crf'. Expected an integer from $MIN_CRF to $MAX_CRF."
         shift 2
         ;;
       --crf=*)
         crf=${1#*=}
-        is_valid_crf "$crf" || die "Invalid --crf value '$crf'. Expected an integer from 0 to 51."
+        is_valid_crf "$crf" || die "Invalid --crf value '$crf'. Expected an integer from $MIN_CRF to $MAX_CRF."
         shift
         ;;
       --no-browser-cookies)
-        browser_cookie_mode=none
+        browser_cookie_mode=$DISABLED_BROWSER_COOKIE_MODE
         shift
         ;;
       --browser-cookies)
@@ -672,7 +801,7 @@ main() {
         shift
         ;;
       -*)
-        if [[ -z "$time_range" && "$format" == *-cut ]]; then
+        if [[ -z "$time_range" && "$requires_time_range" == true ]]; then
           time_range=$1
           shift
         else
@@ -687,22 +816,21 @@ main() {
     esac
   done
 
-  [[ "$format" == *-cut ]] && is_cut=true
-  if [[ "$is_cut" == true && -z "$time_range" ]]; then
+  if [[ "$requires_time_range" == true && -z "$time_range" ]]; then
     die "Missing time range for a '-cut' format."
   fi
 
-  base_format=${format%-cut}
-  if [[ "$compress" == true && "$base_format" != mp4 ]]; then
+  if [[ "$compress" == true && "$supports_compression" != true ]]; then
     die "--compress is only supported for mp4 formats."
   fi
 
   log_info "Using yt-dlp: $(command -v yt-dlp)"
   log_info "Fetching video metadata..."
-  select_metadata_and_browser_cookies "$url" "$browser_cookie_mode"
-  metadata=$METADATA
-  if [[ -n "$METADATA_COOKIE_SPEC" ]]; then
-    cookie_args=(--cookies-from-browser "$METADATA_COOKIE_SPEC")
+  select_metadata_and_browser_cookies \
+    "$url" "$browser_cookie_mode" passthrough \
+    metadata metadata_cookie_spec
+  if [[ -n "$metadata_cookie_spec" ]]; then
+    cookie_args=(--cookies-from-browser "$metadata_cookie_spec")
   fi
 
   duration=$(jq -r '.duration // empty' <<<"$metadata") \
@@ -714,43 +842,30 @@ main() {
     validate_time_range "$time_range" "$duration"
   fi
 
-  args=(--ignore-config --no-playlist --mtime --trim-filenames 220 "${cookie_args[@]}")
-  case "$base_format" in
-    m4a)
-      args+=(--extract-audio --audio-format m4a --audio-quality 0 --embed-thumbnail)
-      ;;
-    mp3)
-      args+=(--extract-audio --audio-format mp3 --audio-quality 0 --embed-thumbnail)
-      ;;
-    mp4)
-      args+=(
-        --format 'bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4]/best'
-        --format-sort 'vcodec:h264,acodec:aac,res:1080'
-        --merge-output-format mp4
-        --remux-video mp4
-      )
-      ;;
-  esac
-
-  args+=(--embed-metadata --console-title)
+  args=("${YT_DLP_BASE_ARGS[@]}" "${DOWNLOAD_BEHAVIOR_ARGS[@]}" "${cookie_args[@]}")
+  append_format_args args "$base_format"
+  args+=("${DOWNLOAD_FINAL_ARGS[@]}")
 
   if [[ -n "$time_range" ]]; then
-    args+=(--download-sections "*${time_range}" --force-keyframes-at-cuts)
+    args+=(--download-sections "*${time_range}")
+    if [[ "$force_precise_cuts" == true ]]; then
+      args+=(--force-keyframes-at-cuts)
+    fi
     time_suffix="-${time_range//:/_}"
   fi
 
   if [[ "$compress" == true ]]; then
-    temp_dir=$(make_temp_dir)
-    output_tmpl="${temp_dir}/%(display_id)s.%(ext)s"
-    download_media "$output_tmpl" downloaded_paths "${args[@]}"
+    make_temp_dir temp_dir
+    output_tmpl="${temp_dir}/${OUTPUT_ID_TEMPLATE}.%(ext)s"
+    download_media "$output_tmpl" "$url" passthrough downloaded_paths "${args[@]}"
 
     downloaded_path=$(first_recorded_path "$downloaded_paths") \
       || downloaded_path=$(first_downloaded_file "$temp_dir") \
       || die "Downloaded file not found for compression."
     compress_video "$downloaded_path" "$crf" compressed_path
   else
-    output_tmpl="%(display_id)s${time_suffix}.%(ext)s"
-    download_media "$output_tmpl" downloaded_paths "${args[@]}"
+    output_tmpl="${OUTPUT_ID_TEMPLATE}${time_suffix}.%(ext)s"
+    download_media "$output_tmpl" "$url" passthrough downloaded_paths "${args[@]}"
     downloaded_path=$(first_recorded_path "$downloaded_paths" || true)
   fi
 
@@ -758,4 +873,6 @@ main() {
   log_success "All operations completed successfully."
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

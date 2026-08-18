@@ -41,6 +41,7 @@ baseYtDlp.overrideAttrs (
     };
   }
   // {
+    patches = (prevAttrs.patches or [ ]) ++ [ ./prefer-matching-gnome-keyring-application.patch ];
     passthru = (prevAttrs.passthru or { }) // {
       updateScript = ./update.sh;
       inherit upstreamVersion;
