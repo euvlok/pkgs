@@ -3,7 +3,7 @@
   "upstreamVersion": "7.0.0",
   "rev": "c4d1ced36563984932074d2d08fb960d25d455ab",
   "srcHash": "sha256-yjDTIcWxmHBKw5OI7pz3Pv/6S9JSf5xqWVKmzJHnguk=",
-  "mcpSdkVersion": "1.29.0",
-  "mcpSrcHash": "sha256-lRlj5RT/R5zrYL5XpdQR2l9t99G94WTsubN0gSQekMc=",
+  "mcpSdkVersion": "1.29.1",
+  "mcpSrcHash": "sha256-x5cm1QojKp7K1mKc9ejazzJzBhIkFBif6/A+hEryYKo=",
   "mvnHash": "sha256-UnDC/GztCTinBCAUqwWCuk+gAugI36DxiqLMl7pbfKQ="
 }
