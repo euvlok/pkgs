@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash
-#!nix-shell -i bash -p bash cacert coreutils curl gnugrep jq nix nix-prefetch-github
+#!nix-shell -i bash -p bash cacert coreutils curl gnugrep jq nix
 
-# Updates source.json to the latest stable codex release.
-# Pre-releases (alpha, beta, rc, "-unstable-" pins, etc.) are skipped: only
-# tags matching ^rust-v(\d+\.\d+\.\d+)$ are considered.
+# Updates source.json to the latest Codex alpha release.
 
 set -euo pipefail
 
@@ -15,7 +13,7 @@ else
 fi
 
 repo="openai/codex"
-tag_regex='^rust-v[0-9]+\.[0-9]+\.[0-9]+$'
+tag_regex='^rust-v[0-9]+\.[0-9]+\.[0-9]+-alpha\.[0-9]+$'
 
 auth_header=()
 if [[ -n "${GITHUB_TOKEN:-${GH_TOKEN:-}}" ]]; then
@@ -26,13 +24,14 @@ latest_tag=$(
   curl -fsSL "${auth_header[@]}" \
     -H "Accept: application/vnd.github+json" \
     "https://api.github.com/repos/${repo}/releases?per_page=100" \
-  | jq -r '.[] | select(.prerelease == false) | .tag_name' \
+  | jq -r '.[] | select(.prerelease == true) | .tag_name' \
   | grep -E "$tag_regex" \
-  | head -n1
+  | sort -V \
+  | tail -n1
 )
 
 if [[ -z "$latest_tag" ]]; then
-  echo "no stable tag found for $repo" >&2
+  echo "no alpha tag found for $repo" >&2
   exit 1
 fi
 
@@ -40,31 +39,40 @@ version="${latest_tag#rust-v}"
 current_version=$(jq -r .version source.json)
 
 if [[ "$current_version" == "$version" ]]; then
-  echo "codex already at latest stable: $version"
+  echo "codex already at latest alpha: $version"
   exit 0
 fi
 
-src_hash=$(nix-prefetch-github openai codex --rev "$latest_tag" --json | jq -r .hash)
+src_hash=$(nix hash convert --hash-algo sha256 --from nix32 \
+  "$(nix-prefetch-url --unpack "https://github.com/openai/codex/archive/refs/tags/$latest_tag.tar.gz")")
 
-# Fetch cargo vendor hash by building with a fake hash and reading the mismatch.
+# Fetch only the Cargo vendor derivation, without compiling Codex.
 tmp_pkg=$(mktemp -d)
 trap 'rm -rf "$tmp_pkg"' EXIT
-cat >"$tmp_pkg/source.json" <<EOF
-{
-  "version": "$version",
-  "rev": "$latest_tag",
-  "srcHash": "$src_hash",
-  "cargoHash": "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+cat >"$tmp_pkg/vendor.nix" <<'EOF'
+{ version, rev, srcHash }:
+let
+  pkgs = import <nixpkgs> { };
+  src = pkgs.fetchFromGitHub {
+    owner = "openai";
+    repo = "codex";
+    inherit rev;
+    hash = srcHash;
+  };
+in
+pkgs.rustPlatform.fetchCargoVendor {
+  name = "codex-${version}-vendor";
+  inherit src;
+  sourceRoot = "${src.name}/codex-rs";
+  hash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
 }
 EOF
-cp package.nix "$tmp_pkg/"
 
-# Force the package override path while deriving the vendor hash.  If nixpkgs
-# already carries the same Codex version, package.nix would otherwise skip the
-# source.json override, the fake cargo hash would never be used, and the updater
-# would fail to find the expected hash mismatch.
 build_log=$(NIXPKGS_ALLOW_UNFREE=1 nix build --impure --no-link --print-build-logs \
-  --expr "with import <nixpkgs> {}; callPackage $tmp_pkg/package.nix { codex = codex.overrideAttrs (_: { version = \"0.0.0\"; }); }" 2>&1 || true)
+  --file "$tmp_pkg/vendor.nix" \
+  --argstr version "$version" \
+  --argstr rev "$latest_tag" \
+  --argstr srcHash "$src_hash" 2>&1 || true)
 cargo_hash=$(echo "$build_log" | awk '/got: +sha256-/ {print $2; exit}')
 
 if [[ -z "$cargo_hash" ]]; then
