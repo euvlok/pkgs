@@ -20,8 +20,6 @@ codex.overrideAttrs (
     src = upstreamSrc;
     sourceRoot = "${upstreamSrc.name}/codex-rs";
     postPatch = ''
-      substituteInPlace $cargoDepsCopy/*/webrtc-sys-*/build.rs \
-        --replace-fail "cargo:rustc-link-lib=static=webrtc" "cargo:rustc-link-lib=dylib=webrtc"
       substituteInPlace Cargo.toml \
         --replace-fail 'lto = "thin"' ""
       sed -i '/^codegen-units = /d' Cargo.toml
