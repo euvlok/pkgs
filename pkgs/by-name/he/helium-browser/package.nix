@@ -172,7 +172,7 @@ if stdenvNoCC.hostPlatform.isDarwin then
       upstreamVersion = version;
     };
 
-    sourceRoot = "Helium.app";
+    sourceRoot = "Helium/Helium.app";
 
     nativeBuildInputs = [
       _7zz
