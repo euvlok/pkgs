@@ -23,6 +23,7 @@ codex.overrideAttrs (
       substituteInPlace Cargo.toml \
         --replace-fail 'lto = "thin"' ""
       sed -i '/^codegen-units = /d' Cargo.toml
+      sed -i '1i#![recursion_limit = "256"]' chatgpt/src/lib.rs
     '';
     cargoDeps = rustPlatform.fetchCargoVendor {
       name = "codex-${sources.version}-vendor";
