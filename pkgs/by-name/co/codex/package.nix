@@ -1,8 +1,11 @@
 {
   codex,
+  bubblewrap,
   fetchFromGitHub,
   lib,
+  ripgrep,
   rustPlatform,
+  stdenv,
 }:
 let
   sources = lib.importJSON ./source.json;
@@ -33,6 +36,29 @@ codex.overrideAttrs (
     };
   }
   // {
+    postInstall = (prevAttrs.postInstall or "") + ''
+      mkdir -p $out/codex-resources $out/codex-path
+      cp ${lib.getExe ripgrep} $out/codex-path/rg
+      ${lib.optionalString stdenv.hostPlatform.isLinux ''
+        cp ${lib.getExe' bubblewrap "bwrap"} $out/codex-resources/bwrap
+      ''}
+      cat > $out/codex-package.json <<'EOF'
+      {
+        "layoutVersion": 1,
+        "version": "${
+          if lib.versionOlder prevAttrs.version sources.version then sources.version else prevAttrs.version
+        }",
+        "target": "${stdenv.hostPlatform.config}",
+        "variant": "codex",
+        "entrypoint": "bin/codex",
+        "resourcesDir": "codex-resources",
+        "pathDir": "codex-path"
+      }
+      EOF
+    '';
+    # The daemon copies bin/codex into its managed package. A Nix wrapper
+    # would keep executing the original store binary after that copy.
+    postFixup = "";
     passthru = (prevAttrs.passthru or { }) // {
       updateScript = ./update.sh;
       upstreamVersion = sources.version;
