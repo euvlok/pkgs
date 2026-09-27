@@ -1,7 +1,5 @@
 {
-  "version": "4.0.8",
-  "rev": "v4.0.8",
-  "srcHash": "sha256-rNfIpTWHC4MnzxVv5Q0PKrGH0AMY8RAUPw8lzqXJBKg=",
-  "webviewNpmDepsHash": "sha256-DGnOW+OxoxbU5S41bg3kom57+R6OOSsj6iQ3vmXKM+w=",
-  "vscodeNpmDepsHash": "sha256-vkRDwqMBbn/jG7psOJZj/XKR2UG4oCmIyIJL2nXkojw="
+  "version": "4.1.21",
+  "url": "https://github.com/cline/cline/releases/download/v4.1.21/cline-4.1.21.vsix",
+  "hash": "sha256-9lBlibtRBTcwNk3vCf7dua77JS1O02fmIV+T2BfAg1o="
 }
