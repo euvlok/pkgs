@@ -272,9 +272,10 @@ let
       "-Dghidra.version=${mvnDepsGhidraVersion}"
     ];
     # go-offline-maven-plugin does not discover Surefire's dynamically
-    # selected JUnit 4 provider.
+    # selected JUnit Platform provider
     manualMvnArtifacts = [
-      "org.apache.maven.surefire:surefire-junit4:3.5.6"
+      "org.apache.maven.surefire:surefire-junit-platform:3.6.0"
+      "org.junit.vintage:junit-vintage-engine:5.14.4"
     ];
 
     nativeBuildInputs = [
