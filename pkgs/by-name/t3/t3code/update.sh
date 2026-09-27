@@ -102,7 +102,7 @@ refresh_pnpm_deps_hash() {
   set +e
   build_log="$(
     nix build --impure --no-link --print-build-logs \
-      ".#legacyPackages.${system}.${attr}.pnpmDeps" \
+      ".#legacyPackages.${system}.${attr}.unwrapped.pnpmDeps" \
       --option sandbox true \
       2>&1
   )"
