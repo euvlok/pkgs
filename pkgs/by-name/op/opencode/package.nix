@@ -17,16 +17,16 @@ opencode.overrideAttrs (
   lib.optionalAttrs (lib.versionOlder prevAttrs.version upstreamVersion) {
     version = upstreamVersion;
     src = upstreamSrc;
-    node_modules = prevAttrs.node_modules.overrideAttrs {
-      version = upstreamVersion;
-      src = upstreamSrc;
-      outputHash = sources.nodeModulesHash;
-    };
   }
   // {
     passthru = (prevAttrs.passthru or { }) // {
       updateScript = ./update.sh;
       inherit upstreamVersion;
+      node_modules = prevAttrs.passthru.node_modules.overrideAttrs {
+        version = upstreamVersion;
+        src = upstreamSrc;
+        outputHash = sources.nodeModulesHash;
+      };
     };
   }
 )
