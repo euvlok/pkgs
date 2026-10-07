@@ -17,8 +17,8 @@ assert_equals() {
   local actual=$2
   local context=$3
 
-  [[ "$actual" == "$expected" ]] \
-    || fail_test "$context: expected '$expected', got '$actual'"
+  [[ "$actual" == "$expected" ]] ||
+    fail_test "$context: expected '$expected', got '$actual'"
 }
 
 assert_file_has_line() {
@@ -64,15 +64,15 @@ test_format_declarations() {
     "$(supported_formats)" \
     'supported format list'
 
-  read_format_spec mp4-cut base_format requires_time_range supports_compression force_precise_cuts \
-    || fail_test "mp4-cut format declaration was not found"
+  read_format_spec mp4-cut base_format requires_time_range supports_compression force_precise_cuts ||
+    fail_test "mp4-cut format declaration was not found"
   assert_equals mp4 "$base_format" 'mp4-cut base format'
   assert_equals true "$requires_time_range" 'mp4-cut time-range policy'
   assert_equals true "$supports_compression" 'mp4-cut compression policy'
   assert_equals true "$force_precise_cuts" 'mp4-cut precision policy'
 
-  read_format_spec mp3-cut base_format requires_time_range supports_compression force_precise_cuts \
-    || fail_test "mp3-cut format declaration was not found"
+  read_format_spec mp3-cut base_format requires_time_range supports_compression force_precise_cuts ||
+    fail_test "mp3-cut format declaration was not found"
   assert_equals false "$force_precise_cuts" 'mp3-cut precision policy'
 
   format_args=()
@@ -104,12 +104,12 @@ test_format_declarations() {
     IFS=$'\t' read -r \
       format base_format requires_time_range supports_compression force_precise_cuts <<<"$spec"
     [[ -n "$format" && -n "$base_format" ]] || fail_test "incomplete format declaration: $spec"
-    [[ "$requires_time_range" == true || "$requires_time_range" == false ]] \
-      || fail_test "invalid time-range policy in format declaration: $spec"
-    [[ "$supports_compression" == true || "$supports_compression" == false ]] \
-      || fail_test "invalid compression policy in format declaration: $spec"
-    [[ "$force_precise_cuts" == true || "$force_precise_cuts" == false ]] \
-      || fail_test "invalid precise-cut policy in format declaration: $spec"
+    [[ "$requires_time_range" == true || "$requires_time_range" == false ]] ||
+      fail_test "invalid time-range policy in format declaration: $spec"
+    [[ "$supports_compression" == true || "$supports_compression" == false ]] ||
+      fail_test "invalid compression policy in format declaration: $spec"
+    [[ "$force_precise_cuts" == true || "$force_precise_cuts" == false ]] ||
+      fail_test "invalid precise-cut policy in format declaration: $spec"
     format_args=()
     append_format_args format_args "$base_format"
     ((${#format_args[@]} > 0)) || fail_test "$base_format has no declared yt-dlp arguments"
@@ -123,16 +123,16 @@ test_browser_declaration_schema() {
 
   for spec in "${BROWSER_PROFILE_SPECS[@]}"; do
     IFS=$'\t' read -r root_key browser label relative_path <<<"$spec"
-    [[ -n "$root_key" && -n "$browser" && -n "$label" && -n "$relative_path" ]] \
-      || fail_test "incomplete browser profile declaration: $spec"
-    [[ "$root_key" == config || "$root_key" == home ]] \
-      || fail_test "invalid browser root key in declaration: $spec"
+    [[ -n "$root_key" && -n "$browser" && -n "$label" && -n "$relative_path" ]] ||
+      fail_test "incomplete browser profile declaration: $spec"
+    [[ "$root_key" == config || "$root_key" == home ]] ||
+      fail_test "invalid browser root key in declaration: $spec"
     declared_browsers[$browser]=1
   done
 
   for browser in "${expected_browsers[@]}"; do
-    [[ -n "${declared_browsers[$browser]+x}" ]] \
-      || fail_test "supported yt-dlp browser '$browser' is missing from auto-discovery"
+    [[ -n "${declared_browsers[$browser]+x}" ]] ||
+      fail_test "supported yt-dlp browser '$browser' is missing from auto-discovery"
   done
 }
 
@@ -166,10 +166,10 @@ test_cookie_discovery_is_bounded() {
   }
 
   discovery_output=$(HOME="$test_home" XDG_CONFIG_HOME="$test_home/.config" discover_browser_cookie_candidates 2>&1)
-  [[ "$discovery_output" != *"called find unexpectedly"* ]] \
-    || fail_test "cookie discovery performed an unbounded filesystem search"
-  [[ "$discovery_output" == *$'chromium\tChromium'* ]] \
-    || fail_test "cookie discovery did not find an installed Chromium browser"
+  [[ "$discovery_output" != *"called find unexpectedly"* ]] ||
+    fail_test "cookie discovery performed an unbounded filesystem search"
+  [[ "$discovery_output" == *$'chromium\tChromium'* ]] ||
+    fail_test "cookie discovery did not find an installed Chromium browser"
 }
 
 test_auto_cookie_fallback() {

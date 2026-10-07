@@ -23,11 +23,11 @@ fi
 latest_tag=$(
   curl -fsSL "${auth_header[@]}" \
     -H "Accept: application/vnd.github+json" \
-    "https://api.github.com/repos/${repo}/releases?per_page=100" \
-  | jq -r '.[] | select(.prerelease == true) | .tag_name' \
-  | grep -E "$tag_regex" \
-  | sort -V \
-  | tail -n1
+    "https://api.github.com/repos/${repo}/releases?per_page=100" |
+    jq -r '.[] | select(.prerelease == true) | .tag_name' |
+    grep -E "$tag_regex" |
+    sort -V |
+    tail -n1
 )
 
 if [[ -z "$latest_tag" ]]; then

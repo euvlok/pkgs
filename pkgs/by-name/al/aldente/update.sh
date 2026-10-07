@@ -100,7 +100,7 @@ jq -n \
   --arg version "$latest" \
   --arg url "$asset_url" \
   --arg hash "$hash" \
-  '{ version: $version, url: $url, hash: $hash }' > source.json.new
+  '{ version: $version, url: $url, hash: $hash }' >source.json.new
 mv source.json.new source.json
 
 echo "aldente: updated source.json to $latest"

@@ -13,10 +13,10 @@ fi
 repo="cline/cline"
 tag=$(
   gh release list --repo "$repo" --limit 100 --json tagName \
-    --jq '.[].tagName' \
-  | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
-  | sort -V \
-  | tail -n 1
+    --jq '.[].tagName' |
+    grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' |
+    sort -V |
+    tail -n 1
 )
 
 if [[ -z "$tag" ]]; then
@@ -37,6 +37,6 @@ fi
 
 hash=$(nix store prefetch-file --json "$url" | jq -r .hash)
 jq -n --arg version "$version" --arg url "$url" --arg hash "$hash" \
-  '{version: $version, url: $url, hash: $hash}' > source.json
+  '{version: $version, url: $url, hash: $hash}' >source.json
 
 echo "cline-ai: updated to $version"

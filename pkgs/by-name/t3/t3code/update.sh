@@ -88,7 +88,7 @@ write_sources() {
         srcHash: $nightly_src_hash,
         nodeModulesHash: $nightly_node_modules_hash
       }
-    }' > sources.json
+    }' >sources.json
 }
 
 refresh_pnpm_deps_hash() {

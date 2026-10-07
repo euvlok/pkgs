@@ -1,5 +1,5 @@
 {
-  "version": "4.1.23",
-  "url": "https://github.com/cline/cline/releases/download/v4.1.23/cline-4.1.23.vsix",
-  "hash": "sha256-jTFF5pSvVoBuDF80lJz9pkWmeipP+TAIy3XLDmBsx6Y="
+	"version": "4.1.23",
+	"url": "https://github.com/cline/cline/releases/download/v4.1.23/cline-4.1.23.vsix",
+	"hash": "sha256-jTFF5pSvVoBuDF80lJz9pkWmeipP+TAIy3XLDmBsx6Y="
 }

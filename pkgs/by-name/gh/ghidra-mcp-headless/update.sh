@@ -23,8 +23,8 @@ fi
 rev=$(
   curl -fsSL "${auth_header[@]}" \
     -H "Accept: application/vnd.github+json" \
-    "https://api.github.com/repos/${repo}/git/ref/heads/${branch}" \
-    | jq -r .object.sha
+    "https://api.github.com/repos/${repo}/git/ref/heads/${branch}" |
+    jq -r .object.sha
 )
 
 if [[ -z "$rev" || "$rev" == "null" ]]; then
@@ -35,15 +35,15 @@ fi
 commit_date=$(
   curl -fsSL "${auth_header[@]}" \
     -H "Accept: application/vnd.github+json" \
-    "https://api.github.com/repos/${repo}/commits/${rev}" \
-    | jq -r .commit.committer.date
+    "https://api.github.com/repos/${repo}/commits/${rev}" |
+    jq -r .commit.committer.date
 )
 date="${commit_date%%T*}"
 
 upstream_version=$(
   curl -fsSL "${auth_header[@]}" \
-    "https://raw.githubusercontent.com/${repo}/${rev}/pyproject.toml" \
-    | awk -F'"' '!found && /^version = / {print $2; found = 1}'
+    "https://raw.githubusercontent.com/${repo}/${rev}/pyproject.toml" |
+    awk -F'"' '!found && /^version = / {print $2; found = 1}'
 )
 
 if [[ -z "$upstream_version" ]]; then
@@ -63,19 +63,19 @@ if [[ "$current_rev" == "$rev" ]]; then
 else
   src_hash=$(
     nix store prefetch-file --json --unpack \
-      "https://github.com/${repo}/archive/${rev}.tar.gz" \
-      | jq -r .hash
+      "https://github.com/${repo}/archive/${rev}.tar.gz" |
+      jq -r .hash
   )
 fi
 
 mcp_sdk_version=$(
   curl -fsSL "${auth_header[@]}" \
     -H "Accept: application/vnd.github+json" \
-    "https://api.github.com/repos/modelcontextprotocol/python-sdk/tags?per_page=100" \
-    | jq -r '.[].name' \
-    | awk '/^v1\.[0-9]+\.[0-9]+$/ { sub(/^v/, ""); print }' \
-    | sort -V \
-    | tail -n 1
+    "https://api.github.com/repos/modelcontextprotocol/python-sdk/tags?per_page=100" |
+    jq -r '.[].name' |
+    awk '/^v1\.[0-9]+\.[0-9]+$/ { sub(/^v/, ""); print }' |
+    sort -V |
+    tail -n 1
 )
 
 if [[ -z "$mcp_sdk_version" ]]; then
@@ -88,8 +88,8 @@ if [[ "$current_mcp_sdk_version" == "$mcp_sdk_version" ]]; then
 else
   mcp_src_hash=$(
     nix store prefetch-file --json --unpack \
-      "https://github.com/modelcontextprotocol/python-sdk/archive/refs/tags/v${mcp_sdk_version}.tar.gz" \
-      | jq -r .hash
+      "https://github.com/modelcontextprotocol/python-sdk/archive/refs/tags/v${mcp_sdk_version}.tar.gz" |
+      jq -r .hash
   )
 fi
 

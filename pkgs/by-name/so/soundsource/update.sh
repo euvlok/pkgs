@@ -183,22 +183,22 @@ submit_capture() {
       status="$(jq -r '.status // empty' <<<"$status_json" 2>/dev/null || true)"
 
       case "$status" in
-        success)
-          timestamp="$(jq -r '.timestamp' <<<"$status_json")"
-          if [[ ! "$timestamp" =~ ^[0-9]{14}$ ]]; then
-            echo "soundsource: capture succeeded without a valid timestamp" >&2
-            poll_finished="true"
-            break
-          fi
-          snapshot_url="https://web.archive.org/web/${timestamp}id_/$download_url"
-          return 0
-          ;;
-        error)
-          echo "soundsource: capture failed: $(jq -r '.message // "unknown error"' <<<"$status_json")" >&2
+      success)
+        timestamp="$(jq -r '.timestamp' <<<"$status_json")"
+        if [[ ! "$timestamp" =~ ^[0-9]{14}$ ]]; then
+          echo "soundsource: capture succeeded without a valid timestamp" >&2
           poll_finished="true"
           break
-          ;;
-        *) sleep 6 ;;
+        fi
+        snapshot_url="https://web.archive.org/web/${timestamp}id_/$download_url"
+        return 0
+        ;;
+      error)
+        echo "soundsource: capture failed: $(jq -r '.message // "unknown error"' <<<"$status_json")" >&2
+        poll_finished="true"
+        break
+        ;;
+      *) sleep 6 ;;
       esac
     done
 

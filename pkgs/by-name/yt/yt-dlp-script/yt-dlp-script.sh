@@ -293,9 +293,9 @@ resolve_browser_root() {
   local -n output_ref=$4
 
   case "$root_key" in
-    config) output_ref=$config_home ;;
-    home) output_ref=$home ;;
-    *) die "Unknown browser profile root key '$root_key'." ;;
+  config) output_ref=$config_home ;;
+  home) output_ref=$home ;;
+  *) die "Unknown browser profile root key '$root_key'." ;;
   esac
 }
 
@@ -365,12 +365,12 @@ fetch_metadata_with_cookie_spec() {
   )
 
   make_temp_file log_file
-  if yt-dlp "${metadata_args[@]}" > /dev/null 2>"$log_file"; then
+  if yt-dlp "${metadata_args[@]}" >/dev/null 2>"$log_file"; then
     rm -f -- "$log_file"
     error_ref=''
     metadata_ref=$(<"$metadata_file")
-    jq -e 'type == "object"' >/dev/null <<<"$metadata_ref" \
-      || die "yt-dlp returned invalid metadata JSON object."
+    jq -e 'type == "object"' >/dev/null <<<"$metadata_ref" ||
+      die "yt-dlp returned invalid metadata JSON object."
     return 0
   fi
 
@@ -394,32 +394,32 @@ select_metadata_and_browser_cookies() {
 
   if passthrough_has_cookie_option "${passthrough_ref[@]}"; then
     log_info "yt-dlp cookie option supplied; not auto-selecting browser cookies."
-    fetch_metadata_with_cookie_spec "$url" "" "$passthrough_name" candidate_metadata fetch_error \
-      || die_metadata_fetch "Failed to fetch video metadata." "$fetch_error"
+    fetch_metadata_with_cookie_spec "$url" "" "$passthrough_name" candidate_metadata fetch_error ||
+      die_metadata_fetch "Failed to fetch video metadata." "$fetch_error"
     output_metadata_ref=$candidate_metadata
     output_cookie_spec_ref=''
     return 0
   fi
 
   case "$browser_cookie_mode" in
-    "$DISABLED_BROWSER_COOKIE_MODE")
-      log_info "Browser cookies disabled by flag."
-      fetch_metadata_with_cookie_spec "$url" "" "$passthrough_name" candidate_metadata fetch_error \
-        || die_metadata_fetch "Failed to fetch video metadata." "$fetch_error"
-      output_metadata_ref=$candidate_metadata
-      output_cookie_spec_ref=''
-      return 0
-      ;;
-    "$DEFAULT_BROWSER_COOKIE_MODE") ;;
-    *)
-      log_info "Preferring browser cookies from: ${browser_cookie_mode}"
-      fetch_metadata_with_cookie_spec "$url" "$browser_cookie_mode" "$passthrough_name" candidate_metadata fetch_error \
-        || die_metadata_fetch \
-          "Failed to fetch video metadata with browser cookies '${browser_cookie_mode}'." "$fetch_error"
-      output_metadata_ref=$candidate_metadata
-      output_cookie_spec_ref=$browser_cookie_mode
-      return 0
-      ;;
+  "$DISABLED_BROWSER_COOKIE_MODE")
+    log_info "Browser cookies disabled by flag."
+    fetch_metadata_with_cookie_spec "$url" "" "$passthrough_name" candidate_metadata fetch_error ||
+      die_metadata_fetch "Failed to fetch video metadata." "$fetch_error"
+    output_metadata_ref=$candidate_metadata
+    output_cookie_spec_ref=''
+    return 0
+    ;;
+  "$DEFAULT_BROWSER_COOKIE_MODE") ;;
+  *)
+    log_info "Preferring browser cookies from: ${browser_cookie_mode}"
+    fetch_metadata_with_cookie_spec "$url" "$browser_cookie_mode" "$passthrough_name" candidate_metadata fetch_error ||
+      die_metadata_fetch \
+        "Failed to fetch video metadata with browser cookies '${browser_cookie_mode}'." "$fetch_error"
+    output_metadata_ref=$candidate_metadata
+    output_cookie_spec_ref=$browser_cookie_mode
+    return 0
+    ;;
   esac
 
   if fetch_metadata_with_cookie_spec "$url" "" "$passthrough_name" candidate_metadata fetch_error; then
@@ -545,17 +545,17 @@ validate_time_range() {
   local duration=$2
   local start end start_ms end_ms duration_ms=''
 
-  split_time_range "$range" start end \
-    || die "Invalid time range '$range'. Expected START-END, for example 30-60."
+  split_time_range "$range" start end ||
+    die "Invalid time range '$range'. Expected START-END, for example 30-60."
 
   if [[ "$start" == "inf" ]]; then
     die "Invalid time range '$range'. Start time cannot be inf."
   fi
 
-  is_time_endpoint "$start" \
-    || die "Invalid time range start '$start'. Use seconds, HH:MM:SS, or a negative timestamp."
-  is_time_endpoint "$end" \
-    || die "Invalid time range end '$end'. Use seconds, HH:MM:SS, inf, or a negative timestamp."
+  is_time_endpoint "$start" ||
+    die "Invalid time range start '$start'. Use seconds, HH:MM:SS, or a negative timestamp."
+  is_time_endpoint "$end" ||
+    die "Invalid time range end '$end'. Use seconds, HH:MM:SS, inf, or a negative timestamp."
 
   if [[ -n "$duration" && "$duration" != "null" ]]; then
     if ! duration_ms=$(parse_time_ms "$duration"); then
@@ -569,18 +569,18 @@ validate_time_range() {
     return 0
   fi
 
-  resolve_time_endpoint_ms "$start" "$duration_ms" start_ms \
-    || die "Invalid time range start '$start'. Use seconds or HH:MM:SS."
-  resolve_time_endpoint_ms "$end" "$duration_ms" end_ms \
-    || die "Invalid time range end '$end'. Use seconds, HH:MM:SS, or inf."
+  resolve_time_endpoint_ms "$start" "$duration_ms" start_ms ||
+    die "Invalid time range start '$start'. Use seconds or HH:MM:SS."
+  resolve_time_endpoint_ms "$end" "$duration_ms" end_ms ||
+    die "Invalid time range end '$end'. Use seconds, HH:MM:SS, or inf."
 
-  ((start_ms >= 0 && end_ms >= 0)) \
-    || die "Invalid time range '$range'. Negative timestamps must resolve within the video duration."
-  ((start_ms <= end_ms)) \
-    || die "Invalid time range '$range'. Start must be less than or equal to end."
+  ((start_ms >= 0 && end_ms >= 0)) ||
+    die "Invalid time range '$range'. Negative timestamps must resolve within the video duration."
+  ((start_ms <= end_ms)) ||
+    die "Invalid time range '$range'. Start must be less than or equal to end."
 
-  [[ -z "$duration_ms" ]] || ((end_ms <= duration_ms)) \
-    || die "Invalid time range '$range'. Video duration is ${duration}s."
+  [[ -z "$duration_ms" ]] || ((end_ms <= duration_ms)) ||
+    die "Invalid time range '$range'. Video duration is ${duration}s."
 }
 
 quote_command() {
@@ -658,8 +658,8 @@ compress_video() {
   log_info "  Output: ${output_file}"
 
   ffmpeg "${FFMPEG_BASE_ARGS[@]}" -i "$input_file" \
-    "${COMPRESSION_ARGS[@]}" -crf "$crf" "$output_file" \
-    || die "Compression failed."
+    "${COMPRESSION_ARGS[@]}" -crf "$crf" "$output_file" ||
+    die "Compression failed."
 
   # Assigned through a nameref output parameter.
   # shellcheck disable=SC2034
@@ -749,10 +749,10 @@ main() {
   fi
 
   case "${1:-}" in
-    -h | --help)
-      usage
-      exit 0
-      ;;
+  -h | --help)
+    usage
+    exit 0
+    ;;
   esac
 
   (($# >= 2)) || die "Missing required FORMAT and URL arguments."
@@ -761,58 +761,58 @@ main() {
   shift 2
 
   read_format_spec \
-    "$format" base_format requires_time_range supports_compression force_precise_cuts \
-    || die "Invalid format '$format'. Must be one of: $(supported_formats)."
+    "$format" base_format requires_time_range supports_compression force_precise_cuts ||
+    die "Invalid format '$format'. Must be one of: $(supported_formats)."
 
   while (($# > 0)); do
     case "$1" in
-      --)
-        shift
-        passthrough+=("$@")
-        break
-        ;;
-      --compress)
-        compress=true
-        shift
-        ;;
-      --crf)
-        (($# >= 2)) || die "Missing value for --crf."
-        crf=$2
-        is_valid_crf "$crf" || die "Invalid --crf value '$crf'. Expected an integer from $MIN_CRF to $MAX_CRF."
-        shift 2
-        ;;
-      --crf=*)
-        crf=${1#*=}
-        is_valid_crf "$crf" || die "Invalid --crf value '$crf'. Expected an integer from $MIN_CRF to $MAX_CRF."
-        shift
-        ;;
-      --no-browser-cookies)
-        browser_cookie_mode=$DISABLED_BROWSER_COOKIE_MODE
-        shift
-        ;;
-      --browser-cookies)
-        (($# >= 2)) || die "Missing value for --browser-cookies."
-        browser_cookie_mode=$2
-        shift 2
-        ;;
-      --browser-cookies=*)
-        browser_cookie_mode=${1#*=}
-        [[ -n "$browser_cookie_mode" ]] || die "Missing value for --browser-cookies."
-        shift
-        ;;
-      -*)
-        if [[ -z "$time_range" && "$requires_time_range" == true ]]; then
-          time_range=$1
-          shift
-        else
-          die "Unknown option '$1'. Pass yt-dlp options after --."
-        fi
-        ;;
-      *)
-        [[ -z "$time_range" ]] || die "Unexpected argument '$1'. Pass yt-dlp options after --."
+    --)
+      shift
+      passthrough+=("$@")
+      break
+      ;;
+    --compress)
+      compress=true
+      shift
+      ;;
+    --crf)
+      (($# >= 2)) || die "Missing value for --crf."
+      crf=$2
+      is_valid_crf "$crf" || die "Invalid --crf value '$crf'. Expected an integer from $MIN_CRF to $MAX_CRF."
+      shift 2
+      ;;
+    --crf=*)
+      crf=${1#*=}
+      is_valid_crf "$crf" || die "Invalid --crf value '$crf'. Expected an integer from $MIN_CRF to $MAX_CRF."
+      shift
+      ;;
+    --no-browser-cookies)
+      browser_cookie_mode=$DISABLED_BROWSER_COOKIE_MODE
+      shift
+      ;;
+    --browser-cookies)
+      (($# >= 2)) || die "Missing value for --browser-cookies."
+      browser_cookie_mode=$2
+      shift 2
+      ;;
+    --browser-cookies=*)
+      browser_cookie_mode=${1#*=}
+      [[ -n "$browser_cookie_mode" ]] || die "Missing value for --browser-cookies."
+      shift
+      ;;
+    -*)
+      if [[ -z "$time_range" && "$requires_time_range" == true ]]; then
         time_range=$1
         shift
-        ;;
+      else
+        die "Unknown option '$1'. Pass yt-dlp options after --."
+      fi
+      ;;
+    *)
+      [[ -z "$time_range" ]] || die "Unexpected argument '$1'. Pass yt-dlp options after --."
+      time_range=$1
+      shift
+      ;;
     esac
   done
 
@@ -833,10 +833,10 @@ main() {
     cookie_args=(--cookies-from-browser "$metadata_cookie_spec")
   fi
 
-  duration=$(jq -r '.duration // empty' <<<"$metadata") \
-    || die "Failed to read video duration from metadata."
-  upload_date=$(jq -r '.upload_date // empty' <<<"$metadata") \
-    || die "Failed to read upload date from metadata."
+  duration=$(jq -r '.duration // empty' <<<"$metadata") ||
+    die "Failed to read video duration from metadata."
+  upload_date=$(jq -r '.upload_date // empty' <<<"$metadata") ||
+    die "Failed to read upload date from metadata."
 
   if [[ -n "$time_range" ]]; then
     validate_time_range "$time_range" "$duration"
@@ -859,9 +859,9 @@ main() {
     output_tmpl="${temp_dir}/${OUTPUT_ID_TEMPLATE}.%(ext)s"
     download_media "$output_tmpl" "$url" passthrough downloaded_paths "${args[@]}"
 
-    downloaded_path=$(first_recorded_path "$downloaded_paths") \
-      || downloaded_path=$(first_downloaded_file "$temp_dir") \
-      || die "Downloaded file not found for compression."
+    downloaded_path=$(first_recorded_path "$downloaded_paths") ||
+      downloaded_path=$(first_downloaded_file "$temp_dir") ||
+      die "Downloaded file not found for compression."
     compress_video "$downloaded_path" "$crf" compressed_path
   else
     output_tmpl="${OUTPUT_ID_TEMPLATE}${time_suffix}.%(ext)s"

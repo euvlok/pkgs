@@ -112,8 +112,8 @@ unless you explicitly want this flake's pinned nixpkgs.
 
 #### Cherry-picking a subset
 
-If you only want a few packages in your top-level `pkgs`, wrap `overlays.default`
-and `inherit` what you need:
+If you only want a few packages in your top-level `pkgs`, wrap
+`overlays.default` and `inherit` what you need:
 
 ```nix
 nixpkgs.overlays = [
