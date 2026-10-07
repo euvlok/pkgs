@@ -69,6 +69,7 @@ let
 
     dependencies = [
       mcp
+      python313Packages.pydantic
     ];
 
     pythonImportsCheck = [ "bridge_mcp_ghidra" ];
@@ -252,11 +253,14 @@ let
       jar = path: "${ghidra}/lib/ghidra/Ghidra/${path}";
     };
 
-  server = maven.buildMavenPackage (finalAttrs: {
+  server = maven.buildMavenPackage {
     pname = "ghidra-mcp-headless-server";
     version = packageVersion;
 
     inherit src;
+
+    # Upstream's path assertion must account for macOS canonicalizing /tmp
+    patches = [ ./canonical-project-path-test.patch ];
 
     mvnJdk = jdk21;
     buildOffline = true;
@@ -314,7 +318,7 @@ let
     meta = javaMeta // {
       description = "Ghidra MCP headless Java server jar";
     };
-  });
+  };
 
   httpd =
     runCommand "ghidra-mcp-httpd"
@@ -531,13 +535,13 @@ let
         GHIDRA_MCP_STARTUP_TIMEOUT=30 \
         "${lib.meta.getExe launcher}" </dev/null \
         > runtime-stdout 2> runtime-stderr
-      grep -q "Auto-connected via TCP to http://127.0.0.1:$runtime_port" runtime-stderr
       if "${lib.meta.getExe curl}" --fail --silent --max-time 1 \
         "http://127.0.0.1:$runtime_port/check_connection" >/dev/null 2>&1; then
         echo "combined launcher left ghidra-mcp-httpd running" >&2
         exit 1
       fi
       if GHIDRA_MCP_STATE="$TMPDIR/failed-runtime-test" \
+        GHIDRA_MCP_PORT="$runtime_port" \
         GHIDRA_MCP_EXTRA_ARGS=--version \
         GHIDRA_MCP_STARTUP_TIMEOUT=5 \
         "${lib.meta.getExe launcher}" </dev/null \

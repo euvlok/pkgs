@@ -13,7 +13,7 @@ fi
 repo_owner="bethington"
 repo_name="ghidra-mcp"
 repo="${repo_owner}/${repo_name}"
-branch="${GHIDRA_MCP_BRANCH:-main}"
+branch="${GHIDRA_MCP_BRANCH:-dev}"
 
 auth_header=()
 if [[ -n "${GITHUB_TOKEN:-${GH_TOKEN:-}}" ]]; then
@@ -113,7 +113,7 @@ jq -n \
     mvnHash: $mvnHash
   }' \
   >"$tmp_pkg/source.json"
-cp package.nix update.sh "$tmp_pkg/"
+cp package.nix update.sh canonical-project-path-test.patch "$tmp_pkg/"
 
 repo_root=$(realpath ../../../..)
 nixpkgs_path=$(nix eval --impure --raw "$repo_root#legacyPackages.${nix_system}.path")
