@@ -13,8 +13,10 @@ on:
       - "flake.nix"
       - "flake.lock"
       - "default.nix"
-      - "Cargo.toml"
-      - "Cargo.lock"
+      - "scripts/**"
+      - "package.json"
+      - "bun.lock"
+      - ".github/actions/setup-bun/**"
       - "pkgs/**"
       - ".github/actions/setup-nix/action.yml"
       - ".github/workflows/build-packages.yaml"
@@ -23,8 +25,10 @@ on:
       - "flake.nix"
       - "flake.lock"
       - "default.nix"
-      - "Cargo.toml"
-      - "Cargo.lock"
+      - "scripts/**"
+      - "package.json"
+      - "bun.lock"
+      - ".github/actions/setup-bun/**"
       - "pkgs/**"
       - ".github/actions/setup-nix/action.yml"
       - ".github/workflows/build-packages.yaml"
@@ -49,10 +53,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install Nix
-        uses: ./.github/actions/setup-nix
-        with:
-          cachix-cache: ${{ vars.CACHIX_CACHE_NAME || 'eupkgs' }}
+      - uses: ./.github/actions/setup-bun
 
       - name: Detect packages
         id: detect
@@ -61,7 +62,7 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           PACKAGES: ${{ github.event.inputs.packages || '' }}
-        run: nix develop --accept-flake-config --impure --command python3 ./scripts/changed-packages.py --packages "$PACKAGES"
+        run: bun ./scripts/changed-packages/changed-packages.ts --packages "$PACKAGES"
 
   flake-check:
     name: Check flake evaluation
@@ -103,43 +104,11 @@ jobs:
           cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
           cachix-skip-push: ${{ github.event_name == 'pull_request' }}
 
+      - uses: ./.github/actions/setup-bun
+
       - name: Build selected by-name packages
         shell: bash
         env:
           NIXPKGS_ALLOW_UNFREE: "1"
           PACKAGES_JSON: ${{ needs.detect-packages.outputs.packages }}
-        run: |-
-          set -euo pipefail
-
-          system="$(nix eval --accept-flake-config --impure --raw --expr builtins.currentSystem)"
-          package_names=()
-          while IFS= read -r package_name; do
-            supported="$(
-              nix eval --accept-flake-config --impure --raw --expr "
-              let
-                flake = builtins.getFlake (toString ./.);
-                system = builtins.currentSystem;
-                pkgs = builtins.getAttr system flake.legacyPackages;
-                pkg = builtins.getAttr \"$package_name\" pkgs;
-                platforms = pkg.meta.platforms or [ ];
-              in
-                if platforms == [ ] || builtins.elem system platforms then \"true\" else \"false\"
-            " < /dev/null
-            )"
-            if [[ "$supported" == "true" ]]; then
-              package_names+=("$package_name")
-            else
-              printf "::notice::Skipping %s on %s because meta.platforms does not include this system\n" "$package_name" "$system"
-            fi
-          done < <(python3 -c 'import json, os; print("\n".join(json.loads(os.environ["PACKAGES_JSON"])))')
-          build_attrs=("${package_names[@]/#/.#legacyPackages.${system}.}")
-
-          if (( ${#build_attrs[@]} == 0 )); then
-            printf "::notice::No selected packages are supported on %s\n" "$system"
-            exit 0
-          fi
-
-          printf "Building %d package(s) for %s:\n" "${#build_attrs[@]}" "$system"
-          printf "  %s\n" "${build_attrs[@]}"
-
-          nix build --accept-flake-config --impure --keep-going --print-build-logs --no-link "${build_attrs[@]}"
+        run: bun ./scripts/build-packages/build-packages.ts

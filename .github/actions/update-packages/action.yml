@@ -24,4 +24,4 @@ runs:
       env:
         PLATFORM: ${{ inputs.platform }}
         GITHUB_TOKEN: ${{ github.token }}
-      run: nix develop --impure --command python3 ./scripts/update.py all
+      run: nix run --accept-flake-config --impure .#update -- all

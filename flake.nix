@@ -67,29 +67,18 @@
                 nix-update
                 ripgrep
                 jq
-                ty
-                uv
-                ruff
+                bun
+                biome
                 shellcheck
                 gh
                 sd
                 yamlfmt
                 ;
-              python3 = pkgs.python3.withPackages (
-                ps:
-                (builtins.attrValues {
-                  inherit (ps)
-                    tabulate
-                    rich
-                    typer
-                    ;
-                })
-              );
             };
 
             shellHook = ''
-              if [ -f pyproject.toml ] && [ -f uv.lock ]; then
-                uv sync --locked --quiet
+              if [ -f package.json ] && [ -f bun.lock ]; then
+                bun install --frozen-lockfile
               fi
             '';
           };
@@ -102,47 +91,23 @@
         system:
         let
           pkgs = self.legacyPackages.${system};
-          scriptPython = pkgs.python3.withPackages (
-            ps:
-            (builtins.attrValues {
-              inherit (ps)
-                rich
-                tabulate
-                typer
-                ;
-            })
-          );
+          scripts = pkgs.callPackage ./scripts/build/package.nix { };
         in
         {
           update = {
             type = "app";
             meta.description = "Update packages and verify changed builds";
-            program = toString (
-              pkgs.writeShellScript "update" ''
-                export EUPKGS_REPO_ROOT="''${EUPKGS_REPO_ROOT:-$PWD}"
-                exec ${scriptPython}/bin/python3 ${./scripts}/update.py "$@"
-              ''
-            );
+            program = "${scripts}/bin/update";
           };
           gen-pkg-table = {
             type = "app";
             meta.description = "Regenerate the README package table";
-            program = toString (
-              pkgs.writeShellScript "gen-pkg-table" ''
-                export EUPKGS_REPO_ROOT="''${EUPKGS_REPO_ROOT:-$PWD}"
-                exec ${scriptPython}/bin/python3 ${./scripts}/gen-pkg-table.py "$@"
-              ''
-            );
+            program = "${scripts}/bin/gen-pkg-table";
           };
           status = {
             type = "app";
             meta.description = "Report local package pin status against nixpkgs master";
-            program = toString (
-              pkgs.writeShellScript "status" ''
-                export EUPKGS_REPO_ROOT="''${EUPKGS_REPO_ROOT:-$PWD}"
-                exec ${scriptPython}/bin/python3 ${./scripts}/status.py "$@"
-              ''
-            );
+            program = "${scripts}/bin/status";
           };
         }
       );

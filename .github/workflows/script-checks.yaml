@@ -1,0 +1,40 @@
+name: TypeScript checks
+on:
+  push:
+    branches: [master]
+    paths:
+      - "scripts/**"
+      - "tests/**"
+      - "package.json"
+      - "bun.lock"
+      - "tsconfig.json"
+      - "biome.json"
+      - ".github/actions/setup-bun/**"
+      - ".github/workflows/script-checks.yaml"
+  pull_request:
+    paths:
+      - "scripts/**"
+      - "tests/**"
+      - "package.json"
+      - "bun.lock"
+      - "tsconfig.json"
+      - "biome.json"
+      - ".github/actions/setup-bun/**"
+      - ".github/workflows/script-checks.yaml"
+permissions:
+  contents: read
+jobs:
+  check:
+    name: TypeScript and Biome
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: ./.github/actions/setup-bun
+      - name: Check types
+        run: bun run typecheck
+      - name: Check formatting and lint
+        run: bun run lint
+      - name: Run unit tests
+        run: bun test
+      - name: Bundle scripts
+        run: bun run build

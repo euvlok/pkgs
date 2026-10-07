@@ -1,0 +1,11 @@
+name: Setup Bun
+description: Install Bun and the locked script dependencies
+runs:
+  using: composite
+  steps:
+    - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      with:
+        bun-version-file: package.json
+    - name: Install dependencies
+      shell: bash
+      run: bun install --frozen-lockfile

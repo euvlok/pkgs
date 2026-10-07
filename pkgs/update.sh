@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash
-#!nix-shell -i bash -p bash "python3.withPackages (ps: [ ps.typer ])" nix-update git nix
+#!nix-shell -i bash -p bash git nix
 
 set -euo pipefail
 
 repo_root=$(git rev-parse --show-toplevel)
-exec python3 "${repo_root}/scripts/update.py" pkg "$@"
+export EUPKGS_REPO_ROOT="${repo_root}"
+exec nix run --accept-flake-config --impure "${repo_root}#update" -- pkg "$@"
