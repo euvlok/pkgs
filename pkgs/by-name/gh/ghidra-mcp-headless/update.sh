@@ -24,7 +24,7 @@ rev=$(
   curl -fsSL "${auth_header[@]}" \
     -H "Accept: application/vnd.github+json" \
     "https://api.github.com/repos/${repo}/git/ref/heads/${branch}" \
-  | jq -r .object.sha
+    | jq -r .object.sha
 )
 
 if [[ -z "$rev" || "$rev" == "null" ]]; then
@@ -36,14 +36,14 @@ commit_date=$(
   curl -fsSL "${auth_header[@]}" \
     -H "Accept: application/vnd.github+json" \
     "https://api.github.com/repos/${repo}/commits/${rev}" \
-  | jq -r .commit.committer.date
+    | jq -r .commit.committer.date
 )
 date="${commit_date%%T*}"
 
 upstream_version=$(
   curl -fsSL "${auth_header[@]}" \
     "https://raw.githubusercontent.com/${repo}/${rev}/pyproject.toml" \
-  | awk -F'"' '/^version = / {print $2; exit}'
+    | awk -F'"' '!found && /^version = / {print $2; found = 1}'
 )
 
 if [[ -z "$upstream_version" ]]; then
@@ -56,6 +56,7 @@ current_version=$(jq -r .version source.json)
 current_rev=$(jq -r '.rev // empty' source.json)
 current_mcp_sdk_version=$(jq -r '.mcpSdkVersion // empty' source.json)
 nix_system=$(nix eval --impure --raw --expr builtins.currentSystem)
+repo_root=$(realpath ../../../..)
 
 if [[ "$current_rev" == "$rev" ]]; then
   src_hash=$(jq -r .srcHash source.json)
@@ -63,7 +64,7 @@ else
   src_hash=$(
     nix store prefetch-file --json --unpack \
       "https://github.com/${repo}/archive/${rev}.tar.gz" \
-    | jq -r .hash
+      | jq -r .hash
   )
 fi
 
@@ -71,10 +72,10 @@ mcp_sdk_version=$(
   curl -fsSL "${auth_header[@]}" \
     -H "Accept: application/vnd.github+json" \
     "https://api.github.com/repos/modelcontextprotocol/python-sdk/tags?per_page=100" \
-  | jq -r '.[].name' \
-  | awk '/^v1\.[0-9]+\.[0-9]+$/ { sub(/^v/, ""); print }' \
-  | sort -V \
-  | tail -n 1
+    | jq -r '.[].name' \
+    | awk '/^v1\.[0-9]+\.[0-9]+$/ { sub(/^v/, ""); print }' \
+    | sort -V \
+    | tail -n 1
 )
 
 if [[ -z "$mcp_sdk_version" ]]; then
@@ -88,12 +89,14 @@ else
   mcp_src_hash=$(
     nix store prefetch-file --json --unpack \
       "https://github.com/modelcontextprotocol/python-sdk/archive/refs/tags/v${mcp_sdk_version}.tar.gz" \
-    | jq -r .hash
+      | jq -r .hash
   )
 fi
 
 tmp_pkg=$(mktemp -d)
-trap 'rm -rf "$tmp_pkg"' EXIT
+trap 'rm -rf "$tmp_pkg"; if [[ -n "${tmp_source:-}" ]]; then rm -f "$tmp_source"; fi' EXIT
+mkdir "$tmp_pkg/gh"
+cp -R ../ghidra-mcp-{headless,headless-server} "$tmp_pkg/gh/"
 
 jq -n \
   --arg version "$version" \
@@ -112,14 +115,19 @@ jq -n \
     mcpSrcHash: $mcpSrcHash,
     mvnHash: $mvnHash
   }' \
-  >"$tmp_pkg/source.json"
-cp package.nix update.sh canonical-project-path-test.patch "$tmp_pkg/"
-
-repo_root=$(realpath ../../../..)
+  >"$tmp_pkg/gh/ghidra-mcp-headless/source.json"
 nixpkgs_path=$(nix eval --impure --raw "$repo_root#legacyPackages.${nix_system}.path")
 build_log=$(nix build --impure --no-link --print-build-logs \
-  --expr "with import $nixpkgs_path { system = \"$nix_system\"; }; callPackage $tmp_pkg/package.nix {}" 2>&1 || true)
-mvn_hash=$(echo "$build_log" | awk '/got: +sha256-/ {print $2; exit}')
+  --expr "
+    let
+      nixpkgs = import $nixpkgs_path { system = \"$nix_system\"; };
+      overlay = import $repo_root/pkgs/top-level/by-name-overlay.nix {
+        baseDirectory = $tmp_pkg;
+        inherit (nixpkgs) lib;
+      };
+    in (nixpkgs.extend overlay).ghidra-mcp-headless-server.fetchedMavenDeps
+  " 2>&1 || true)
+mvn_hash=$(awk '/got: +sha256-/ {print $2; exit}' <<<"$build_log")
 
 if [[ -z "$mvn_hash" ]]; then
   echo "failed to derive mvnHash; build log:" >&2
@@ -127,25 +135,9 @@ if [[ -z "$mvn_hash" ]]; then
   exit 1
 fi
 
-tmp_source=$(mktemp)
-jq -n \
-  --arg version "$version" \
-  --arg upstreamVersion "$upstream_version" \
-  --arg rev "$rev" \
-  --arg srcHash "$src_hash" \
-  --arg mcpSdkVersion "$mcp_sdk_version" \
-  --arg mcpSrcHash "$mcp_src_hash" \
-  --arg mvnHash "$mvn_hash" \
-  '{
-    version: $version,
-    upstreamVersion: $upstreamVersion,
-    rev: $rev,
-    srcHash: $srcHash,
-    mcpSdkVersion: $mcpSdkVersion,
-    mcpSrcHash: $mcpSrcHash,
-    mvnHash: $mvnHash
-  }' \
-  >"$tmp_source"
+tmp_source=$(mktemp ./source.json.XXXXXX)
+jq --arg mvnHash "$mvn_hash" '.mvnHash = $mvnHash' \
+  "$tmp_pkg/gh/ghidra-mcp-headless/source.json" >"$tmp_source"
 mv "$tmp_source" source.json
 
 echo "ghidra-mcp-headless: $current_version -> $version (${rev})"
