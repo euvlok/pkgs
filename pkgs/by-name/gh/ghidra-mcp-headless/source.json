@@ -1,9 +1,9 @@
 {
-	"version": "7.0.0-unstable-2026-10-08",
-	"upstreamVersion": "7.0.0",
-	"rev": "5acd46ed658dc4c7ae09a2407cdc0b588fd79b0c",
-	"srcHash": "sha256-92kJj+JQ108+4EOA+0r1Pl57f2LjK/H92ud0nM0lcyg=",
-	"mcpSdkVersion": "1.30.0",
-	"mcpSrcHash": "sha256-EkmTqsK+vBJcURuwFkhtNJMFgtzgw/7Cd+Fpav4P/ko=",
-	"mvnHash": "sha256-vev+gZniZPG2DLHOKRVBgbuWx7Aiq2ScndsfP2tMiCk="
+  "version": "7.0.0-unstable-2026-10-08",
+  "upstreamVersion": "7.0.0",
+  "rev": "9cc29c0f1efb6c63a7d6898c9a23aff39397f992",
+  "srcHash": "sha256-zdlsKxNU1E/fSQ0NcfrufKulk8A05LYEL4qejblUo+g=",
+  "mcpSdkVersion": "1.30.0",
+  "mcpSrcHash": "sha256-EkmTqsK+vBJcURuwFkhtNJMFgtzgw/7Cd+Fpav4P/ko=",
+  "mvnHash": "sha256-vev+gZniZPG2DLHOKRVBgbuWx7Aiq2ScndsfP2tMiCk="
 }
