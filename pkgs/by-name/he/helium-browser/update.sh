@@ -1,74 +1,54 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash
-#!nix-shell -i bash -p bash cacert common-updater-scripts coreutils curl jq nix
+#!nix-shell -i bash -p bash cacert coreutils gh jq nix
 
 set -euo pipefail
 
-SCRIPT_DIR="$(dirname "${BASH_SOURCE[0]}")"
-
 if [[ -n "${UPDATE_FILE:-}" ]]; then
-  WORKING_DIR="$(dirname "${UPDATE_FILE}")"
+  cd "$(dirname "$UPDATE_FILE")"
 else
-  WORKING_DIR="${SCRIPT_DIR}"
+  cd "$(dirname "${BASH_SOURCE[0]}")"
 fi
 
-cd "${WORKING_DIR}"
+source_tmp="$(mktemp ./source.json.XXXXXX)"
+trap 'rm -f "$source_tmp"' EXIT
+cp source.json "$source_tmp"
 
-auth_header=()
-if [[ -n "${GITHUB_TOKEN:-${GH_TOKEN:-}}" ]]; then
-  auth_header=(-H "Authorization: Bearer ${GITHUB_TOKEN:-$GH_TOKEN}")
-fi
-
-latest_version=$(
-  curl -fsSL "${auth_header[@]}" \
-    -H "Accept: application/vnd.github+json" \
-    https://api.github.com/repos/imputnet/helium-macos/releases/latest |
-    jq -r '.tag_name'
-)
-
-if [[ -z "$latest_version" || "$latest_version" == "null" ]]; then
-  printf "Error: Failed to get latest version\n" >&2
-  exit 1
-fi
-
-printf "Latest version: %s\n" "$latest_version"
-prefetch_url() {
-  local hash
-  hash=$(nix-prefetch-url --type sha256 "$1" 2>/dev/null | xargs -I {} nix hash convert --hash-algo sha256 --from nix32 {})
-  if [[ -z "$hash" ]]; then
-    printf "Error: Failed to prefetch %s\n" "$1" >&2
-    exit 1
+# Linux and macOS can publish stable releases at different times
+for repo in helium-macos helium-linux; do
+  release="$(gh api "repos/imputnet/$repo/releases/latest")"
+  version="$(jq -er '.tag_name | select(test("^[0-9]+(\\.[0-9]+)+$"))' <<<"$release")"
+  if [[ "$repo" == helium-macos ]]; then
+    systems=(aarch64-darwin)
+  else
+    systems=(aarch64-linux x86_64-linux)
   fi
-  printf "%s" "$hash"
-}
 
-darwin_hash=$(prefetch_url "https://github.com/imputnet/helium-macos/releases/download/$latest_version/helium_${latest_version}_arm64-macos.dmg")
-linux_arm_hash=$(prefetch_url "https://github.com/imputnet/helium-linux/releases/download/$latest_version/helium-${latest_version}-arm64_linux.tar.xz")
-linux_x86_hash=$(prefetch_url "https://github.com/imputnet/helium-linux/releases/download/$latest_version/helium-${latest_version}-x86_64_linux.tar.xz")
+  for system in "${systems[@]}"; do
+    case "$system" in
+    aarch64-darwin) asset="helium_${version}_arm64-macos.dmg" ;;
+    aarch64-linux) asset="helium-${version}-arm64_linux.tar.xz" ;;
+    x86_64-linux) asset="helium-${version}-x86_64_linux.tar.xz" ;;
+    esac
+    url="$(jq -er --arg asset "$asset" '
+      [.assets[] | select(.name == $asset) | .browser_download_url]
+      | select(length == 1) | .[0]
+    ' <<<"$release")"
+    current_version="$(jq -r --arg system "$system" '.platforms[$system].version' source.json)"
+    if [[ "$(printf '%s\n' "$current_version" "$version" | sort -V | tail -n1)" != "$version" ]]; then
+      echo "helium-browser: refusing to downgrade $system from $current_version to $version" >&2
+      exit 1
+    fi
+    if [[ "$(jq -r --arg system "$system" '.platforms[$system].url' source.json)" == "$url" ]]; then
+      echo "helium-browser: $system already up to date ($version)"
+      continue
+    fi
+    hash="$(nix store prefetch-file --json "$url" | jq -er .hash)"
+    contents="$(jq --arg system "$system" --arg version "$version" --arg url "$url" --arg hash "$hash" \
+      '.platforms[$system] = {version: $version, url: $url, hash: $hash}' "$source_tmp")"
+    printf '%s\n' "$contents" >"$source_tmp"
+    echo "helium-browser: $system updated to $version"
+  done
+done
 
-jq -n \
-  --arg version "$latest_version" \
-  --arg darwin_hash "$darwin_hash" \
-  --arg linux_arm_hash "$linux_arm_hash" \
-  --arg linux_x86_hash "$linux_x86_hash" \
-  '{
-      platforms: {
-        "aarch64-darwin": {
-          version: $version,
-          url: "https://github.com/imputnet/helium-macos/releases/download/\($version)/helium_\($version)_arm64-macos.dmg",
-          hash: $darwin_hash
-        },
-        "aarch64-linux": {
-          version: $version,
-          url: "https://github.com/imputnet/helium-linux/releases/download/\($version)/helium-\($version)-arm64_linux.tar.xz",
-          hash: $linux_arm_hash
-        },
-        "x86_64-linux": {
-          version: $version,
-          url: "https://github.com/imputnet/helium-linux/releases/download/\($version)/helium-\($version)-x86_64_linux.tar.xz",
-          hash: $linux_x86_hash
-        }
-      }
-    }' >source.json
-
-printf "Updated source.json to version %s\n" "$latest_version"
+mv "$source_tmp" source.json

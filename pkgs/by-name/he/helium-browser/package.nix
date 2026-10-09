@@ -3,7 +3,7 @@
   stdenvNoCC,
   fetchurl,
   _7zz,
-  makeWrapper,
+  makeShellWrapper,
   autoPatchelfHook ? null,
   addDriverRunpath ? null,
   coreutils ? null,
@@ -146,7 +146,7 @@ let
 
   meta = {
     description = "Private, fast, and honest web browser based on ungoogled-chromium";
-    homepage = "https://github.com/imputnet/helium-macos";
+    homepage = "https://helium.computer";
     license = lib.licenses.gpl3Only;
     mainProgram = "helium-browser";
     platforms = [
@@ -176,7 +176,7 @@ if stdenvNoCC.hostPlatform.isDarwin then
 
     nativeBuildInputs = [
       _7zz
-      makeWrapper
+      makeShellWrapper
     ];
 
     unpackPhase = ''
@@ -190,7 +190,7 @@ if stdenvNoCC.hostPlatform.isDarwin then
       mkdir -p "$out/Applications" "$out/bin"
       cp -R . "$out/Applications/Helium.app"
 
-      makeWrapper "$out/Applications/Helium.app/Contents/MacOS/Helium" "$out/bin/helium-browser" \
+      makeShellWrapper "$out/Applications/Helium.app/Contents/MacOS/Helium" "$out/bin/helium-browser" \
         --add-flags ${lib.escapeShellArg commandLineArgs} \
         --add-flags "--extension-mime-request-handling=always-prompt-for-install"
       ln -s helium-browser "$out/bin/helium"
@@ -220,7 +220,7 @@ else
 
     nativeBuildInputs = lib.optionals stdenvNoCC.hostPlatform.isLinux [
       autoPatchelfHook
-      makeWrapper
+      makeShellWrapper
       qt6.wrapQtAppsHook
     ];
     buildInputs = lib.optionals stdenvNoCC.hostPlatform.isLinux (
@@ -237,6 +237,13 @@ else
       mkdir -p "$out/libexec/helium" "$out/bin" "$out/share/applications" "$out/share/icons/hicolor/256x256/apps"
       tar -xJf "$src" -C "$out/libexec/helium" --strip-components=1
       rm -f "$out/libexec/helium/libqt5_shim.so"
+      # Use the system Vulkan loader so it can discover the host's drivers
+      rm "$out/libexec/helium/libvulkan.so.1"
+      ln -s "${lib.getLib vulkan-loader}/lib/libvulkan.so.1" "$out/libexec/helium/libvulkan.so.1"
+      # Keep HERE pointing at the payload while shortcuts use our launcher
+      substituteInPlace "$out/libexec/helium/helium-wrapper" \
+        --replace-fail 'export CHROME_VERSION_EXTRA="custom"' 'export CHROME_VERSION_EXTRA="nix"' \
+        --replace-fail 'export CHROME_WRAPPER' "export CHROME_WRAPPER=\"$out/bin/helium-browser\""
       install -Dm644 "$out/libexec/helium/helium.desktop" "$out/share/applications/helium.desktop"
       install -Dm644 "$out/libexec/helium/product_logo_256.png" "$out/share/icons/hicolor/256x256/apps/helium.png"
       substituteInPlace "$out/share/applications/helium.desktop" \
@@ -245,14 +252,16 @@ else
       sed -i "s|^Exec=helium$|Exec=$out/bin/helium-browser|" "$out/share/applications/helium.desktop"
       ln -s helium.desktop "$out/share/applications/helium-browser.desktop"
 
-      makeWrapper "$out/libexec/helium/helium-wrapper" "$out/bin/helium-browser" \
+      # Qt propagates a binary wrapper hook, which cannot expand Wayland flags
+      makeShellWrapper "$out/libexec/helium/helium-wrapper" "$out/bin/helium-browser" \
         --add-flags ${lib.escapeShellArg commandLineArgs} \
         --add-flags "--extension-mime-request-handling=always-prompt-for-install" \
         --add-flags "\''${NIXOS_OZONE_WL:+\''${WAYLAND_DISPLAY:+--ozone-platform-hint=auto}}" \
         --set-default CHROME_VERSION_EXTRA nix \
+        --set CHROME_DESKTOP helium.desktop \
         --set FONTCONFIG_FILE "${fontsConf}" \
-        --prefix XDG_DATA_DIRS : "${addDriverRunpath.driverLink}/share:${gtk3}/share/gsettings-schemas/${gtk3.name}:${gsettings-desktop-schemas}/share/gsettings-schemas/${gsettings-desktop-schemas.name}:${adwaita-icon-theme}/share" \
-        --prefix LD_LIBRARY_PATH : ${lib.makeLibraryPath linuxDeps} \
+        --prefix XDG_DATA_DIRS : "$out/share:${addDriverRunpath.driverLink}/share:${gtk3}/share/gsettings-schemas/${gtk3.name}:${gsettings-desktop-schemas}/share/gsettings-schemas/${gsettings-desktop-schemas.name}:${adwaita-icon-theme}/share" \
+        --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath linuxDeps}:${addDriverRunpath.driverLink}/lib" \
         --prefix PATH : ${
           lib.makeBinPath [
             coreutils
