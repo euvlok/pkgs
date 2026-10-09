@@ -8,7 +8,7 @@ import {
 import { ExitError } from "../process/process";
 import { BY_NAME, packageFiles } from "../repository/repository";
 import { toleratedFailureAnnotations } from "./log";
-import { buildPkg, isFetchableDerivation, updateOne } from "./package";
+import { buildPkg, isUpdateableDerivation, updateOne } from "./package";
 import {
 	commitPkg,
 	pkgHasChanges,
@@ -16,7 +16,7 @@ import {
 	restorePackage,
 } from "./worktree";
 
-export function cmdAll(byName = BY_NAME, version = "branch"): void {
+export function cmdAll(byName = BY_NAME, version?: string): void {
 	if (!Bun.which("nix") || !Bun.which("git")) {
 		gha("error", "nix and git must be on PATH");
 		throw new ExitError();
@@ -27,8 +27,12 @@ export function cmdAll(byName = BY_NAME, version = "branch"): void {
 		const pkgDir = dirname(nixFile);
 		const name = basename(pkgDir);
 		ghaGroup(`Updating ${name}`, () => {
-			if (!isFetchableDerivation(nixFile)) {
-				gha("notice", `Skipping ${name} (not a fetchable derivation)`, nixFile);
+			if (!isUpdateableDerivation(nixFile)) {
+				gha(
+					"notice",
+					`Skipping ${name} (no update source for this platform)`,
+					nixFile,
+				);
 				return;
 			}
 			try {

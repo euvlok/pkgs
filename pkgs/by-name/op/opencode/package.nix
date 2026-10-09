@@ -2,6 +2,8 @@
   opencode,
   fetchFromGitHub,
   lib,
+  nix-update-script,
+  forUpdate ? false,
 }:
 let
   sources = lib.importJSON ./source.json;
@@ -14,7 +16,7 @@ let
 in
 opencode.overrideAttrs (
   prevAttrs:
-  lib.optionalAttrs (lib.versionOlder prevAttrs.version upstreamVersion) {
+  lib.optionalAttrs (forUpdate || lib.versionOlder prevAttrs.version upstreamVersion) {
     version = upstreamVersion;
     src = upstreamSrc;
   }
@@ -22,10 +24,16 @@ opencode.overrideAttrs (
     passthru =
       (prevAttrs.passthru or { })
       // {
-        updateScript = ./update.sh;
+        updateScript = nix-update-script {
+          extraArgs = [
+            "--subpackage=node_modules"
+            "--override-filename"
+            (toString ./source.json)
+          ];
+        };
         inherit upstreamVersion;
       }
-      // lib.optionalAttrs (lib.versionOlder prevAttrs.version upstreamVersion) {
+      // lib.optionalAttrs (forUpdate || lib.versionOlder prevAttrs.version upstreamVersion) {
         node_modules = prevAttrs.passthru.node_modules.overrideAttrs {
           version = upstreamVersion;
           src = upstreamSrc;

@@ -2,6 +2,8 @@
   codex,
   fetchFromGitHub,
   lib,
+  nix-update-script,
+  forUpdate ? false,
   rustPlatform,
 }:
 let
@@ -17,7 +19,7 @@ codex.overrideAttrs (
   prevAttrs:
   # Keep nixpkgs' patches, build flags, and runtime wrapper. In particular,
   # its daemon auto-start patch avoids requiring a standalone installation.
-  lib.optionalAttrs (lib.versionOlder prevAttrs.version sources.version) {
+  lib.optionalAttrs (forUpdate || lib.versionOlder prevAttrs.version sources.version) {
     version = sources.version;
     src = upstreamSrc;
     sourceRoot = "${upstreamSrc.name}/codex-rs";
@@ -30,7 +32,15 @@ codex.overrideAttrs (
   }
   // {
     passthru = (prevAttrs.passthru or { }) // {
-      updateScript = ./update.sh;
+      updateScript = nix-update-script {
+        extraArgs = [
+          "--version=unstable"
+          "--version-regex=rust-v([0-9]+\\.[0-9]+\\.[0-9]+-alpha\\.[0-9]+(?:\\.[0-9]+)*)"
+          "--use-github-releases"
+          "--override-filename"
+          (toString ./source.json)
+        ];
+      };
       upstreamVersion = sources.version;
     };
   }

@@ -2,6 +2,7 @@
   fetchFromGitHub,
   fetchPnpmDeps,
   lib,
+  nix-update-script,
   pnpm_11,
   t3code,
   versionCheckHook,
@@ -9,8 +10,14 @@
 }:
 
 let
-  sources = lib.importJSON ./sources.json;
-  source = sources.${channel} or (throw "t3code: unsupported channel ${channel}");
+  sourceFile =
+    if channel == "stable" then
+      ./stable.json
+    else if channel == "nightly" then
+      ../t3code-nightly/source.json
+    else
+      throw "t3code: unsupported channel ${channel}";
+  source = lib.importJSON sourceFile;
   pname = if channel == "nightly" then "t3code-nightly" else "t3code";
   unwrapped = t3code.unwrapped.overrideAttrs (
     finalAttrs: previousAttrs: {
@@ -60,7 +67,20 @@ in
   version = source.version;
 
   passthru = (previousAttrs.passthru or { }) // {
-    updateScript = ./update.sh;
+    updateScript = {
+      command = nix-update-script {
+        extraArgs = [
+          "--use-github-releases"
+          "--override-filename"
+          (toString sourceFile)
+        ]
+        ++ lib.optionals (channel == "nightly") [
+          "--version=unstable"
+          "--version-regex=v(.*-nightly\\..*)"
+        ];
+      };
+      attrPath = "${pname}.unwrapped";
+    };
     upstreamVersion = source.version;
   };
 })

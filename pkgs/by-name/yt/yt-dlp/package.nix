@@ -2,6 +2,8 @@
   yt-dlp,
   fetchFromGitHub,
   lib,
+  nix-update-script,
+  forUpdate ? false,
   stdenvNoCC,
   python3Packages,
   deno,
@@ -32,7 +34,7 @@ let
 in
 baseYtDlp.overrideAttrs (
   prevAttrs:
-  lib.optionalAttrs (lib.versionOlder prevAttrs.version upstreamVersion) {
+  lib.optionalAttrs (forUpdate || lib.versionOlder prevAttrs.version upstreamVersion) {
     version = upstreamVersion;
     src = fetchFromGitHub {
       inherit (prevAttrs.src) owner repo;
@@ -43,7 +45,13 @@ baseYtDlp.overrideAttrs (
   // {
     patches = (prevAttrs.patches or [ ]) ++ [ ./prefer-matching-gnome-keyring-application.patch ];
     passthru = (prevAttrs.passthru or { }) // {
-      updateScript = ./update.sh;
+      updateScript = nix-update-script {
+        extraArgs = [
+          "--version=branch=master"
+          "--override-filename"
+          (toString ./source.json)
+        ];
+      };
       inherit upstreamVersion;
     };
   }

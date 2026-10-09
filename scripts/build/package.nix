@@ -5,7 +5,6 @@
   cacert,
   git,
   nix,
-  nix-update,
   writableTmpDirAsHomeHook,
 }:
 let
@@ -76,7 +75,6 @@ stdenvNoCC.mkDerivation {
         bun
         git
         nix
-        nix-update
       ]
     }:\$PATH"
     exec ${lib.getExe bun} "$out/share/eupkgs/$command.js" "\$@"

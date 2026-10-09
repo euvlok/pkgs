@@ -1,3 +1,6 @@
 {
-	"update": "t3code"
+	"version": "0.0.46-nightly.20261008.2819",
+	"tag": "v0.0.46-nightly.20261008.2819",
+	"srcHash": "sha256-iFikkOAXQwhM1qAOx7PmqBMqQC3NspU41HdhMcFK49c=",
+	"nodeModulesHash": "sha256-iRr6b3NzhYDb+dKdlZxE0XZ8UpXWDjFfk+K6h/fPkOU="
 }

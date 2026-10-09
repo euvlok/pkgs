@@ -10,7 +10,7 @@ import { updateOne } from "./package";
 const versionFlag = {
 	kind: "parsed",
 	parse: String,
-	default: "branch",
+	optional: true,
 	brief: "Version argument for nix-update",
 } as const;
 
@@ -22,7 +22,7 @@ function readableFile(input: string): string {
 }
 
 const pkgCommand = buildCommand({
-	func: (flags: { version: string; subpackage?: string[] }, nixFile: string) =>
+	func: (flags: { version?: string; subpackage?: string[] }, nixFile: string) =>
 		updateOne(nixFile, flags.version, flags.subpackage),
 	parameters: {
 		flags: {
@@ -49,7 +49,7 @@ const pkgCommand = buildCommand({
 	docs: { brief: "Update a single package" },
 });
 const allCommand = buildCommand({
-	func: (flags: { byName: string; version: string }) =>
+	func: (flags: { byName: string; version?: string }) =>
 		cmdAll(flags.byName, flags.version),
 	parameters: {
 		flags: {
@@ -63,7 +63,7 @@ const allCommand = buildCommand({
 		},
 	},
 	docs: {
-		brief: "Update fetchable packages, verify builds, and commit each bump",
+		brief: "Update supported packages, verify builds, and commit each bump",
 	},
 });
 

@@ -1,6 +1,7 @@
 {
   fetchurl,
   lib,
+  nix-update-script,
   vscode-utils,
 }:
 
@@ -12,7 +13,8 @@ vscode-utils.buildVscodeExtension {
   inherit (source) version;
 
   src = fetchurl {
-    inherit (source) url hash;
+    url = "https://github.com/cline/cline/releases/download/v${source.version}/cline-${source.version}.vsix";
+    inherit (source) hash;
   };
 
   vscodeExtPublisher = "saoudrizwan";
@@ -20,7 +22,12 @@ vscode-utils.buildVscodeExtension {
   vscodeExtUniqueId = "saoudrizwan.claude-dev";
 
   passthru = {
-    updateScript = ./update.sh;
+    updateScript = nix-update-script {
+      extraArgs = [
+        "--override-filename"
+        (toString ./source.json)
+      ];
+    };
     upstreamVersion = source.version;
   };
 

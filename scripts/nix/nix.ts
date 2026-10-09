@@ -1,5 +1,5 @@
 import { writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import {
 	type GenericSchema,
 	type InferOutput,
@@ -10,7 +10,8 @@ import {
 } from "valibot";
 import { run, withTempDir } from "../process/process";
 import { REPO_ROOT } from "../repository/repository";
-import { nixPath } from "./syntax";
+import packageSetFile from "../update/package-set.nix" with { type: "file" };
+import { nixPath, nixString } from "./syntax";
 
 export function nixEval(expr: string, check = false): string {
 	const result = run(["nix", "eval", "--impure", "--raw", "--expr", expr], {
@@ -72,15 +73,12 @@ export function nixCurrentSystem(): string {
 export function pkgWrapper<T>(
 	nixFile: string,
 	action: (wrapper: string) => T,
-	rec = false,
 ): T {
 	return withTempDir("nix-update-", (dir) => {
 		const wrapper = join(dir, "wrapper.nix");
 		writeFileSync(
 			wrapper,
-			rec
-				? `{ pkgs ? import <nixpkgs> {} }:\nrec {\n  pkg = pkgs.callPackage ${nixPath(nixFile)} {};\n}\n`
-				: `let pkgs = import <nixpkgs> {}; in (pkgs.callPackage ${nixPath(nixFile)} {})\n`,
+			`{ }: import ${nixPath(resolve(import.meta.dir, packageSetFile))} { repoRoot = ${nixString(REPO_ROOT)}; nixFile = ${nixString(nixFile)}; }\n`,
 		);
 		return action(wrapper);
 	});

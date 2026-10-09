@@ -1,131 +1,70 @@
-import { chmodSync, statSync, writeFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
-import { nixCurrentSystem, nixEval, pkgWrapper } from "../nix/nix";
-import { nixPath, nixString } from "../nix/syntax";
-import { ExitError, run, withTempDir } from "../process/process";
+import { basename } from "node:path";
+import { ExitError, run } from "../process/process";
 import { REPO_ROOT } from "../repository/repository";
-import { logError, logInfo } from "./log";
+import { logError } from "./log";
 import { type Metadata, slug } from "./metadata";
 
-export function runPathUpdateScript(nixFile: string, wrapper: string): void {
-	const scriptPath = nixEval(
-		`toString (import ${nixPath(wrapper)} {}).pkg.passthru.updateScript`,
-	);
-	if (
-		!scriptPath ||
-		!statSync(scriptPath, { throwIfNoEntry: false })?.isFile()
-	) {
-		logError(`Could not resolve path updateScript for '${nixFile}'`);
-		throw new ExitError();
+export function runUpdateScript(
+	nixFile: string,
+	wrapper: string,
+	meta: Metadata,
+	version?: string,
+	subpackages: string[] = [],
+): void {
+	const nixUpdate = basename(meta.command[0] ?? "") === "nix-update";
+	const args: string[] = [];
+	if (nixUpdate) {
+		args.push("-f", wrapper);
+		if (
+			!meta.command.some(
+				(arg) =>
+					arg === "--override-filename" ||
+					arg.startsWith("--override-filename="),
+			)
+		)
+			args.push("--override-filename", nixFile);
+		if (version !== undefined) args.push(`--version=${version}`);
+		args.push(...subpackages.map((name) => `--subpackage=${name}`));
 	}
-	try {
-		chmodSync(scriptPath, 0o755);
-	} catch {
-		/* Nix store paths may already be executable */
-	}
-	if (
-		run([scriptPath], { envExtra: { UPDATE_FILE: nixFile } }).returncode !== 0
-	) {
-		logError("updateScript failed", nixFile);
-		throw new ExitError();
-	}
-}
-
-export function runStringUpdateScript(nixFile: string, meta: Metadata): void {
-	logInfo("Executing updateScript...");
-	console.log();
-	const name = basename(dirname(nixFile));
-	withTempDir(
-		`${name}-update-`,
-		(dir) => {
-			const outLink = join(dir, "result");
-			pkgWrapper(nixFile, (wrapper) => {
-				writeFileSync(
-					wrapper,
-					`{ pkgs ? import <nixpkgs> {} }:\nlet\n  pkg = pkgs.callPackage ${nixPath(nixFile)} {};\nin pkgs.writeShellScriptBin ${nixString(`${name}-update-script`)} (builtins.readFile pkg.passthru.updateScript)\n`,
-				);
-				const build = run([
-					"nix",
-					"build",
-					"--impure",
-					"--file",
-					wrapper,
-					"--out-link",
-					outLink,
-					"--print-build-logs",
-				]);
-				if (build.returncode !== 0) {
-					logError(`Failed to build updateScript for ${slug(meta)}`, nixFile);
-					throw new ExitError();
-				}
-				const binDir = join(outLink, "bin");
-				const binary = Bun.which(`${name}-update-script`, { PATH: binDir });
-				if (!binary) {
-					logError(`No executable found in ${binDir}`);
-					throw new ExitError();
-				}
-				if (
-					run([binary], { envExtra: { UPDATE_FILE: nixFile } }).returncode !== 0
-				) {
-					logError("updateScript failed");
-					throw new ExitError();
-				}
-			});
-		},
-		process.env.TEMP_DIR,
-	);
-}
-
-let updateBin: string | undefined;
-export function nixUpdateBin(): string {
-	if (updateBin) return updateBin;
-	const onPath = Bun.which("nix-update");
-	if (onPath) {
-		updateBin = onPath;
-		return onPath;
-	}
-	const result = run(
+	// Build the command to realize generated scripts and their runtime dependencies
+	const build = run(
 		[
 			"nix",
 			"build",
 			"--impure",
 			"--no-link",
 			"--print-out-paths",
-			`.#legacyPackages.${nixCurrentSystem()}.nix-update`,
+			"--file",
+			wrapper,
+			"updater",
 		],
 		{
 			cwd: REPO_ROOT,
 			capture: true,
-			envExtra: { NIXPKGS_ALLOW_UNFREE: "1" },
 		},
 	);
-	if (result.returncode !== 0) {
-		logError("nix-update is not on PATH and could not be built from the flake");
+	if (build.returncode !== 0) {
+		logError(
+			`Could not build updater for ${slug(meta)}:\n${build.stderr}`,
+			nixFile,
+		);
 		throw new ExitError();
 	}
-	updateBin = join(result.stdout.trim(), "bin", "nix-update");
-	return updateBin;
-}
-
-export function runNixUpdate(
-	nixFile: string,
-	wrapper: string,
-	version: string,
-	meta: Metadata,
-	subpackages: string[],
-): void {
-	const result = run([
-		nixUpdateBin(),
-		`--version=${version}`,
-		...subpackages.map((name) => `--subpackage=${name}`),
-		"-f",
-		wrapper,
-		"--override-filename",
-		nixFile,
-		"pkg",
-	]);
+	const result = run([build.stdout.trim(), ...args], {
+		cwd: REPO_ROOT,
+		envExtra: {
+			UPDATE_FILE: nixFile,
+			UPDATE_NIX_NAME: meta.name,
+			UPDATE_NIX_PNAME: meta.pname,
+			UPDATE_NIX_OLD_VERSION: meta.version,
+			UPDATE_NIX_ATTR_PATH: meta.attrPath,
+			NIXPKGS_ALLOW_UNFREE: "1",
+			// This runner supplies a file context, including when launched by nix run
+			UPDATE_NIX_FLAKE: "0",
+		},
+	});
 	if (result.returncode !== 0) {
-		logError(`nix-update failed for ${slug(meta)}`, nixFile);
+		logError(`Update failed for ${slug(meta)}`, nixFile);
 		throw new ExitError();
 	}
 }
