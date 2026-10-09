@@ -7,9 +7,15 @@
 
 stdenvNoCC.mkDerivation (finalAttrs: {
   pname = "pi-ssh-tools";
-  version = "0.1.0";
+  version = (lib.importJSON ./package.json).version;
 
-  src = ./.;
+  src = lib.fileset.toSource {
+    root = ./.;
+    fileset = lib.fileset.unions [
+      ./index.ts
+      ./src
+    ];
+  };
 
   dontBuild = true;
 
@@ -25,10 +31,9 @@ stdenvNoCC.mkDerivation (finalAttrs: {
     runHook preInstall
     install -Dm644 index.ts "$out/share/pi/extensions/pi-ssh-tools/index.ts"
     cp -R src "$out/share/pi/extensions/pi-ssh-tools/src"
-    # NixOS/nix-darwin system profiles link bin/ by default, but not arbitrary
-    # share/ subdirectories. Keep a stable profile-visible path for settings.json.
-    install -Dm644 index.ts "$out/bin/pi-ssh-tools/index.ts"
-    cp -R src "$out/bin/pi-ssh-tools/src"
+    # Keep a profile-visible path without duplicating the extension
+    mkdir -p "$out/bin"
+    ln -s "$out/share/pi/extensions/pi-ssh-tools" "$out/bin/pi-ssh-tools"
     runHook postInstall
   '';
 

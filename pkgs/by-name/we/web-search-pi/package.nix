@@ -5,8 +5,14 @@
 
 stdenvNoCC.mkDerivation (finalAttrs: {
   pname = "web-search-pi";
-  version = "0.1.0";
-  src = ./.;
+  version = (lib.importJSON ./package.json).version;
+  src = lib.fileset.toSource {
+    root = ./.;
+    fileset = lib.fileset.unions [
+      ./index.ts
+      ./src
+    ];
+  };
 
   dontBuild = true;
 
@@ -14,15 +20,14 @@ stdenvNoCC.mkDerivation (finalAttrs: {
     runHook preInstall
     install -Dm644 index.ts "$out/share/pi/extensions/web-search/index.ts"
     cp -R src "$out/share/pi/extensions/web-search/src"
-    # NixOS/nix-darwin system profiles link bin/ by default, but not arbitrary
-    # share/ subdirectories. Keep a stable profile-visible path for settings.json.
-    install -Dm644 index.ts "$out/bin/web-search-pi/index.ts"
-    cp -R src "$out/bin/web-search-pi/src"
+    # Keep a profile-visible path without duplicating the extension
+    mkdir -p "$out/bin"
+    ln -s "$out/share/pi/extensions/web-search" "$out/bin/web-search-pi"
     runHook postInstall
   '';
 
   passthru = {
-    # Absolute path consumers can drop into pi-mono `settings.extensions`.
+    # Absolute path consumers can drop into pi-mono `settings.extensions`
     extensionPath = "${finalAttrs.finalPackage}/share/pi/extensions/web-search";
   };
 
