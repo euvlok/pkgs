@@ -1,6 +1,6 @@
 {
-  "version": "0.163.0-alpha.2",
-  "rev": "rust-v0.163.0-alpha.2",
-  "srcHash": "sha256-UgGhlxd5jm3h25lZoYb26xleIPxW6itGtjdeoZ/4JvY=",
-  "cargoHash": "sha256-nHLaDBkBmGBTVs85RCp70vtlMa3LdlX5Svifacp+up4="
+  "version": "0.163.0-alpha.4",
+  "rev": "rust-v0.163.0-alpha.4",
+  "srcHash": "sha256-dkfMzkwRMBWKndAZ3cFKydt4tO7bnfhZP3nkI9MGBTU=",
+  "cargoHash": "sha256-YQjYJTOB2bGap+KZlFZ6XM5AaTuf83wiEC2VoW+ppUQ="
 }
