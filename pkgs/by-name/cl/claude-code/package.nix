@@ -1,31 +1,19 @@
 {
   claude-code,
-  fetchurl,
   lib,
-  stdenvNoCC,
 }:
 let
   manifest = lib.importJSON ./source.json;
   upstreamVersion = manifest.version;
-  baseUrl = "https://downloads.claude.ai/claude-code-releases";
-  platformKey = "${stdenvNoCC.hostPlatform.node.platform}-${stdenvNoCC.hostPlatform.node.arch}";
-  platformManifestEntry =
-    manifest.platforms.${platformKey}
-      or (throw "claude-code: unsupported system ${stdenvNoCC.hostPlatform.system}");
+  baseClaudeCode =
+    if lib.versionOlder claude-code.version upstreamVersion then
+      claude-code.override { inherit manifest; }
+    else
+      claude-code;
 in
-claude-code.overrideAttrs (
-  prevAttrs:
-  lib.optionalAttrs (lib.versionOlder prevAttrs.version upstreamVersion) {
-    version = upstreamVersion;
-    src = fetchurl {
-      url = "${baseUrl}/${upstreamVersion}/${platformKey}/claude";
-      sha256 = platformManifestEntry.checksum;
-    };
-  }
-  // {
-    passthru = (prevAttrs.passthru or { }) // {
-      updateScript = ./update.sh;
-      inherit upstreamVersion;
-    };
-  }
-)
+baseClaudeCode.overrideAttrs (prevAttrs: {
+  passthru = (prevAttrs.passthru or { }) // {
+    updateScript = ./update.sh;
+    inherit upstreamVersion;
+  };
+})
