@@ -13,7 +13,7 @@ else
 fi
 
 repo="openai/codex"
-tag_regex='^rust-v[0-9]+\.[0-9]+\.[0-9]+-alpha\.[0-9]+$'
+tag_regex='^rust-v[0-9]+\.[0-9]+\.[0-9]+-alpha\.[0-9]+(\.[0-9]+)*$'
 
 auth_header=()
 if [[ -n "${GITHUB_TOKEN:-${GH_TOKEN:-}}" ]]; then
@@ -50,9 +50,9 @@ src_hash=$(nix hash convert --hash-algo sha256 --from nix32 \
 tmp_pkg=$(mktemp -d)
 trap 'rm -rf "$tmp_pkg"' EXIT
 cat >"$tmp_pkg/vendor.nix" <<'EOF'
-{ version, rev, srcHash }:
+{ nixpkgsPath, version, rev, srcHash }:
 let
-  pkgs = import <nixpkgs> { };
+  pkgs = import nixpkgsPath { };
   src = pkgs.fetchFromGitHub {
     owner = "openai";
     repo = "codex";
@@ -68,8 +68,12 @@ pkgs.rustPlatform.fetchCargoVendor {
 }
 EOF
 
+repo_root="$(cd ../../../.. && pwd -P)"
+system="$(nix eval --impure --raw --expr builtins.currentSystem)"
+nixpkgs_path="$(nix eval --impure --raw "$repo_root#legacyPackages.$system.path")"
 build_log=$(NIXPKGS_ALLOW_UNFREE=1 nix build --impure --no-link --print-build-logs \
   --file "$tmp_pkg/vendor.nix" \
+  --argstr nixpkgsPath "$nixpkgs_path" \
   --argstr version "$version" \
   --argstr rev "$latest_tag" \
   --argstr srcHash "$src_hash" 2>&1 || true)
