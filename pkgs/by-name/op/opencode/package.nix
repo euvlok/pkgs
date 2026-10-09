@@ -19,14 +19,18 @@ opencode.overrideAttrs (
     src = upstreamSrc;
   }
   // {
-    passthru = (prevAttrs.passthru or { }) // {
-      updateScript = ./update.sh;
-      inherit upstreamVersion;
-      node_modules = prevAttrs.passthru.node_modules.overrideAttrs {
-        version = upstreamVersion;
-        src = upstreamSrc;
-        outputHash = sources.nodeModulesHash;
+    passthru =
+      (prevAttrs.passthru or { })
+      // {
+        updateScript = ./update.sh;
+        inherit upstreamVersion;
+      }
+      // lib.optionalAttrs (lib.versionOlder prevAttrs.version upstreamVersion) {
+        node_modules = prevAttrs.passthru.node_modules.overrideAttrs {
+          version = upstreamVersion;
+          src = upstreamSrc;
+          outputHash = sources.nodeModulesHash;
+        };
       };
-    };
   }
 )
