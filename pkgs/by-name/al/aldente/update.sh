@@ -1,5 +1,5 @@
 #!/usr/bin/env nix-shell
-#!nix-shell -i bash -p bash cacert coreutils curl jq nixVersions.latest p7zip
+#!nix-shell -i bash -p bash cacert coreutils curl jq nixVersions.latest _7zz
 # shellcheck shell=bash
 
 set -euo pipefail
