@@ -3,7 +3,7 @@
   callPackage,
   ghidra,
   ghidra-mcp-headless-server,
-  jdk21,
+  jdk25,
   runCommand,
   coreutils,
   makeWrapper,
@@ -64,7 +64,7 @@ runCommand "ghidra-mcp-httpd-${packageVersion}"
     flags="''${flags//@classpath@/$classpath}"
 
     mkdir -p "$out/bin"
-    makeWrapper "${lib.meta.getExe' jdk21 "java"}" "$out/bin/ghidra-mcp-httpd" \
+    makeWrapper "${lib.meta.getExe' jdk25 "java"}" "$out/bin/ghidra-mcp-httpd" \
       --set GHIDRA_HOME "${ghidra}/lib/ghidra" \
       --set-default GHIDRA_MCP_BIND_ADDRESS "127.0.0.1" \
       --set-default GHIDRA_MCP_PORT "8089" \
@@ -74,7 +74,7 @@ runCommand "ghidra-mcp-httpd-${packageVersion}"
       --set-default GHIDRA_MCP_FILE_ROOT "" \
       --set-default GHIDRA_MCP_PROJECT_FOLDER "" \
       --set-default GHIDRA_USER "" \
-      --set JAVA_HOME "${jdk21.home}" \
+      --set JAVA_HOME "${jdk25.home}" \
       --run 'export GHIDRA_MCP_STATE="''${GHIDRA_MCP_STATE:-${stateDefault}}"' \
       --run 'export GHIDRA_MCP_BIND="''${GHIDRA_MCP_BIND:-$GHIDRA_MCP_BIND_ADDRESS}"' \
       --run '${coreutils}/bin/mkdir -p "$GHIDRA_MCP_STATE/home" "$GHIDRA_MCP_STATE/tmp" "$GHIDRA_MCP_STATE/runtime"' \

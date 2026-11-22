@@ -3,7 +3,7 @@
   callPackage,
   ghidra,
   maven,
-  jdk21,
+  jdk25,
   stripJavaArchivesHook,
 }:
 let
@@ -119,7 +119,7 @@ maven.buildMavenPackage {
 
   inherit src;
 
-  mvnJdk = jdk21;
+  mvnJdk = jdk25;
   buildOffline = true;
   doCheck = false;
   strictDeps = true;
@@ -171,7 +171,7 @@ maven.buildMavenPackage {
   };
 
   meta = common.meta // {
-    platforms = lib.intersectLists ghidra.meta.platforms jdk21.meta.platforms;
+    platforms = lib.intersectLists ghidra.meta.platforms jdk25.meta.platforms;
     sourceProvenance = with lib.sourceTypes; [
       fromSource
       binaryBytecode
