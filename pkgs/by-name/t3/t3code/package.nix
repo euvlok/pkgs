@@ -1,9 +1,6 @@
 {
-  fetchFromGitHub,
-  fetchPnpmDeps,
   lib,
   nix-update-script,
-  pnpm_11,
   t3code,
   versionCheckHook,
   channel ? "stable",
@@ -19,52 +16,38 @@ let
       throw "t3code: unsupported channel ${channel}";
   source = lib.importJSON sourceFile;
   pname = if channel == "nightly" then "t3code-nightly" else "t3code";
-  unwrapped = t3code.unwrapped.overrideAttrs (
-    finalAttrs: previousAttrs: {
-      pname = "${pname}-unwrapped";
-      version = source.version;
+  unwrapped = t3code.unwrapped.overrideAttrs (previousAttrs: {
+    pname = "${pname}-unwrapped";
+    inherit (source) version;
 
-      src = fetchFromGitHub {
-        owner = "pingdotgg";
-        repo = "t3code";
-        tag = source.tag;
-        hash = source.srcHash;
-      };
+    # Nixpkgs derives the GitHub tag from the package version
+    src = previousAttrs.src.override { hash = source.srcHash; };
+    pnpmDeps = previousAttrs.pnpmDeps.override { hash = source.nodeModulesHash; };
 
-      patches = [
-        ./patches/0002-suppress-disabled-desktop-update-surfacing.patch
-      ];
+    patches = (previousAttrs.patches or [ ]) ++ [
+      ./patches/0002-suppress-disabled-desktop-update-surfacing.patch
+    ];
 
-      pnpmDeps = fetchPnpmDeps {
-        pnpm = pnpm_11;
-        inherit (finalAttrs)
-          pname
-          version
-          src
-          pnpmWorkspaces
-          ;
+    # pnpmConfigHook patches root shims only
+    preBuild = (previousAttrs.preBuild or "") + ''
+      patchShebangs apps/*/node_modules packages/*/node_modules scripts/node_modules
+    '';
 
-        fetcherVersion = 4;
-        hash = source.nodeModulesHash;
-      };
+    postFixup = (previousAttrs.postFixup or "") + ''
+      wrapProgram "$out/bin/t3code-desktop" \
+        --set T3CODE_DISABLE_AUTO_UPDATE 1
+    '';
 
-      postFixup = (previousAttrs.postFixup or "") + ''
-        wrapProgram "$out/bin/t3code-desktop" \
-          --set T3CODE_DISABLE_AUTO_UPDATE 1
-      '';
-
-      nativeInstallCheckInputs = (previousAttrs.nativeInstallCheckInputs or [ ]) ++ [
-        versionCheckHook
-      ];
-      doInstallCheck = true;
-      versionCheckProgram = "${placeholder "out"}/bin/t3";
-      versionCheckProgramArg = "--version";
-    }
-  );
+    nativeInstallCheckInputs = (previousAttrs.nativeInstallCheckInputs or [ ]) ++ [
+      versionCheckHook
+    ];
+    doInstallCheck = true;
+    versionCheckProgram = "${placeholder "out"}/bin/t3";
+    versionCheckProgramArg = "--version";
+  });
 in
 (t3code.override { t3code-unwrapped = unwrapped; }).overrideAttrs (previousAttrs: {
   inherit pname;
-  version = source.version;
 
   passthru = (previousAttrs.passthru or { }) // {
     updateScript = {
@@ -73,11 +56,15 @@ in
           "--use-github-releases"
           "--override-filename"
           (toString sourceFile)
+          "--version-regex"
+          (
+            if channel == "nightly" then
+              "v([0-9]+\\.[0-9]+\\.[0-9]+-nightly\\.[0-9]{8}\\.[0-9]+)$"
+            else
+              "v([0-9]+\\.[0-9]+\\.[0-9]+)$"
+          )
         ]
-        ++ lib.optionals (channel == "nightly") [
-          "--version=unstable"
-          "--version-regex=v(.*-nightly\\..*)"
-        ];
+        ++ lib.optional (channel == "nightly") "--version=unstable";
       };
       attrPath = "${pname}.unwrapped";
     };

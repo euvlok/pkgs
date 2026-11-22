@@ -1,6 +1,5 @@
 {
 	"version": "0.1.12-nightly.20261122.5098",
-	"tag": "v0.0.46-nightly.20261008.2819",
-	"srcHash": "sha256-iFikkOAXQwhM1qAOx7PmqBMqQC3NspU41HdhMcFK49c=",
-	"nodeModulesHash": "sha256-iRr6b3NzhYDb+dKdlZxE0XZ8UpXWDjFfk+K6h/fPkOU="
+	"srcHash": "sha256-yYL57ScFxBZYgXgdObO88OraLd+KunQ9SXOAmDuccqo=",
+	"nodeModulesHash": "sha256-dKehdUoZrfskQDkE6AaLgmcq6kuP+Nage5zQhwshAxk="
 }
