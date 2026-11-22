@@ -1,5 +1,6 @@
 {
   aldente,
+  callPackage,
   fetchurl,
   lib,
 }:
@@ -18,7 +19,7 @@ aldente.overrideAttrs (
   }
   // {
     passthru = (prevAttrs.passthru or { }) // {
-      updateScript = ./update.sh;
+      updateScript = lib.getExe (callPackage ./update.nix { });
       inherit upstreamVersion;
     };
   }
