@@ -18,6 +18,10 @@
       lib = nixpkgs.lib;
       systems = lib.systems.flakeExposed;
       forAllSystems = lib.genAttrs systems;
+      bunSystems = lib.filter (
+        system: lib.meta.availableOn (lib.systems.elaborate system) nixpkgs.legacyPackages.${system}.bun
+      ) systems;
+      forBunSystems = lib.genAttrs bunSystems;
     in
     {
       /**
@@ -53,9 +57,9 @@
       );
 
       /**
-        Development shells for all systems.
+        Development shells on systems supported by Bun.
       */
-      devShells = forAllSystems (
+      devShells = forBunSystems (
         system:
         let
           pkgs = self.legacyPackages.${system};
@@ -87,7 +91,7 @@
 
       formatter = forAllSystems (system: self.legacyPackages.${system}.nixfmt);
 
-      apps = forAllSystems (
+      apps = forBunSystems (
         system:
         let
           pkgs = self.legacyPackages.${system};
