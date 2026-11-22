@@ -1,4 +1,5 @@
 {
+  callPackage,
   claude-code,
   lib,
 }:
@@ -13,7 +14,7 @@ let
 in
 baseClaudeCode.overrideAttrs (prevAttrs: {
   passthru = (prevAttrs.passthru or { }) // {
-    updateScript = ./update.sh;
+    updateScript = lib.getExe (callPackage ./update.nix { });
     inherit upstreamVersion;
   };
 })
