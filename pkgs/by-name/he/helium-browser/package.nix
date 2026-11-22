@@ -69,15 +69,16 @@
 }:
 
 let
-  inherit (stdenvNoCC.hostPlatform) system;
-  sources = lib.importJSON ./source.json;
+  inherit (stdenvNoCC.hostPlatform) isDarwin system;
+  inherit (lib.importJSON ./source.json) platforms;
 
-  pname = "helium-browser";
-  source = sources.platforms.${system} or (throw "helium-browser: unsupported system ${system}");
-  inherit (source) version;
-  src = fetchurl {
-    inherit (source) url hash;
-  };
+  source = platforms.${system} or (throw "helium-browser: unsupported system ${system}");
+  wrapperFlags = lib.escapeShellArgs [
+    "--add-flags"
+    commandLineArgs
+    "--add-flags"
+    "--extension-mime-request-handling=always-prompt-for-install"
+  ];
 
   linuxDeps = [
     glibc
@@ -140,133 +141,130 @@ let
     ];
   };
 
-  meta = {
-    description = "Private, fast, and honest web browser based on ungoogled-chromium";
-    homepage = "https://helium.computer";
-    license = lib.licenses.gpl3Only;
-    mainProgram = "helium-browser";
-    platforms = [
-      "aarch64-darwin"
-      "aarch64-linux"
-      "x86_64-linux"
-    ];
-    sourceProvenance = [ lib.sourceTypes.binaryNativeCode ];
-    maintainers = with lib.maintainers; [ FlameFlag ];
-  };
+  inherit (addDriverRunpath) driverLink;
+  xdgDataDirs = lib.concatStringsSep ":" [
+    "${driverLink}/share"
+    "${gtk3}/share/gsettings-schemas/${gtk3.name}"
+    "${gsettings-desktop-schemas}/share/gsettings-schemas/${gsettings-desktop-schemas.name}"
+    "${adwaita-icon-theme}/share"
+  ];
+
 in
-if stdenvNoCC.hostPlatform.isDarwin then
-  stdenvNoCC.mkDerivation {
-    inherit
-      pname
-      version
-      src
-      meta
-      ;
-
-    passthru = {
-      updateScript = ./update.sh;
-      upstreamVersion = version;
+stdenvNoCC.mkDerivation (
+  {
+    pname = "helium-browser";
+    inherit (source) version;
+    src = fetchurl {
+      inherit (source) url hash;
     };
 
-    sourceRoot = "Helium/Helium.app";
-
-    nativeBuildInputs = [
-      _7zz
-      makeShellWrapper
-    ];
-
-    unpackPhase = ''
-      7zz x "$src" -snld
-    '';
-
-    dontFixup = true;
-
-    installPhase = ''
-      runHook preInstall
-      mkdir -p "$out/Applications" "$out/bin"
-      cp -R . "$out/Applications/Helium.app"
-
-      makeShellWrapper "$out/Applications/Helium.app/Contents/MacOS/Helium" "$out/bin/helium-browser" \
-        --add-flags ${lib.escapeShellArg commandLineArgs} \
-        --add-flags "--extension-mime-request-handling=always-prompt-for-install"
-      ln -s helium-browser "$out/bin/helium"
-
-      runHook postInstall
-    '';
-  }
-else
-  stdenvNoCC.mkDerivation {
-    inherit
-      pname
-      version
-      src
-      meta
-      ;
-
-    passthru = {
-      updateScript = ./update.sh;
-      upstreamVersion = version;
-    };
-
-    dontUnpack = true;
     dontConfigure = true;
     dontBuild = true;
-    dontStrip = true;
-    dontWrapQtApps = true;
-
-    nativeBuildInputs = lib.optionals stdenvNoCC.hostPlatform.isLinux [
-      autoPatchelfHook
+    nativeBuildInputs = [
       makeShellWrapper
-      qt6.wrapQtAppsHook
-    ];
-    buildInputs = lib.optionals stdenvNoCC.hostPlatform.isLinux (
-      linuxDeps
-      ++ [
-        adwaita-icon-theme
-        gsettings-desktop-schemas
-      ]
+    ]
+    ++ (
+      if isDarwin then
+        [ _7zz ]
+      else
+        [
+          autoPatchelfHook
+          qt6.wrapQtAppsHook
+        ]
     );
 
-    installPhase = ''
-      runHook preInstall
+    passthru = {
+      updateScript = ./update.sh;
+      upstreamVersion = source.version;
+    };
 
-      mkdir -p "$out/libexec/helium" "$out/bin" "$out/share/applications" "$out/share/icons/hicolor/256x256/apps"
-      tar -xJf "$src" -C "$out/libexec/helium" --strip-components=1
-      rm -f "$out/libexec/helium/libqt5_shim.so"
-      # Use the system Vulkan loader so it can discover the host's drivers
-      rm "$out/libexec/helium/libvulkan.so.1"
-      ln -s "${lib.getLib vulkan-loader}/lib/libvulkan.so.1" "$out/libexec/helium/libvulkan.so.1"
-      # Keep HERE pointing at the payload while shortcuts use our launcher
-      substituteInPlace "$out/libexec/helium/helium-wrapper" \
-        --replace-fail 'export CHROME_VERSION_EXTRA="custom"' 'export CHROME_VERSION_EXTRA="nix"' \
-        --replace-fail 'export CHROME_WRAPPER' "export CHROME_WRAPPER=\"$out/bin/helium-browser\""
-      install -Dm644 "$out/libexec/helium/helium.desktop" "$out/share/applications/helium.desktop"
-      install -Dm644 "$out/libexec/helium/product_logo_256.png" "$out/share/icons/hicolor/256x256/apps/helium.png"
-      substituteInPlace "$out/share/applications/helium.desktop" \
-        --replace-fail "Exec=helium %U" "Exec=$out/bin/helium-browser %U" \
-        --replace-fail "Exec=helium --incognito" "Exec=$out/bin/helium-browser --incognito"
-      sed -i "s|^Exec=helium$|Exec=$out/bin/helium-browser|" "$out/share/applications/helium.desktop"
-      ln -s helium.desktop "$out/share/applications/helium-browser.desktop"
-
-      # Qt propagates a binary wrapper hook, which cannot expand Wayland flags
-      makeShellWrapper "$out/libexec/helium/helium-wrapper" "$out/bin/helium-browser" \
-        --add-flags ${lib.escapeShellArg commandLineArgs} \
-        --add-flags "--extension-mime-request-handling=always-prompt-for-install" \
-        --add-flags "\''${NIXOS_OZONE_WL:+\''${WAYLAND_DISPLAY:+--ozone-platform-hint=auto}}" \
-        --set-default CHROME_VERSION_EXTRA nix \
-        --set CHROME_DESKTOP helium.desktop \
-        --set FONTCONFIG_FILE "${fontsConf}" \
-        --prefix XDG_DATA_DIRS : "$out/share:${addDriverRunpath.driverLink}/share:${gtk3}/share/gsettings-schemas/${gtk3.name}:${gsettings-desktop-schemas}/share/gsettings-schemas/${gsettings-desktop-schemas.name}:${adwaita-icon-theme}/share" \
-        --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath linuxDeps}:${addDriverRunpath.driverLink}/lib" \
-        --prefix PATH : ${
-          lib.makeBinPath [
-            coreutils
-            xdg-utils
-          ]
-        } \
-        ''${qtWrapperArgs[@]}
-      ln -s helium-browser "$out/bin/helium"
-
-      runHook postInstall
-    '';
+    meta = {
+      description = "Private, fast, and honest web browser based on ungoogled-chromium";
+      homepage = "https://helium.computer";
+      license = lib.licenses.gpl3Only;
+      mainProgram = "helium-browser";
+      platforms = builtins.attrNames platforms;
+      sourceProvenance = [ lib.sourceTypes.binaryNativeCode ];
+      maintainers = with lib.maintainers; [ FlameFlag ];
+    };
   }
+  // (
+    if isDarwin then
+      {
+        sourceRoot = "Helium/Helium.app";
+
+        unpackPhase = ''
+          runHook preUnpack
+          7zz x "$src" -snld
+          runHook postUnpack
+        '';
+
+        # Preserve the upstream app bundle's code signature
+        dontFixup = true;
+
+        installPhase = ''
+          runHook preInstall
+          mkdir -p "$out/Applications" "$out/bin"
+          cp -R . "$out/Applications/Helium.app"
+
+          makeShellWrapper "$out/Applications/Helium.app/Contents/MacOS/Helium" \
+            "$out/bin/helium-browser" ${wrapperFlags}
+          ln -s helium-browser "$out/bin/helium"
+          runHook postInstall
+        '';
+      }
+    else
+      {
+        dontUnpack = true;
+        dontStrip = true;
+        dontWrapQtApps = true;
+
+        buildInputs = linuxDeps ++ [
+          adwaita-icon-theme
+          gsettings-desktop-schemas
+        ];
+
+        installPhase = ''
+          runHook preInstall
+
+          payload="$out/libexec/helium"
+          launcher="$out/bin/helium-browser"
+          desktop="$out/share/applications/helium.desktop"
+          mkdir -p "$payload" "$out/bin"
+          tar -xJf "$src" -C "$payload" --strip-components=1
+          rm -f "$payload/libqt5_shim.so"
+
+          # Use the system Vulkan loader so it can discover the host's drivers
+          rm "$payload/libvulkan.so.1"
+          ln -s "${lib.getLib vulkan-loader}/lib/libvulkan.so.1" "$payload/libvulkan.so.1"
+
+          # Keep HERE pointing at the payload while shortcuts use our launcher
+          substituteInPlace "$payload/helium-wrapper" \
+            --replace-fail 'export CHROME_VERSION_EXTRA="custom"' 'export CHROME_VERSION_EXTRA="nix"' \
+            --replace-fail 'export CHROME_WRAPPER' "export CHROME_WRAPPER=\"$launcher\""
+          install -Dm644 "$payload/helium.desktop" "$desktop"
+          substituteInPlace "$desktop" --replace-fail 'Exec=helium' "Exec=$launcher"
+          ln -s helium.desktop "$out/share/applications/helium-browser.desktop"
+          install -Dm644 "$payload/product_logo_256.png" \
+            "$out/share/icons/hicolor/256x256/apps/helium.png"
+
+          makeShellWrapper "$payload/helium-wrapper" "$launcher" \
+            ${wrapperFlags} \
+            --set CHROME_DESKTOP helium.desktop \
+            --set FONTCONFIG_FILE "${fontsConf}" \
+            --prefix XDG_DATA_DIRS : "$out/share:${xdgDataDirs}" \
+            --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath linuxDeps}:${driverLink}/lib" \
+            --prefix PATH : ${
+              lib.makeBinPath [
+                coreutils
+                xdg-utils
+              ]
+            } \
+            "''${qtWrapperArgs[@]}"
+          ln -s helium-browser "$out/bin/helium"
+
+          runHook postInstall
+        '';
+      }
+  )
+)
