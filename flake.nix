@@ -66,7 +66,7 @@
         in
         {
           default = pkgs.mkShell {
-            buildInputs = builtins.attrValues {
+            packages = builtins.attrValues {
               inherit (pkgs)
                 nix-update
                 ripgrep
@@ -78,6 +78,7 @@
                 sd
                 yamlfmt
                 ;
+              zstd = lib.getBin pkgs.zstd;
             };
 
             shellHook = ''
