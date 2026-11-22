@@ -49,7 +49,7 @@ jobs:
       has_packages: ${{ steps.detect.outputs.has_packages }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
 
@@ -69,7 +69,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@v7.0.1
 
       - name: Install Nix
         uses: ./.github/actions/setup-nix
@@ -95,7 +95,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@v7.0.1
 
       - name: Install Nix
         uses: ./.github/actions/setup-nix

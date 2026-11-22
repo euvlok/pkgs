@@ -28,7 +28,7 @@ jobs:
     name: TypeScript and Biome
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/setup-bun
       - name: Check types
         run: bun run typecheck

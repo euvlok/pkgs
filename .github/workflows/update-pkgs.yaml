@@ -22,7 +22,7 @@ jobs:
             runs-on: macos-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@v7.0.1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install Nix
