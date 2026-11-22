@@ -167,7 +167,7 @@ maven.buildMavenPackage {
   passthru = {
     upstreamVersion = jarVersion;
     inherit mvnParameters;
-    updateScript = ./update.sh;
+    inherit (common) updateScript;
   };
 
   meta = common.meta // {

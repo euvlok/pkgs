@@ -161,7 +161,7 @@ symlinkJoin {
         ;
     };
     mavenDeps = server.fetchedMavenDeps;
-    updateScript = ./update.sh;
+    inherit (common) updateScript;
   };
 
   inherit meta;

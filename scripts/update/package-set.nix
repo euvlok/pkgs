@@ -24,6 +24,7 @@ let
   script = if declaredScript == null then pkgs.nix-update-script { } else declaredScript;
   spec =
     if builtins.isAttrs script && !pkgs.lib.isDerivation script then script else { command = script; };
+  attrPath = spec.attrPath or name;
   command = map toString (pkgs.lib.toList spec.command);
 in
 {
@@ -32,13 +33,14 @@ in
   canUpdate =
     (pkg.type or "") == "derivation"
     && pkgs.lib.meta.availableOn pkgs.stdenv.hostPlatform pkg
+    # Batch updates can only verify and commit pins owned by this package
+    && pkgs.lib.head (pkgs.lib.splitString "." attrPath) == name
     && (declaredScript != null || (pkg ? src && pkg.src ? drvPath));
   updater = pkgs.writeShellScript "package-update" ''
     exec ${pkgs.lib.escapeShellArgs command} "$@"
   '';
   update = {
-    inherit command;
-    attrPath = spec.attrPath or name;
+    inherit command attrPath;
     inherit (pkg) name;
     pname = pkg.pname or name;
     version = pkg.version or "";

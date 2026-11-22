@@ -45,7 +45,7 @@ runCommand "ghidra-mcp-httpd-${packageVersion}"
     passthru = {
       upstreamVersion = jarVersion;
       inherit server;
-      updateScript = ./update.sh;
+      inherit (common) updateScript;
     };
     meta = server.meta // {
       description = "Ghidra MCP headless HTTP daemon";

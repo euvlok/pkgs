@@ -122,7 +122,7 @@ runCommand "ghidra-mcp-bridge-${packageVersion}"
         mcp
         mcpSdkVersion
         ;
-      updateScript = ./update.sh;
+      inherit (common) updateScript;
     };
     meta = common.meta // {
       platforms = python313.meta.platforms;

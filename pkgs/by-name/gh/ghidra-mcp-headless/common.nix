@@ -1,4 +1,8 @@
-{ lib, fetchFromGitHub }:
+{
+  callPackage,
+  lib,
+  fetchFromGitHub,
+}:
 let
   sources = lib.importJSON ./source.json;
   packageVersion = sources.version;
@@ -18,6 +22,11 @@ in
     repo = "ghidra-mcp";
     rev = upstreamRev;
     hash = sources.srcHash;
+  };
+
+  updateScript = {
+    attrPath = "ghidra-mcp-headless";
+    command = lib.getExe (callPackage ./update.nix { });
   };
 
   stateDefault = "$HOME/.local/state/ghidra-mcp-headless";
