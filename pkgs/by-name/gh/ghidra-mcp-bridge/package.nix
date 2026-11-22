@@ -19,23 +19,61 @@ let
     ;
 
   mcpSdkVersion = sources.mcpSdkVersion;
-  mcp = python313Packages.mcp.overridePythonAttrs (old: {
+  # The bridge uses FastMCP from SDK 1.x, not the SDK 2.x in nixpkgs
+  mcp = python313Packages.buildPythonPackage {
+    pname = "mcp";
     version = mcpSdkVersion;
+    pyproject = true;
+    strictDeps = true;
+
     src = fetchFromGitHub {
       owner = "modelcontextprotocol";
       repo = "python-sdk";
       tag = "v${mcpSdkVersion}";
       hash = sources.mcpSrcHash;
     };
-    dependencies = lib.unique (
-      (old.dependencies or [ ])
-      ++ [
-        python313Packages.typing-extensions
-        python313Packages.typing-inspection
+    build-system = with python313Packages; [
+      hatchling
+      uv-dynamic-versioning
+    ];
+
+    dependencies =
+      with python313Packages;
+      [
+        anyio
+        httpx
+        httpx-sse
+        jsonschema
+        pydantic
+        pydantic-settings
+        pyjwt
+        python-multipart
+        sse-starlette
+        starlette
+        typing-extensions
+        typing-inspection
+        uvicorn
       ]
-    );
+      ++ pyjwt.optional-dependencies.crypto;
+
+    optional-dependencies = with python313Packages; {
+      cli = [
+        python-dotenv
+        typer
+      ];
+      rich = [ rich ];
+    };
+
+    pythonImportsCheck = [ "mcp" ];
+
     doCheck = false;
-  });
+    meta = {
+      description = "Official Python SDK for Model Context Protocol servers and clients";
+      changelog = "https://github.com/modelcontextprotocol/python-sdk/releases/tag/v${mcpSdkVersion}";
+      homepage = "https://github.com/modelcontextprotocol/python-sdk";
+      license = lib.licenses.mit;
+    };
+  };
   bridgePython = python313.withPackages (_: [ mcp ]);
 
   bridgeApp = python313Packages.buildPythonApplication {
