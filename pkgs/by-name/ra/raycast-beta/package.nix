@@ -1,4 +1,5 @@
 {
+  callPackage,
   raycast,
   fetchurl,
   lib,
@@ -18,7 +19,7 @@ raycast.overrideAttrs (
   }
   // {
     passthru = (previousAttrs.passthru or { }) // {
-      updateScript = ./update.sh;
+      updateScript = lib.getExe (callPackage ./update.nix { });
       upstreamVersion = source.version;
     };
   }
