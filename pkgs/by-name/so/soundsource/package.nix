@@ -1,4 +1,5 @@
 {
+  callPackage,
   fetchzip,
   lib,
   soundsource,
@@ -17,7 +18,7 @@ soundsource.overrideAttrs (
   }
   // {
     passthru = (prevAttrs.passthru or { }) // {
-      updateScript = ./update.sh;
+      updateScript = lib.getExe (callPackage ./update.nix { });
       inherit upstreamVersion;
     };
   }
