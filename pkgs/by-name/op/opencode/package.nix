@@ -3,42 +3,41 @@
   fetchFromGitHub,
   lib,
   nix-update-script,
+  stdenv,
   forUpdate ? false,
 }:
 let
-  sources = lib.importJSON ./source.json;
-  upstreamVersion = sources.version;
-  upstreamSrc = fetchFromGitHub {
-    inherit (opencode.src) owner repo;
-    rev = sources.rev;
-    hash = sources.srcHash;
-  };
+  # nixpkgs builds different node_modules outputs on Linux and Darwin
+  sourceFile = if stdenv.hostPlatform.isDarwin then ./source-darwin.json else ./source.json;
+  sources = lib.importJSON sourceFile;
 in
 opencode.overrideAttrs (
-  prevAttrs:
-  lib.optionalAttrs (forUpdate || lib.versionOlder prevAttrs.version upstreamVersion) {
-    version = upstreamVersion;
-    src = upstreamSrc;
-  }
-  // {
-    passthru =
-      (prevAttrs.passthru or { })
-      // {
-        updateScript = nix-update-script {
-          extraArgs = [
-            "--subpackage=node_modules"
-            "--override-filename"
-            (toString ./source.json)
-          ];
-        };
-        inherit upstreamVersion;
-      }
-      // lib.optionalAttrs (forUpdate || lib.versionOlder prevAttrs.version upstreamVersion) {
-        node_modules = prevAttrs.passthru.node_modules.overrideAttrs {
-          version = upstreamVersion;
-          src = upstreamSrc;
-          outputHash = sources.nodeModulesHash;
-        };
+  finalAttrs: prevAttrs:
+  # Reuse the upstream 2.x build; older package definitions target a different tree
+  lib.optionalAttrs
+    (prevAttrs ? node_modules && (forUpdate || lib.versionOlder prevAttrs.version sources.version))
+    {
+      inherit (sources) version;
+      src = fetchFromGitHub {
+        inherit (prevAttrs.src) owner repo;
+        tag = "v${finalAttrs.version}";
+        hash = sources.srcHash;
       };
+      node_modules = prevAttrs.node_modules.overrideAttrs {
+        outputHash = sources.nodeModulesHash;
+      };
+    }
+  // {
+    passthru = (prevAttrs.passthru or { }) // {
+      upstreamVersion = sources.version;
+      updateScript = nix-update-script {
+        extraArgs = [
+          "--version-regex=^v([0-9]+\\.[0-9]+\\.[0-9]+)$"
+          "--subpackage=node_modules"
+          "--override-filename"
+          (toString sourceFile)
+        ];
+      };
+    };
   }
 )

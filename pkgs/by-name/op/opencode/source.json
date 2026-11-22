@@ -1,6 +1,5 @@
 {
-	"version": "1.18.35",
-	"rev": "v1.18.35",
-	"srcHash": "sha256-NM5AbX99hDW+oIojiHSRA+QDz27d8L/v42bwZY+6Imk=",
-	"nodeModulesHash": "sha256-cQLuGI8MBh9l8GisM2k5WXBcZrsdgrNsXUOsYzZVwYY="
+	"version": "2.3.2",
+	"srcHash": "sha256-yEdLD000KJPNkuowiy4g+sHV+7dm3xazKTEf15ZIYKs=",
+	"nodeModulesHash": "sha256-1mWmG+sGm7U8mkC8mF5DWq8kUrJYV6o+nFTdPJpPOsc="
 }
