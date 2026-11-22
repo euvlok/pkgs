@@ -14,9 +14,7 @@
   adwaita-icon-theme ? null,
   gsettings-desktop-schemas ? null,
   alsa-lib ? null,
-  at-spi2-atk ? null,
   at-spi2-core ? null,
-  atk ? null,
   cairo ? null,
   cups ? null,
   dbus ? null,
@@ -84,9 +82,7 @@ let
   linuxDeps = [
     glibc
     alsa-lib
-    at-spi2-atk
     at-spi2-core
-    atk
     cairo
     cups
     dbus
