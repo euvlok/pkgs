@@ -1,9 +1,7 @@
 {
-  "version": "7.1.0-unstable-2026-11-20",
-  "upstreamVersion": "7.1.0",
-  "rev": "8dbbb1f677166fe483d605f925d60da080e448f2",
+  "version": "7.1.0",
   "srcHash": "sha256-4xWLBpdkktFCf2yI4bHDqpE+jXqZ8k8QdPM9Nh0Yf1w=",
   "mcpSdkVersion": "1.30.0",
   "mcpSrcHash": "sha256-EkmTqsK+vBJcURuwFkhtNJMFgtzgw/7Cd+Fpav4P/ko=",
-  "mvnHash": "sha256-UViz6JNuVUpLSPXv6lniiKdRPEob6RdQN/8VLuTLlsA="
+  "mvnHash": "sha256-yvceYZUktTzBKsHa1JbAlHNjrhvYgEVCM7KqfDUpi9A="
 }

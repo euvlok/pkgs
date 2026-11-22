@@ -1,11 +1,11 @@
 {
   cacert,
-  common-updater-scripts,
   coreutils,
-  curl,
   gawk,
+  git,
   jq,
   nix,
+  python3,
   writeShellApplication,
 }:
 
@@ -13,12 +13,12 @@ writeShellApplication {
   name = "ghidra-mcp-headless-update";
 
   runtimeInputs = [
-    common-updater-scripts
     coreutils
-    curl
     gawk
+    git
     jq
     nix
+    python3
   ];
 
   text = ''
@@ -26,73 +26,46 @@ writeShellApplication {
 
     cd "$(dirname "''${UPDATE_FILE:-pkgs/by-name/gh/ghidra-mcp-headless/package.nix}")/../ghidra-mcp-headless"
 
-    repo_owner="bethington"
-    repo_name="ghidra-mcp"
-    repo="''${repo_owner}/''${repo_name}"
-    branch="''${GHIDRA_MCP_BRANCH:-dev}"
-
-    auth_header=()
-    if [[ -n "''${GITHUB_TOKEN:-''${GH_TOKEN:-}}" ]]; then
-      auth_header=(-H "Authorization: Bearer ''${GITHUB_TOKEN:-$GH_TOKEN}")
-    fi
-
-    rev=$(
-      curl -fsSL "''${auth_header[@]}" \
-        -H "Accept: application/vnd.github+json" \
-        "https://api.github.com/repos/''${repo}/git/ref/heads/''${branch}" |
-        jq -r .object.sha
+    repo="bethington/ghidra-mcp"
+    tag=$(
+      git ls-remote --sort=-version:refname --tags --refs "https://github.com/$repo.git" |
+        awk '$2 ~ /^refs\/tags\/v[0-9]+\.[0-9]+\.[0-9]+$/ && !found++ { print substr($2, 11) }'
     )
-
-    if [[ -z "$rev" || "$rev" == "null" ]]; then
-      echo "no branch head found for $repo#$branch" >&2
+    if [[ -z "$tag" ]]; then
+      echo "no stable tag found for $repo" >&2
       exit 1
     fi
-
-    commit_date=$(
-      curl -fsSL "''${auth_header[@]}" \
-        -H "Accept: application/vnd.github+json" \
-        "https://api.github.com/repos/''${repo}/commits/''${rev}" |
-        jq -r .commit.committer.date
-    )
-    date="''${commit_date%%T*}"
-
-    upstream_version=$(
-      curl -fsSL "''${auth_header[@]}" \
-        "https://raw.githubusercontent.com/''${repo}/''${rev}/pyproject.toml" |
-        awk -F'"' '!found && /^version = / {print $2; found = 1}'
-    )
-
-    if [[ -z "$upstream_version" ]]; then
-      echo "could not determine upstream version from pyproject.toml at $rev" >&2
-      exit 1
-    fi
-
-    version="''${upstream_version}-unstable-''${date}"
+    version="''${tag#v}"
     current_version=$(jq -r .version source.json)
-    current_rev=$(jq -r '.rev // empty' source.json)
-    current_mcp_sdk_version=$(jq -r '.mcpSdkVersion // empty' source.json)
+    current_mcp_sdk_version=$(jq -r .mcpSdkVersion source.json)
     nix_system=$(nix eval --impure --raw --expr builtins.currentSystem)
     repo_root=$(realpath ../../../..)
 
-    if [[ "$current_rev" == "$rev" ]]; then
-      src_hash=$(jq -r .srcHash source.json)
-    else
-      src_hash=$(
-        nix store prefetch-file --json --unpack \
-          "https://github.com/''${repo}/archive/''${rev}.tar.gz" |
-          jq -r .hash
-      )
-    fi
+    fetched_source=$(nix store prefetch-file --json --unpack \
+      "https://github.com/$repo/archive/refs/tags/$tag.tar.gz")
+    src_hash=$(jq -er .hash <<< "$fetched_source")
+    src_path=$(jq -er .storePath <<< "$fetched_source")
 
-    mcp_sdk_version=$(
-      list-git-tags --url=https://github.com/modelcontextprotocol/python-sdk.git |
-        awk '/^v1\.[0-9]+\.[0-9]+$/ { sub(/^v/, ""); print }' |
-        sort -V |
-        tail -n 1
+    mcp_sdk_version=$(python3 - "$src_path" "$version" <<'PY'
+    import sys
+    import tomllib
+    from pathlib import Path
+
+    source = Path(sys.argv[1])
+    project = tomllib.loads((source / "pyproject.toml").read_text(encoding="utf-8"))["project"]
+    if project["version"] != sys.argv[2]:
+        sys.exit(f"tag v{sys.argv[2]} does not match pyproject version {project['version']}")
+
+    lock = tomllib.loads((source / "uv.lock").read_text(encoding="utf-8"))
+    versions = {package["version"] for package in lock["package"] if package["name"] == "mcp"}
+    if len(versions) != 1:
+        sys.exit("uv.lock must pin exactly one MCP Python SDK version")
+    print(versions.pop())
+    PY
     )
 
-    if [[ -z "$mcp_sdk_version" ]]; then
-      echo "could not determine the latest compatible MCP Python SDK 1.x release" >&2
+    if [[ ! "$mcp_sdk_version" =~ ^1\.[0-9]+\.[0-9]+$ ]]; then
+      echo "upstream locks MCP SDK $mcp_sdk_version, but this package expects SDK 1.x" >&2
       exit 1
     fi
 
@@ -113,16 +86,12 @@ writeShellApplication {
 
     jq -n \
       --arg version "$version" \
-      --arg upstreamVersion "$upstream_version" \
-      --arg rev "$rev" \
       --arg srcHash "$src_hash" \
       --arg mcpSdkVersion "$mcp_sdk_version" \
       --arg mcpSrcHash "$mcp_src_hash" \
       --arg mvnHash "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" \
       '{
         version: $version,
-        upstreamVersion: $upstreamVersion,
-        rev: $rev,
         srcHash: $srcHash,
         mcpSdkVersion: $mcpSdkVersion,
         mcpSrcHash: $mcpSrcHash,
@@ -153,7 +122,7 @@ writeShellApplication {
       "$tmp_pkg/gh/ghidra-mcp-headless/source.json" >"$tmp_source"
     mv "$tmp_source" source.json
 
-    echo "ghidra-mcp-headless: $current_version -> $version (''${rev})"
+    echo "ghidra-mcp-headless: $current_version -> $version ($tag)"
     echo "mcp Python SDK: $current_mcp_sdk_version -> $mcp_sdk_version"
   '';
 }

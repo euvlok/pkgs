@@ -24,8 +24,6 @@ let
       names = [
         "Base"
         "Decompiler"
-        "FunctionID"
-        "PDB"
       ];
     }
     {

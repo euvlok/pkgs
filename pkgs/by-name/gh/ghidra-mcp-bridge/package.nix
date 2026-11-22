@@ -4,9 +4,7 @@
   fetchFromGitHub,
   python313,
   python313Packages,
-  runCommand,
   coreutils,
-  makeWrapper,
 }:
 let
   common = callPackage ../ghidra-mcp-headless/common.nix { };
@@ -74,75 +72,69 @@ let
       license = lib.licenses.mit;
     };
   };
-  bridgePython = python313.withPackages (_: [ mcp ]);
+in
+python313Packages.buildPythonApplication {
+  pname = "ghidra-mcp-bridge";
+  version = packageVersion;
+  pyproject = true;
+  strictDeps = true;
+  __structuredAttrs = true;
 
-  bridgeApp = python313Packages.buildPythonApplication {
-    pname = "ghidra-mcp-bridge";
-    version = packageVersion;
-    pyproject = true;
-    strictDeps = true;
-    __structuredAttrs = true;
+  inherit src;
 
-    inherit src;
+  build-system = [ python313Packages.hatchling ];
 
-    build-system = [
-      python313Packages.hatchling
-    ];
-
-    dependencies = [
-      mcp
-      python313Packages.pydantic
-    ];
-
-    doCheck = false;
-
-    meta = common.meta // {
-      platforms = python313.meta.platforms;
-      description = "Ghidra MCP Python bridge";
-      mainProgram = "bridge-mcp-ghidra";
-    };
-  };
-  bridgeFlags = lib.strings.concatStringsSep " " [
-    "--transport \"$GHIDRA_MCP_BRIDGE_TRANSPORT\""
-    "--mcp-host \"$GHIDRA_MCP_BRIDGE_HOST\""
-    "--mcp-port \"$GHIDRA_MCP_BRIDGE_PORT\""
-    "--no-lazy"
+  dependencies = [
+    mcp
+    python313Packages.pydantic
   ];
 
-in
-runCommand "ghidra-mcp-bridge-${packageVersion}"
-  {
-    version = packageVersion;
-    nativeBuildInputs = [ makeWrapper ];
-    passthru = {
-      upstreamVersion = jarVersion;
-      inherit
-        bridgeApp
-        bridgePython
-        mcp
-        mcpSdkVersion
-        ;
-      inherit (common) updateScript;
-    };
-    meta = common.meta // {
-      platforms = python313.meta.platforms;
-      description = "Ghidra MCP Python bridge";
-      mainProgram = "ghidra-mcp-bridge";
-    };
-  }
-  ''
-    mkdir -p "$out/bin"
-    makeWrapper "${lib.meta.getExe bridgeApp}" "$out/bin/ghidra-mcp-bridge" \
-      --set-default GHIDRA_DEBUGGER_URL "http://127.0.0.1:8099" \
-      --set PYTHONDONTWRITEBYTECODE "1" \
-      --set PYTHONNOUSERSITE "1" \
-      --run 'export GHIDRA_MCP_STATE="''${GHIDRA_MCP_STATE:-${stateDefault}}"' \
-      --run '${coreutils}/bin/mkdir -p "$GHIDRA_MCP_STATE/tmp" "$GHIDRA_MCP_STATE/runtime"' \
-      --run '${coreutils}/bin/chmod 700 "$GHIDRA_MCP_STATE/runtime"' \
-      --run 'export TMPDIR="''${TMPDIR:-$GHIDRA_MCP_STATE/tmp}"' \
-      --run 'export XDG_RUNTIME_DIR="''${XDG_RUNTIME_DIR:-$GHIDRA_MCP_STATE/runtime}"' \
-      --set-default GHIDRA_MCP_BRIDGE_HOST "127.0.0.1" \
-      --set-default GHIDRA_MCP_BRIDGE_PORT "8090" \
-      --set-default GHIDRA_MCP_BRIDGE_TRANSPORT "stdio" \
-      --add-flags ${lib.strings.escapeShellArg bridgeFlags}
-  ''
+  postInstall = ''
+    mv "$out/bin/bridge-mcp-ghidra" "$out/bin/ghidra-mcp-bridge"
+  '';
+
+  makeWrapperArgs = [
+    "--set-default"
+    "GHIDRA_DEBUGGER_URL"
+    "http://127.0.0.1:8099"
+    "--set"
+    "PYTHONDONTWRITEBYTECODE"
+    "1"
+    "--run"
+    ''export GHIDRA_MCP_STATE="''${GHIDRA_MCP_STATE:-${stateDefault}}"''
+    "--run"
+    ''${coreutils}/bin/mkdir -p "$GHIDRA_MCP_STATE/tmp" "$GHIDRA_MCP_STATE/runtime"''
+    "--run"
+    ''${coreutils}/bin/chmod 700 "$GHIDRA_MCP_STATE/runtime"''
+    "--run"
+    ''export TMPDIR="''${TMPDIR:-$GHIDRA_MCP_STATE/tmp}"''
+    "--run"
+    ''export XDG_RUNTIME_DIR="''${XDG_RUNTIME_DIR:-$GHIDRA_MCP_STATE/runtime}"''
+    "--set-default"
+    "GHIDRA_MCP_BRIDGE_HOST"
+    "127.0.0.1"
+    "--set-default"
+    "GHIDRA_MCP_BRIDGE_PORT"
+    "8090"
+    "--set-default"
+    "GHIDRA_MCP_BRIDGE_TRANSPORT"
+    "stdio"
+    "--add-flags"
+    ''--transport "$GHIDRA_MCP_BRIDGE_TRANSPORT" --mcp-host "$GHIDRA_MCP_BRIDGE_HOST" --mcp-port "$GHIDRA_MCP_BRIDGE_PORT"''
+  ];
+
+  doCheck = false;
+  pythonImportsCheck = [ "bridge_mcp_ghidra.cli" ];
+
+  passthru = {
+    upstreamVersion = jarVersion;
+    inherit mcp mcpSdkVersion;
+    inherit (common) updateScript;
+  };
+
+  meta = common.meta // {
+    platforms = python313.meta.platforms;
+    description = "Ghidra MCP Python bridge";
+    mainProgram = "ghidra-mcp-bridge";
+  };
+}

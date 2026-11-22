@@ -6,21 +6,20 @@
 let
   sources = lib.importJSON ./source.json;
   packageVersion = sources.version;
-  jarVersion = sources.upstreamVersion;
-  upstreamRev = sources.rev;
+  jarVersion = packageVersion;
+  tag = "v${packageVersion}";
 in
 {
   inherit
     sources
     packageVersion
     jarVersion
-    upstreamRev
     ;
 
   src = fetchFromGitHub {
     owner = "bethington";
     repo = "ghidra-mcp";
-    rev = upstreamRev;
+    inherit tag;
     hash = sources.srcHash;
   };
 
@@ -34,7 +33,7 @@ in
 
   meta = {
     homepage = "https://github.com/bethington/ghidra-mcp";
-    changelog = "https://github.com/bethington/ghidra-mcp/blob/${upstreamRev}/CHANGELOG.md";
+    changelog = "https://github.com/bethington/ghidra-mcp/blob/${tag}/CHANGELOG.md";
     license = lib.licenses.asl20;
     sourceProvenance = with lib.sourceTypes; [ fromSource ];
   };
