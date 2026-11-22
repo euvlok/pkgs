@@ -1,5 +1,6 @@
 {
   lib,
+  callPackage,
   stdenvNoCC,
   fetchurl,
   _7zz,
@@ -174,7 +175,7 @@ stdenvNoCC.mkDerivation (
     );
 
     passthru = {
-      updateScript = ./update.sh;
+      updateScript = lib.getExe (callPackage ./update.nix { });
       upstreamVersion = source.version;
     };
 
