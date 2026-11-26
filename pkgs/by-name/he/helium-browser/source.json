@@ -6,14 +6,14 @@
       "hash": "sha256-MiolsE6dgiIH54reheLyTRTxvvQjOVEeBtBAHKN5XLI="
     },
     "aarch64-linux": {
-      "version": "0.22.4.1",
-      "url": "https://github.com/imputnet/helium-linux/releases/download/0.22.4.1/helium-0.22.4.1-arm64_linux.tar.xz",
-      "hash": "sha256-UaEhjtgYWD4X2KZ/KWD+cpxtDsA30b75FKePj/sP/1c="
+      "version": "0.22.5.1",
+      "url": "https://github.com/imputnet/helium-linux/releases/download/0.22.5.1/helium-0.22.5.1-arm64_linux.tar.xz",
+      "hash": "sha256-bNfoVY3piOeFFTgjldmQBmtlG9MuyZcE/U/pQTtS6MM="
     },
     "x86_64-linux": {
-      "version": "0.22.4.1",
-      "url": "https://github.com/imputnet/helium-linux/releases/download/0.22.4.1/helium-0.22.4.1-x86_64_linux.tar.xz",
-      "hash": "sha256-AND9I5MVVJ6RJTzySVsCGkA8z5iXenkldCsCDAV3vSw="
+      "version": "0.22.5.1",
+      "url": "https://github.com/imputnet/helium-linux/releases/download/0.22.5.1/helium-0.22.5.1-x86_64_linux.tar.xz",
+      "hash": "sha256-LVuh4DxNoGHemt8rcUuWerVbewF7N82TCA/bl8ADiIY="
     }
   }
 }
