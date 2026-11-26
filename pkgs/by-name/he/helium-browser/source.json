@@ -1,9 +1,9 @@
 {
   "platforms": {
     "aarch64-darwin": {
-      "version": "0.22.4.1",
-      "url": "https://github.com/imputnet/helium-macos/releases/download/0.22.4.1/helium_0.22.4.1_arm64-macos.dmg",
-      "hash": "sha256-MiolsE6dgiIH54reheLyTRTxvvQjOVEeBtBAHKN5XLI="
+      "version": "0.22.5.1",
+      "url": "https://github.com/imputnet/helium-macos/releases/download/0.22.5.1/helium_0.22.5.1_arm64-macos.dmg",
+      "hash": "sha256-fXgPOc9TLt0FVn0JhNc+Cyvy1Q/Lyd/JsLa0bhlEhLM="
     },
     "aarch64-linux": {
       "version": "0.22.5.1",
